@@ -5,10 +5,16 @@
   "parts": [
     { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0, "attrs": {} },
     { "type": "wokwi-hc-sr04", "id": "ultrasonic1", "top": -100, "left": 200, "attrs": { "distance": "100" } },
-    { "type": "wokwi-led", "id": "led_in1", "top": 200, "left": 250, "attrs": { "color": "red", "label": "IN1" } },
+
+    { "type": "wokwi-led", "id": "led_l_fwd", "top": 200, "left": 250, "attrs": { "color": "blue", "label": "L fwd" } },
     { "type": "wokwi-resistor", "id": "r1", "top": 220, "left": 220, "attrs": { "value": "220" } },
-    { "type": "wokwi-led", "id": "led_in2", "top": 260, "left": 250, "attrs": { "color": "green", "label": "IN2 (escape)" } },
-    { "type": "wokwi-resistor", "id": "r2", "top": 280, "left": 220, "attrs": { "value": "220" } }
+    { "type": "wokwi-led", "id": "led_escape", "top": 260, "left": 250, "attrs": { "color": "green", "label": "escape" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 280, "left": 220, "attrs": { "value": "220" } },
+
+    { "type": "wokwi-led", "id": "led_r_fwd", "top": 320, "left": 250, "attrs": { "color": "orange", "label": "R fwd" } },
+    { "type": "wokwi-resistor", "id": "r3", "top": 340, "left": 220, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "led_escape2", "top": 380, "left": 250, "attrs": { "color": "red", "label": "escape R" } },
+    { "type": "wokwi-resistor", "id": "r4", "top": 400, "left": 220, "attrs": { "value": "220" } }
   ],
   "connections": [
     [ "ultrasonic1:VCC", "uno:5V", "red", [] ],
@@ -17,12 +23,20 @@
     [ "ultrasonic1:ECHO", "uno:2", "blue", [] ],
 
     [ "uno:8", "r1:1", "green", [] ],
-    [ "r1:2", "led_in1:A", "green", [] ],
-    [ "led_in1:C", "uno:GND.2", "black", [] ],
+    [ "r1:2", "led_l_fwd:A", "green", [] ],
+    [ "led_l_fwd:C", "uno:GND.2", "black", [] ],
 
     [ "uno:7", "r2:1", "green", [] ],
-    [ "r2:2", "led_in2:A", "green", [] ],
-    [ "led_in2:C", "uno:GND.3", "black", [] ]
+    [ "r2:2", "led_escape:A", "green", [] ],
+    [ "led_escape:C", "uno:GND.2", "black", [] ],
+
+    [ "uno:6", "r3:1", "green", [] ],
+    [ "r3:2", "led_r_fwd:A", "green", [] ],
+    [ "led_r_fwd:C", "uno:GND.3", "black", [] ],
+
+    [ "uno:5", "r4:1", "green", [] ],
+    [ "r4:2", "led_escape2:A", "green", [] ],
+    [ "led_escape2:C", "uno:GND.3", "black", [] ]
   ],
   "dependencies": {}
 }

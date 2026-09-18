@@ -46,14 +46,51 @@ relaxa de volta pro reto entre disparos):
 
 ![Robô virando - Optomotor](docs/images/optomotor_robot_reaction.png)
 
+## Simulador ao vivo (pygame) — os dois circuitos rodando ao mesmo tempo
+
+`sim/live_robot_sim.py`: em vez de rodar 300ms e parar, os dois circuitos (Giant
+Fiber + Optomotor) ficam ativos continuamente, com peso sináptico real, e você
+controla o estímulo pelo teclado (seta cima = objeto se aproxima, seta esq/dir =
+movimento visual) enquanto vê o robô reagir na tela em tempo real. Mesma prioridade
+do firmware real: escape sempre interrompe um giro em andamento.
+
+Simplificação documentada: o circuito optomotor aqui não separa os dois hemisférios
+(pool único dos top-20 T4/T5 por peso) — o que vem do dado real é **se e quando** o
+circuito dispara; a **direção** do giro no desenho usa a tecla que você está
+segurando no momento, não vem do dado.
+
+```
+.venv\Scripts\python sim\live_robot_sim.py
+```
+
+Giro isolado (segurando seta esquerda — cada disparo do DNa02 vira 2°, sem limite
+artificial, só a taxa de disparo real do circuito):
+
+![Giro ao vivo](docs/images/live_sim_turn_loop.png)
+
+Os dois circuitos coexistindo no mesmo robô — trilha mostra o giro (curva) seguido
+de fuga (ponta vermelha, pulo pra trás):
+
+![Escape e giro combinados](docs/images/live_sim_combined.png)
+
+Ajuste de ganho documentado (não escondido): primeira versão usava 6°/spike +
+limite de 1 giro a cada 60ms — o robô fechava um loop completo em menos de 1
+segundo (rápido demais pra acompanhar) e depois quase não girava quando os dois
+freios foram empilhados junto (o cooldown multiplicou o efeito do grau baixo).
+Solução: manter só 1 parâmetro (2°/spike) e deixar a velocidade real do circuito
+(refratário de 20ms do DNa02) decidir o ritmo, sem freio artificial por cima.
+
 ## Firmware — testado no Wokwi, sem placa física
 
-Ponte "burra" de propósito (`hardware/motor_bridge`): só lê HC-SR04 e executa pulso
-de escape. Toda decisão de quando fugir vem do PC, rodando o circuito real acima.
+Ponte "burra" de propósito (`hardware/motor_bridge`): só lê HC-SR04 e executa o
+comando de motor que o PC mandar. Toda decisão (fugir ou virar) vem do PC, rodando
+os circuitos reais acima. Drive diferencial, 2 motores (L298N, canal A e B).
 Protocolo serial 115200 baud:
 
 - placa → PC: `D:<cm>` (leitura periódica, a cada 50ms)
-- PC → placa: `E` (dispara pulso de escape, motor reverso 150ms)
+- PC → placa: `E` (escape, os dois motores em reverso, 150ms)
+- PC → placa: `L` / `R` (vira esquerda/direita, pivot 80ms)
+- **Prioridade**: escape sempre interrompe um giro em andamento (igual biologia)
 
 Testado no simulador Wokwi (extensão VS Code) antes de qualquer compra:
 
@@ -113,7 +150,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Circuito 1 (Giant Fiber) — fetch, rede, robô digital reagindo
 - [x] Firmware compilado e testado no Wokwi (sem hardware físico)
 - [x] Circuito 2 (Optomotor) — fetch, rede, robô digital virando
-- [ ] Combinar os dois circuitos num robô só (foge de objeto E vira por movimento)
+- [x] Combinar os dois circuitos num robô só, ao vivo, controlado por teclado (`sim/live_robot_sim.py`), com HUD e prioridade escape > giro validados visualmente
+- [x] Firmware com drive diferencial (2 motores, `E`/`L`/`R`, prioridade escape > giro)
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
