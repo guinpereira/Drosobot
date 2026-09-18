@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "author": "Drosobot",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-hc-sr04", "id": "ultrasonic1", "top": -100, "left": 200, "attrs": { "distance": "100" } },
+    { "type": "wokwi-led", "id": "led_in1", "top": 200, "left": 250, "attrs": { "color": "red", "label": "IN1" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 220, "left": 220, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "led_in2", "top": 260, "left": 250, "attrs": { "color": "green", "label": "IN2 (escape)" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 280, "left": 220, "attrs": { "value": "220" } }
+  ],
+  "connections": [
+    [ "ultrasonic1:VCC", "uno:5V", "red", [] ],
+    [ "ultrasonic1:GND", "uno:GND.1", "black", [] ],
+    [ "ultrasonic1:TRIG", "uno:3", "green", [] ],
+    [ "ultrasonic1:ECHO", "uno:2", "blue", [] ],
+
+    [ "uno:8", "r1:1", "green", [] ],
+    [ "r1:2", "led_in1:A", "green", [] ],
+    [ "led_in1:C", "uno:GND.2", "black", [] ],
+
+    [ "uno:7", "r2:1", "green", [] ],
+    [ "r2:2", "led_in2:A", "green", [] ],
+    [ "led_in2:C", "uno:GND.3", "black", [] ]
+  ],
+  "dependencies": {}
+}

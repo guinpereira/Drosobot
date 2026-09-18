@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = 'build/motor_bridge.ino.hex'
+elf = 'build/motor_bridge.ino.elf'

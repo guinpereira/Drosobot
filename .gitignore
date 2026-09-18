@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.neuprint_token
+connectome/*.feather
+connectome/*.csv
+connectome/*.parquet
+*.egg-info/
+.ipynb_checkpoints/
+hardware/**/build/
