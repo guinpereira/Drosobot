@@ -6,3 +6,6 @@ pandas
 matplotlib
 pyserial
 pygame
+# NeuroMechFly v2: corpo biomecanico da mosca em MuJoCo, com retina de
+# omatideos. numpy<2.1 continua valendo -- flygym pede numpy>=2.0,<3.0
+flygym
