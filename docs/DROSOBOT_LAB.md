@@ -106,6 +106,36 @@ polarity          MODEL   excitatory
 
 Selecionar atenua os outros neuronios pra 25% e pulsa o escolhido.
 
+### Conectividade
+
+Tecla **C** liga o grafo, **F** alterna o filtro (todas / excitatorias /
+inibitorias / so o selecionado). Com um neuronio selecionado, so as arestas que
+tocam nele aparecem.
+
+![Conectividade](images/drosobot_lab_conectividade.png)
+
+As linhas rosadas grossas convergindo no Giant Fiber sao as arestas
+**inibitorias** de maior peso (PVLP010 glutamato, SAD GABA: 739, 537 e 414
+sinapses). As azuladas finas descem do HS pros motoneuronios de perna.
+
+O que cada coisa e:
+
+| | procedencia |
+|---|---|
+| existencia da aresta e peso (contagem de sinapse EM) | **DATA** |
+| sinal excitatorio/inibitorio | **MODEL** (regra de Shiu et al. sobre o NT do pre) |
+| posicao das pontas, espessura, cor | apresentacao |
+
+Tres limitacoes que valem dizer:
+
+- As arestas sao **agregadas por par de neuronios**. O conectoma tem sinapse
+  individual; desenhar milhoes de linhas nao informaria nada.
+- Cada ponta fica no **centro do bounding box** do neuronio. E resumo visual, nao
+  o local anatomico da sinapse -- a linha reta entre centros nao e o trajeto do
+  axonio.
+- So aparecem arestas entre neuronios que tem geometria exportada (104 das
+  possiveis).
+
 Verificado ao vivo: CNS real, cores por papel no circuito, atividade chegando
 pela telemetria. Atalhos: **B** casca do cerebro, **N** neuronios, **P** modo
 apresentacao; arrastar gira a camera, scroll da zoom.

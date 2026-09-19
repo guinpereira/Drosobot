@@ -27,6 +27,15 @@ namespace Drosobot.Lab
     }
 
     [Serializable]
+    public class EdgeEntry
+    {
+        public long pre;        // DATA
+        public long post;       // DATA
+        public int weight;      // DATA -- contagem de sinapse EM, agregada por par
+        public int sign;        // MODEL -- regra de Shiu et al. sobre o NT do pre
+    }
+
+    [Serializable]
     public class NeuronMetadata
     {
         public string source;
@@ -35,6 +44,8 @@ namespace Drosobot.Lab
         public string[] contextMeshes;
         public int neuronCount;
         public NeuronEntry[] neurons;
+        public int edgeCount;
+        public EdgeEntry[] edges;
 
         public static NeuronMetadata FromJson(string json)
         {

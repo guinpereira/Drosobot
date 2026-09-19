@@ -212,6 +212,49 @@ bpy.ops.export_scene.fbx(
 tam = fbx.stat().st_size / 1e6
 print(f"[export] {fbx}  ({tam:.1f} MB)")
 
+# ---------------------------------------------------------------------------
+# 6b. conectividade entre os neuronios exportados (DATA)
+# ---------------------------------------------------------------------------
+# As arestas vao junto com a geometria, nao pela telemetria: peso de sinapse e
+# neurotransmissor sao dado do conectoma, nao mudam durante a simulacao, e a
+# Unity precisa deles antes de qualquer experimento comecar.
+#
+# Agregamos por PAR de neuronios. O conectoma tem sinapse individual, mas
+# desenhar milhoes de linhas nao informa nada -- uma aresta por par, com
+# espessura proporcional ao numero de sinapses, informa.
+IDS_EXPORTADOS = {n["bodyId"] for n in neuronios}
+SINAL_NT = {"gaba": -1, "glutamate": -1, "histamine": -1}
+
+pares = {}
+for csv_nome in ("gf_upstream_connections.csv", "gf_downstream_connections.csv",
+                 "opto_sensor_hs.csv", "opto_hs_dna02.csv", "opto_dna02_motor.csv"):
+    caminho = RAIZ / "connectome" / csv_nome
+    if not caminho.exists():
+        continue
+    with caminho.open(encoding="utf-8", newline="") as f:
+        for linha in csv.DictReader(f):
+            try:
+                pre = int(linha["bodyId_pre"]); pos = int(linha["bodyId_post"])
+                peso = int(float(linha["weight"]))
+            except (KeyError, ValueError):
+                continue
+            if pre not in IDS_EXPORTADOS or pos not in IDS_EXPORTADOS:
+                continue
+            pares[(pre, pos)] = pares.get((pre, pos), 0) + peso
+
+arestas = []
+for (pre, pos), peso in sorted(pares.items(), key=lambda kv: -kv[1]):
+    nt = (props.get(pre, {}).get("consensusNt") or "").strip().lower()
+    arestas.append({
+        "pre": pre,                                   # DATA
+        "post": pos,                                  # DATA
+        "weight": peso,                               # DATA (contagem de sinapse EM)
+        "sign": SINAL_NT.get(nt, 1) if nt else 1,     # MODEL (regra de Shiu et al.)
+    })
+print(f"[export] {len(arestas)} arestas entre os neuronios exportados "
+      f"(peso de {min(a['weight'] for a in arestas) if arestas else 0} a "
+      f"{max(a['weight'] for a in arestas) if arestas else 0})")
+
 meta = {
     "source": "Male CNS v1.0 (neuPrint, Janelia) + JRCFIB2022M via navis-flybrains",
     "generator": "blender/export_unity.py",
@@ -223,6 +266,8 @@ meta = {
     "contextMeshes": malhas_contexto,
     "groupColors": {g: [round(c, 4) for c in cor] for g, cor in GROUP_COLORS.items()},
     "neuronCount": len(neuronios),
+    "edgeCount": len(arestas),
+    "edges": arestas,
     "neurons": neuronios,
 }
 (DESTINO / "neuron_metadata.json").write_text(

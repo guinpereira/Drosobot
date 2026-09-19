@@ -49,6 +49,7 @@ namespace Drosobot.Lab
         private Transform _fly;
         private Camera _camBrain;
         private readonly List<Renderer> _shellRenderers = new List<Renderer>();
+        private ConnectivityGraph _grafo;
 
         // ultimo estado recebido, so pra desenhar
         private string _expName = "(nenhum experimento)";
@@ -73,6 +74,13 @@ namespace Drosobot.Lab
 
         IEnumerator Start()
         {
+            // Sem isto a Unity congela o Play mode quando a janela perde o foco.
+            // Aqui isso e inaceitavel por dois motivos: quem usa o Lab fica
+            // alternando pro terminal do Python pra ver a simulacao, e a
+            // verificacao automatizada (unity cmd) nunca tem o foco -- o
+            // Time.frameCount ficava em 2 e o Update praticamente nao rodava.
+            Application.runInBackground = true;
+
             BuildScene();
 
             _gSensorL = new Sparkline("sensor L (Hz)", new Color(0.35f, 0.65f, 1f), Provenance.Assumption);
@@ -122,6 +130,7 @@ namespace Drosobot.Lab
             _fly = flyGo.transform;
 
             _brain = gameObject.AddComponent<BrainActivity>();
+            _grafo = gameObject.AddComponent<ConnectivityGraph>();
         }
 
         private IEnumerator LoadCns()
@@ -154,6 +163,7 @@ namespace Drosobot.Lab
 
             var meta = NeuronMetadata.FromJson(metaTxt.text);
             _brain.Bind(_cnsRoot, meta);
+            _grafo.Build(_cnsRoot, meta, _brain);
 
             // malhas de contexto ficam translucidas e discretas: sao referencia
             // anatomica, nao o assunto
@@ -354,6 +364,13 @@ namespace Drosobot.Lab
                 GUILayout.Space(6);
                 GUILayout.Label("B casca  N neuronios  P apresentacao", _mono);
                 GUILayout.Label("botao direito seleciona  ESC limpa", _mono);
+                if (_grafo != null)
+                {
+                    string estado = _grafo.show
+                        ? _grafo.visibleEdges + "/" + _grafo.edgeCount
+                        : "off";
+                    GUILayout.Label($"C conexoes ({estado})  F filtro: {_grafo.filtro}", _mono);
+                }
             }
 
             GUILayout.EndArea();
@@ -452,6 +469,12 @@ namespace Drosobot.Lab
             Badge.Linha("neurotransmitter", Get("neurotransmitter"), Provenance.Data, _mono);
             Badge.Linha("polarity", Get("polarity"), Provenance.Model, _mono);
             Badge.Linha("atividade", Get("recentActivity"), Provenance.Model, _mono);
+            if (_grafo != null)
+            {
+                var (entra, sai, nE, nS) = _grafo.Resumo(sel);
+                Badge.Linha("sinapses in", $"{entra} ({nE} parceiros)", Provenance.Data, _mono);
+                Badge.Linha("sinapses out", $"{sai} ({nS} parceiros)", Provenance.Data, _mono);
+            }
             GUILayout.EndArea();
         }
 
@@ -478,6 +501,10 @@ namespace Drosobot.Lab
                 if (achou >= 0) Debug.Log($"[lab] selecionado neuron_{achou}");
             }
             if (Input.GetKeyDown(KeyCode.Escape) && _brain != null) _brain.ClearSelection();
+            if (Input.GetKeyDown(KeyCode.C) && _grafo != null) _grafo.show = !_grafo.show;
+            if (Input.GetKeyDown(KeyCode.F) && _grafo != null)
+                _grafo.filtro = (ConnectivityGraph.Filtro)
+                    (((int)_grafo.filtro + 1) % System.Enum.GetValues(typeof(ConnectivityGraph.Filtro)).Length);
             if (Input.GetKeyDown(KeyCode.P)) presentationMode = !presentationMode;
             if (Input.GetKeyDown(KeyCode.N)) _brain.showNeurons = !_brain.showNeurons;
             if (Input.GetKeyDown(KeyCode.B))
