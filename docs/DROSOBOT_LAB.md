@@ -80,8 +80,21 @@ ao vivo e replay.
 
 ### 5. Unity
 
-Abrir `unity/DrosobotLab/` no Unity **2022.3 LTS**, cena vazia, um GameObject
-com o componente `LabBootstrap`, Play. A cena e montada por codigo.
+A cena ja vem pronta em `Assets/Scenes/DrosobotLab.unity`. Abrir
+`unity/DrosobotLab/` no Unity **2022.3 LTS** e dar Play.
+
+Pra reconstruir a cena sem abrir o Editor (util depois de um clone limpo):
+
+```
+"C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe" ^
+  -batchmode -nographics -quit ^
+  -projectPath unity\DrosobotLab ^
+  -executeMethod Drosobot.EditorTools.BuildLabScene.Build ^
+  -logFile unity\build.log
+```
+
+O mesmo comando sem `-executeMethod` so compila -- e como o C# e verificado
+neste projeto, ja que nao ha integracao MCP com o Editor.
 
 ## Protocolo
 
@@ -167,10 +180,12 @@ convergido nesse passo, entao afrouxar troca fidelidade por framerate.
 
 ## Limitacoes conhecidas
 
-1. **Nao havia integracao MCP com a Unity disponivel** quando isto foi escrito.
-   O projeto, os scripts C# e o `manifest.json` estao no repo, mas nenhuma cena
-   foi aberta no Editor e **o C# nao foi compilado**. A cena e montada por codigo
-   justamente pra reduzir o que depende do Editor.
+1. **Nao ha integracao MCP com a Unity.** Contornado por batch mode: o C#
+   **compila** (Assembly-CSharp.dll gerada, zero erros CS, glTFast e Newtonsoft
+   resolvidos), a cena e **criada por linha de comando**, e os nomes dos nos do
+   GLB foram conferidos contra o metadata (54 de 54). O que continua sem
+   verificacao e o RUNTIME: ninguem deu Play, entao carregar o GLB, acender
+   neuronio e desenhar o HUD nao foram vistos funcionando.
 2. **A mosca na Unity e um marcador provisorio**, explicitamente nomeado como
    tal. Nao e o modelo do FlyGym. Trocar exige exportar a malha do NeuroMechFly.
    Um marcador identificado e melhor que anatomia inventada.
