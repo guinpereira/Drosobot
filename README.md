@@ -11,74 +11,190 @@ da mosca e usar ela pra controlar um robô?
 **Fase atual: tudo validado em software, zero hardware físico comprado ainda.**
 Circuito só vira compra de peça depois de provar que funciona na simulação.
 
+## O modelo: conectividade real, sinal real, biofisica publicada
+
+Cada neuronio e um leaky integrate-and-fire; cada conexao vem do conectoma. Os
+parametros nao sao chutados nem ajustados ate o grafico ficar bonito — sao os de
+**Shiu et al. 2024** (*A Drosophila computational brain model reveals sensorimotor
+processing*, Nature 634:210), que modelaram o cerebro inteiro da mosca no mesmo
+simulador (Brian2) a partir do FlyWire:
+
+```
+dv/dt = (-(v - V_repouso) + g) / tau_membrana
+dg/dt = -g / tau_sinapse
+ao spike de j:  g_i += w_ji
+
+V_repouso = V_reset = -52 mV      tau_membrana = 20 ms
+V_limiar          = -45 mV        tau_sinapse  = 5 ms
+refratario        = 2.2 ms        atraso       = 1.8 ms
+W_sinapse         = 0.275 mV      <- unico parametro livre do modelo
+```
+
+`w_ji` = numero de sinapses de j para i (contagem de microscopia eletronica)
+× sinal de j × `W_sinapse`. Com limiar 7 mV acima do repouso, uma conexao precisa
+de ~25 sinapses pra fazer o alvo disparar sozinha.
+
+Isso substituiu um LIF sem unidade (v de 0 a 1) com um ganho ajustado a mao por
+camada. Trocar varios numeros arbitrarios por um parametro livre publicado e a
+diferenca entre "ajustei ate funcionar" e "usei o modelo da literatura".
+
+### O sinal da sinapse: onde os papers discordam
+
+Um neuronio e inteiramente excitatorio ou inteiramente inibitorio (lei de Dale), e
+o neuroreceptor decide qual. Os dois papers que usamos como referencia classificam
+diferente, e **a escolha muda o resultado**:
+
+| | Shiu et al. 2024 (Nature) | Jin et al., FlyGM (arXiv) |
+|---|---|---|
+| inibitorios | GABA, **glutamato** | GABA, glicina |
+| excitatorios | ACh, dopamina, octopamina, serotonina | ACh, **glutamato**, aspartato, histamina |
+
+Seguimos Shiu: na mosca o glutamato costuma agir em GluCl, canal de cloreto
+ativado por glutamato, que hiperpolariza. Nao e detalhe academico — 6 dos 8
+neuronios pre-sinapticos mais fortes do Giant Fiber sao GABA ou glutamato.
+
+`sim/connectome_model.py` concentra tudo isso; `connectome/fetch_neuron_properties.py`
+puxa neurotransmissor e hemisferio de cada neuronio do neuPrint.
+
+
 ## Circuito 1 — Giant Fiber (reflexo de fuga)
 
-Pathway: **PVLP** (visual) → **DNp01** (Giant Fiber, o neurônio de fuga mais estudado
-da mosca) → **TTMn** (Tergotrochanteral Motor Neuron, motoneurônio real do músculo de pulo).
-
-Confirmado batendo com a literatura: entrada forte vem de área visual (PVLP), saída
-vai pro motoneurônio de pulo documentado. Simulação (Brian2, peso sináptico real do
-neuPrint) mostra o padrão esperado — silêncio enquanto o estímulo (objeto se
-aproximando, simulado) é fraco, disparo esparso e confiável quando cruza o limiar:
+Pathway: **PVLP** (visual) → **DNp01** (Giant Fiber, o neuronio de fuga mais estudado
+da mosca) → **TTMn** (Tergotrochanteral Motor Neuron, motoneuronio real do musculo de pulo).
 
 ![Raster Giant Fiber](docs/images/giant_fiber_raster.png)
 
-Robô digital reagindo ao disparo real (pulo pra trás a cada spike do TTMn):
+O potencial do GF fica preso abaixo do repouso enquanto o looming e fraco, e so
+cruza o limiar quando a entrada excitatoria vence — o escape aparece depois de
+~100 ms, esparso. Repare que so o TTMn direito dispara: no dado, DNp01_R → TTMn_R
+tem peso 70 contra 20 do lado esquerdo.
 
-![Robô reagindo - Giant Fiber](docs/images/digital_robot_reaction.png)
+### O que a inibicao faz aqui
+
+Quando o modelo tratava tudo como excitatorio, o peso dos neuronios inibitorios
+empurrava pro lado errado. Com o sinal correto, o balanco dos 8 upstream mais
+fortes do GF e:
+
+| neuronio | neurotransmissor | efeito | peso |
+|---|---|---|---|
+| DNp70(CL305)_L | acetilcolina | excita | 799 |
+| DNp70(CL305)_R | acetilcolina | excita | 617 |
+| PVLP010_L | glutamato | **inibe** | 414 |
+| SAD109_M | GABA | **inibe** | 360 |
+| SAD091_M | GABA | **inibe** | 348 |
+| SAD073_R | GABA | **inibe** | 324 |
+| SAD073_L | GABA | **inibe** | 324 |
+| PVLP010_R | glutamato | **inibe** | 297 |
+
+**59% do peso e inibitorio.** A pergunta obvia: isso nao deveria matar a fuga?
+Nao — desligando so as sinapses inibitorias e deixando o resto igual:
+
+![Inibicao como portao](docs/images/inhibition_gate.png)
+
+Em looming fraco (20 Hz) a inibicao derruba os disparos de pulo de 3,4 para 0,6,
+**5,7x menos alarme falso**; em estimulo forte as duas curvas convergem. Ou seja,
+a inibicao nao desliga o reflexo, ela levanta o limiar de evidencia necessario —
+que e exatamente o papel de portao que a literatura do Giant Fiber descreve.
+Isso saiu do dado depois de corrigir o sinal, nao de ajuste de parametro.
+
+Robo digital reagindo ao disparo real (pulo pra tras a cada spike do TTMn):
+
+![Robo reagindo - Giant Fiber](docs/images/digital_robot_reaction.png)
+
+Uma ressalva honesta: o GF real dispara 1 ou 2 spikes por episodio de fuga, e o
+nosso dispara dezenas. O refratario de 2,2 ms de Shiu et al. e um valor generico
+pra todo neuronio do cerebro; nao captura o comportamento de tiro unico do GF.
+
+O estimulo tambem nao entra igual em todo mundo: a rampa de looming vai so nos
+neuronios colinergicos (os DNp70, que estao no caminho visual de aproximacao), e
+os inibitorios ficam numa taxa tonica de 20 Hz. SAD073/091/109 sao subesofagicos e
+nao sao detectores de looming — dispara-los junto com o objeto se aproximando
+seria artefato de ter escolhido "sensor" por peso bruto, numa epoca em que o
+sinal era ignorado. Essa taxa tonica e **suposicao nossa**: o conectoma diz quem
+inibe e com que forca, nao a que taxa esses neuronios disparam em repouso.
 
 ## Circuito 2 — Optomotor (vira em resposta a movimento visual)
 
-Pathway: **T4/T5** (detecção de movimento, ~13.500 neurônios) → **HS** (wide-field
-integration, 8 neurônios) → **DNa02** (descending neuron documentado na literatura
-como controlador de giro durante caminhada) → **Sternal anterior rotator MN**
-(motoneurônio real que gira a coxa da perna).
+Pathway: **T4/T5** (deteccao de movimento) → **HS** (wide-field integration) →
+**DNa02** (descending neuron documentado como controlador de giro durante
+caminhada) → **Sternal anterior rotator MN** (motoneuronio que gira a coxa).
 
 Importante: verificamos conectividade real antes de montar a rede — **VS e
-LPLC2/LC4 não conectam direto no DNa02** nesse dataset (peso zero), só HS conecta
-(fraco, mas real). O circuito usado é o que **existe de fato** nos dados, não o
-mais "óbvio" da literatura de outras espécies de mosca.
+LPLC2/LC4 nao conectam direto no DNa02** nesse dataset (peso zero), so HS conecta
+(fraco, mas real). O circuito usado e o que **existe de fato** nos dados, nao o
+mais "obvio" da literatura de outras especies de mosca.
 
-![Raster Optomotor](docs/images/optomotor_raster.png)
+### Os dois hemisferios
 
-Robô digital virando (heading acumula em degraus a cada disparo do motor de perna,
-relaxa de volta pro reto entre disparos):
+O conectoma mostra que as tres etapas sao **estritamente ipsilaterais**:
 
-![Robô virando - Optomotor](docs/images/optomotor_robot_reaction.png)
+```
+HS  -> DNa02   L->L  66     R->R  72     cruzando: 0
+DNa02 -> motor L->L 334     R->R 442     cruzando: 0
+```
+
+Zero peso atravessando a linha media. Sao dois canais paralelos, e e isso que
+permite ler a direcao do giro do circuito: basta ver de que lado o motoneuronio
+de perna disparou. Nada no codigo separa os lados — a rede e montada par a par a
+partir do conectoma e os dois canais aparecem sozinhos.
+
+![Optomotor bilateral](docs/images/optomotor_raster.png)
+
+Estimulando um olho de cada vez, o motoneuronio contralateral fica em **zero
+absoluto** nos dois casos. O robo digital entao vira pra lados opostos:
+
+![Robo virando - Optomotor](docs/images/optomotor_robot_reaction.png)
+
+Duas ressalvas:
+
+- **A amostra de T4/T5 tinha que mudar.** Antes era "top-20 por peso", e isso caiu
+  17 do lado direito contra 3 do esquerdo — com a amostra tao torta nao havia como
+  comparar os lados. Agora e top-10 por hemisferio.
+- **O dado e assimetrico.** O lado direito e mais forte em toda etapa (T4/T5 721
+  contra 637, DNa02→motor 442 contra 334), provavelmente reconstrucao mais completa
+  desse hemisferio, e o limiar transforma ~10% de diferenca de peso em varias vezes
+  de resposta (48 spikes contra 8). O LADO esta certo; a MAGNITUDE carrega o vies
+  do dataset.
+
+Continua fora do dado: que motor de um lado gira o robo PARA aquele lado. O
+circuito entrega o lado, a biomecanica da coxa nao esta no conectoma.
+
 
 ## Simulador ao vivo (pygame) — os dois circuitos rodando ao mesmo tempo
 
 `sim/live_robot_sim.py`: em vez de rodar 300ms e parar, os dois circuitos (Giant
-Fiber + Optomotor) ficam ativos continuamente, com peso sináptico real, e você
-controla o estímulo pelo teclado (seta cima = objeto se aproxima, seta esq/dir =
-movimento visual) enquanto vê o robô reagir na tela em tempo real. Mesma prioridade
-do firmware real: escape sempre interrompe um giro em andamento.
-
-Simplificação documentada: o circuito optomotor aqui não separa os dois hemisférios
-(pool único dos top-20 T4/T5 por peso) — o que vem do dado real é **se e quando** o
-circuito dispara; a **direção** do giro no desenho usa a tecla que você está
-segurando no momento, não vem do dado.
+Fiber + Optomotor) ficam ativos continuamente e voce controla o estimulo pelo
+teclado enquanto ve o robo reagir em tempo real. Mesma prioridade do firmware
+real: escape sempre interrompe um giro em andamento.
 
 ```
 .venv\Scripts\python sim\live_robot_sim.py
 ```
 
-Giro isolado (segurando seta esquerda — cada disparo do DNa02 vira 2°, sem limite
-artificial, só a taxa de disparo real do circuito):
+A seta cima aproxima o objeto (looming). As setas esquerda/direita escolhem **em
+qual olho** entra o fluxo optico — nao a direcao do giro. Quem decide o lado e o
+motoneuronio de perna que disparou, e o HUD mostra a contagem dos dois lados
+justamente pra isso ficar visivel.
+
+Antes o pool optomotor era unico e o desenho girava pro lado da tecla: o dado
+dizia **se e quando** girar, a direcao era fiat do codigo. Agora sai do circuito.
+
+> **Nota:** as duas capturas abaixo sao anteriores a essa mudanca (pool unico,
+> direcao pela tecla, LIF sem unidade). O comportamento qualitativo — giro em
+> degraus, escape interrompendo — continua valendo, mas os numeros nao batem mais
+> com o modelo atual. Ficam aqui ate serem retiradas de novo.
 
 ![Giro ao vivo](docs/images/live_sim_turn_loop.png)
 
-Os dois circuitos coexistindo no mesmo robô — trilha mostra o giro (curva) seguido
-de fuga (ponta vermelha, pulo pra trás):
-
 ![Escape e giro combinados](docs/images/live_sim_combined.png)
 
-Ajuste de ganho documentado (não escondido): primeira versão usava 6°/spike +
-limite de 1 giro a cada 60ms — o robô fechava um loop completo em menos de 1
-segundo (rápido demais pra acompanhar) e depois quase não girava quando os dois
-freios foram empilhados junto (o cooldown multiplicou o efeito do grau baixo).
-Solução: manter só 1 parâmetro (2°/spike) e deixar a velocidade real do circuito
-(refratário de 20ms do DNa02) decidir o ritmo, sem freio artificial por cima.
+Ajuste de ganho documentado (nao escondido): a primeira versao usava 6°/spike +
+limite de 1 giro a cada 60ms — o robo fechava um loop completo em menos de 1
+segundo e depois quase nao girava quando os dois freios foram empilhados (o
+cooldown multiplicou o efeito do grau baixo). Solucao: manter so 1 parametro
+(2°/spike) e deixar a taxa de disparo real do circuito decidir o ritmo, sem freio
+artificial por cima.
+
 
 ## Visualização 3D — a morfologia real dos neurônios usados
 
@@ -213,8 +329,10 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 
 ## Estrutura
 
-- `connectome/` — scripts de fetch no neuPrint + CSV de conectividade (dado bruto, não sobe pro git)
-- `sim/` — simulações Brian2 (rede spiking com peso sináptico real) + imagens de resultado
+- `connectome/` — scripts de fetch no neuPrint + CSV de conectividade e de
+  propriedades por neuronio (dado bruto, nao sobe pro git)
+- `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
+  regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
@@ -230,6 +348,26 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Firmware com drive diferencial (2 motores, `E`/`L`/`R`, prioridade escape > giro)
 - [x] Visualizacao 3D da morfologia real dos 54 neuronios sobre a malha do CNS
       (`blender/render_circuits.py`), validada pela simetria bilateral
+- [x] Sinal da sinapse vindo do neurotransmissor real (nao mais tudo excitatorio)
+      e biofisica publicada de Shiu et al. 2024 no lugar do LIF sem unidade
+- [x] Dois hemisferios separados no optomotor: a direcao do giro sai do circuito
+- [ ] Refratario especifico do Giant Fiber (o generico de 2,2 ms nao captura o
+      comportamento de tiro unico documentado)
+- [ ] Retirar as capturas do simulador ao vivo com o modelo novo
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
+
+## Referencias
+
+- Shiu, P. K. et al. (2024). *A Drosophila computational brain model reveals
+  sensorimotor processing*. **Nature** 634:210. LIF do cerebro inteiro em Brian2 a
+  partir do FlyWire + predicao de neurotransmissor. De onde vem toda a biofisica
+  usada aqui (`sim/connectome_model.py`) e a regra de sinal por neurotransmissor.
+- Jin, Z., Zhu, Y., Zhang, C., Sui, Y. *Whole-Brain Connectomic Graph Model Enables
+  Whole-Body Locomotion Control in Fruit Fly* (FlyGM, arXiv). Usa o conectoma como
+  grafo de message-passing treinado por RL pra controlar uma mosca biomecanica
+  simulada. Classifica o sinal do neurotransmissor diferente de Shiu (ver tabela
+  acima). Caminho alternativo ao nosso: eles treinam a dinamica, nos rodamos a
+  conectividade direto.
+- neuPrint / Male CNS v1.0, Janelia — https://male-cns.janelia.org/download/

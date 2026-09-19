@@ -23,11 +23,25 @@ dna02_ids = dna02_neurons["bodyId"].tolist()
 print("HS ids:", hs_ids)
 print("DNa02 ids:", dna02_ids)
 
-# T4/T5 -> HS: pega top 20 pre-sinapticos por peso total (proxy "sensor de movimento")
+# T4/T5 -> HS: top pre-sinapticos POR HEMISFERIO.
+# Antes era top-20 no geral, e isso caia 17 do lado R contra 3 do L. Com a
+# amostra tao torta nao da pra tirar direcao de giro do circuito, porque um dos
+# lados quase nao existe na rede. Amostrando N por lado, os dois canais
+# ipsilaterais (T4/T5 -> HS -> DNa02 -> motor de perna, que nos dados nao cruzam
+# a linha media) ficam comparaveis.
+TOP_POR_LADO = 10
+
 _, conn_t_hs = fetch_adjacencies(NC(type="T4.*|T5.*", regex=True), NC(bodyId=hs_ids))
+t_neurons, _ = fetch_neurons(NC(bodyId=sorted(conn_t_hs["bodyId_pre"].unique().tolist())))
+side_of = dict(zip(t_neurons["bodyId"], t_neurons["somaSide"]))
+
 sensor_w = conn_t_hs.groupby("bodyId_pre")["weight"].sum().sort_values(ascending=False)
-sensor_ids = sensor_w.head(20).index.tolist()
-print(f"\nTop 20 T4/T5 (peso total {sensor_w.head(20).sum()}):", sensor_ids[:5], "...")
+sensor_ids = []
+for lado in ("L", "R"):
+    do_lado = [b for b in sensor_w.index if side_of.get(b) == lado][:TOP_POR_LADO]
+    sensor_ids.extend(do_lado)
+    print("Top %d T4/T5 do lado %s (peso total %d): %s ..."
+          % (TOP_POR_LADO, lado, int(sensor_w[do_lado].sum()), do_lado[:3]))
 
 conn_sensor_hs = conn_t_hs[conn_t_hs["bodyId_pre"].isin(sensor_ids)]
 conn_sensor_hs.to_csv(HERE / "opto_sensor_hs.csv", index=False)
