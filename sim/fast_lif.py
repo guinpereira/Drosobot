@@ -90,6 +90,25 @@ class Camada:
         return disparou
 
 
+    def estado(self):
+        """
+        Fotografia do estado atual, pra inspecao/visualizacao.
+
+        Custo ZERO no laco: nada aqui roda por timestep. O `passo()` acima nao
+        tem uma linha a mais por causa desta funcao -- ela so le atributos que ja
+        existiam. Copiamos os arrays porque quem recebe vai serializar em outra
+        thread e o laco continua escrevendo por cima.
+
+        `v` e `g` sao MODEL (saem do modelo biofisico de Shiu et al. rodando
+        sobre o conectoma), nao DATA. Quem mostrar isso na tela deve dizer isso.
+        """
+        return {
+            "v_mV": self.v.copy(),
+            "g_mV": self.g.copy(),
+            "refratario": (self.passo_atual < self.ref_ate).copy(),
+        }
+
+
 class Conexao:
     """Sinapses de uma camada pra outra, com o atraso de T_DELAY."""
 
@@ -142,6 +161,57 @@ class Rede:
                 chega = self.conexoes[k].empurra(disparou)
                 disparou = camada.passo(self.t, chega)
                 self.contagem[k] += disparou
+            self.t += self.dt
+        return self.contagem
+
+
+    def snapshot(self, nomes=None):
+        """
+        Estado de todas as camadas agora, mais a contagem da ultima janela.
+
+        Custo zero enquanto ninguem chama. Serve pra telemetria: o laco ao vivo
+        chama isto uma vez por janela de rede (a cada ~10 ms de mosca), nao por
+        timestep.
+        """
+        saida = []
+        for k, camada in enumerate(self.camadas):
+            item = {"index": k, "spikes": self.contagem[k].copy()}
+            if nomes and k < len(nomes):
+                item["name"] = nomes[k]
+            item.update(camada.estado())
+            saida.append(item)
+        return saida
+
+    def roda_observado(self, duracao_ms, taxas_hz, rng=None, observador=None, stride=1):
+        """
+        Igual a `roda`, mas chama `observador(t_ms, disparos_por_camada)` a cada
+        `stride` passos -- pra quem precisa do INSTANTE do spike, nao so da
+        contagem da janela.
+
+        E um metodo separado de proposito. `roda` e o caminho quente do laco ao
+        vivo e fica byte a byte como estava; assim nao existe risco de a
+        instrumentacao custar alguma coisa quando ninguem esta observando.
+
+        A matematica e a mesma e a sequencia de numeros aleatorios e a mesma,
+        entao com a mesma seed os dois produzem resultado IDENTICO. Ha teste
+        garantindo isso: visualizar nao pode mudar o que esta sendo visualizado.
+        """
+        rng = rng or np.random
+        for c in self.contagem:
+            c[:] = 0
+        p = np.asarray(taxas_hz, dtype=float) * (self.dt / 1000.0)
+        n_passos = int(round(duracao_ms / self.dt))
+        for passo in range(n_passos):
+            disparou = rng.random(self.n_entrada) < p
+            por_camada = []
+            for k, camada in enumerate(self.camadas):
+                chega = self.conexoes[k].empurra(disparou)
+                disparou = camada.passo(self.t, chega)
+                self.contagem[k] += disparou
+                if observador is not None:
+                    por_camada.append(disparou)
+            if observador is not None and passo % stride == 0:
+                observador(self.t, por_camada)
             self.t += self.dt
         return self.contagem
 
