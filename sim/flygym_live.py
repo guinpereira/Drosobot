@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import mujoco
 import mujoco.viewer
 import flygym.examples as flygym_examples
 from flygym import Fly
@@ -150,10 +151,32 @@ escape_ate = -1.0
 bal_suave = 0.0
 passo = 0
 
-print("abrindo o viewer do MuJoCo -- arraste pra girar a camera, espaco pausa, "
-      "feche a janela pra sair")
+print()
+print("Abrindo o viewer do MuJoCo.")
+print("  camera segue a mosca sozinha; arrastar gira, scroll da zoom, espaco pausa")
+print("  a ESFERA acima da mosca e o estado do circuito:")
+if MODO == "escape":
+    print("     cinza = quieto   |   amarelo = LC4/LPLC2 disparando   |   VERMELHO = fuga")
+else:
+    print("     cinza = quieto   |   azul = virando p/ esquerda   |   laranja = p/ direita")
+print("  roda ~29x mais devagar que tempo real: o movimento e lento de proposito,")
+print("  nao e travamento. O terminal atualiza a cada segundo.")
+print()
 
-with mujoco.viewer.launch_passive(sim.physics.model.ptr, sim.physics.data.ptr) as viewer:
+_modelo = sim.physics.model.ptr
+_torax = mujoco.mj_name2id(_modelo, mujoco.mjtObj.mjOBJ_BODY, "0/Thorax")
+
+with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
+    # camera colada na mosca. Sem isso ela vira um ponto no meio de uma arena
+    # enorme e a cena parece parada, porque a 29x mais devagar o deslocamento
+    # por quadro e minusculo.
+    viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    viewer.cam.trackbodyid = _torax
+    viewer.cam.distance = 12.0
+    viewer.cam.elevation = -35.0
+    viewer.cam.azimuth = 135.0
+    viewer.user_scn.ngeom = 1        # a esfera de estado, atualizada a cada quadro
+
     ultimo_log = time.time()
     while viewer.is_running():
         t_s = passo * 1e-4
@@ -209,6 +232,32 @@ with mujoco.viewer.launch_passive(sim.physics.model.ptr, sim.physics.data.ptr) a
                 else:
                     drive[0] -= -bal_suave * TURN_GAIN
                 drive = np.clip(drive, -0.5, 1.5)
+
+            # esfera de estado acima da mosca: sem ela a janela nao diz se o
+            # circuito esta fazendo alguma coisa, e a simulacao parece morta
+            if MODO == "escape":
+                if t_s < escape_ate:
+                    cor = (1.0, 0.1, 0.1, 1.0)          # vermelho: fugindo
+                elif max(hz) > 1.0:
+                    cor = (1.0, 0.85, 0.1, 1.0)         # amarelo: LC4/LPLC2 ativo
+                else:
+                    cor = (0.45, 0.45, 0.45, 1.0)       # cinza: quieto
+            else:
+                if bal_suave < -0.05:
+                    cor = (0.2, 0.45, 1.0, 1.0)         # azul: virando p/ esquerda
+                elif bal_suave > 0.05:
+                    cor = (1.0, 0.55, 0.1, 1.0)         # laranja: p/ direita
+                else:
+                    cor = (0.45, 0.45, 0.45, 1.0)
+            centro = np.asarray(obs["fly"][0], dtype=float)
+            mujoco.mjv_initGeom(
+                viewer.user_scn.geoms[0],
+                mujoco.mjtGeom.mjGEOM_SPHERE,
+                np.array([0.6, 0.0, 0.0]),
+                centro + np.array([0.0, 0.0, 3.5]),
+                np.eye(3).ravel(),
+                np.array(cor, dtype=np.float32),
+            )
 
             viewer.sync()
 

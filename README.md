@@ -316,6 +316,12 @@ viewer do MuJoCo e o estado do circuito no terminal:
 .venv\Scripts\python sim\flygym_live.py optomotor  # giro por fluxo optico
 ```
 
+A camera segue a mosca sozinha, e a **esfera acima dela mostra o estado do
+circuito** -- cinza quieto, amarelo LC4/LPLC2 disparando, vermelho fugindo (no modo
+optomotor: azul virando pra esquerda, laranja pra direita). Isso importa porque a
+29x mais devagar que tempo real o deslocamento por quadro e minusculo, e sem
+indicador a cena parece travada mesmo estando rodando.
+
 Arrastar gira a camera, scroll da zoom, espaco pausa. O terminal mostra o limiar
 acontecendo:
 
