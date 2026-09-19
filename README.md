@@ -483,7 +483,7 @@ implementacoes do cerebro divergindo em silencio.
 
 ```
 blender\export_unity.py                              # CNS -> GLB (uma vez)
-.venv\Scripts\python simlygym_live.py --telemetry   # simulacao publicando
+.venv\Scripts\python sim\flygym_live.py --telemetry   # simulacao publicando
 python -m sim.telemetry.demo                          # sem MuJoCo, so interface
 ```
 
