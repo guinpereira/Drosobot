@@ -28,6 +28,8 @@ unity/**/Build/
 unity/**/Builds/
 unity/**/Logs/
 unity/**/UserSettings/
+unity/**/PackageCache/
+unity/build.log
 unity/**/MemoryCaptures/
 unity/**/*.csproj
 unity/**/*.sln
