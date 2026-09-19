@@ -37,8 +37,8 @@ from brian2 import (
 
 sys.path.insert(0, str(Path(__file__).parent))
 from connectome_model import (  # noqa: E402
-    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST,
-    load_properties, signed_weights, side_of, nt_sign,
+    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, TONIC_INHIB_HZ,
+    load_properties, signed_weights, side_of, gf_input_population,
 )
 
 props = load_properties()
@@ -47,8 +47,10 @@ props = load_properties()
 gf_up = pd.read_csv(CONNECTOME / "gf_upstream_connections.csv")
 gf_down = pd.read_csv(CONNECTOME / "gf_downstream_connections.csv")
 GF_IDS = [10001, 10010]
-gf_sensor_ids = gf_up.groupby("bodyId_pre")["weight"].sum().sort_values(ascending=False).head(8).index.tolist()
 gf_motor_ids = gf_down[gf_down["type"] == "TTMn"]["bodyId_post"].unique().tolist()
+gf_sensor_ids, gf_is_looming, gf_is_inhib = gf_input_population(props, gf_up)
+gf_is_looming = np.array(gf_is_looming)
+gf_is_inhib = np.array(gf_is_inhib)
 
 om_sensor_hs = pd.read_csv(CONNECTOME / "opto_sensor_hs.csv")
 om_hs_dna02 = pd.read_csv(CONNECTOME / "opto_hs_dna02.csv")
@@ -63,10 +65,6 @@ om_sensor_side = [side_of(props, b) for b in om_sensor_ids]
 om_motor_side = [side_of(props, b) for b in om_motor_ids]
 MOTOR_L = np.array([i for i, s in enumerate(om_motor_side) if s == "L"])
 MOTOR_R = np.array([i for i, s in enumerate(om_motor_side) if s == "R"])
-
-# os upstream do GF que nao sao do caminho de looming ficam em taxa tonica
-gf_sensor_is_looming = np.array([nt_sign(props, b) > 0 for b in gf_sensor_ids])
-TONIC_INHIB_HZ = 20.0
 
 # ---------- rede Brian2 unica (os dois circuitos coexistem) ----------
 defaultclock.dt = 0.5 * ms
@@ -136,7 +134,7 @@ FORWARD_SPEED = 25.0
 JUMP_DIST = 40.0
 TURN_STEP_DEG = 2.0
 # mesmas faixas calibradas dos scripts de rede (ver comentarios la)
-GF_LOOM_MAX_HZ, GF_LOOM_MIN_HZ = 120.0, 5.0
+GF_LOOM_MAX_HZ, GF_LOOM_MIN_HZ = 20.0, 0.0   # por celula LC4/LPLC2 (sao 311)
 OM_FORTE_HZ, OM_FRACO_HZ = 200.0, 15.0
 
 running = True
@@ -156,7 +154,10 @@ while running:
     else:
         distance_cm = min(100.0, distance_cm + 30 * dt_real_s)
     gf_rate_hz = float(np.interp(distance_cm, [2, 100], [GF_LOOM_MAX_HZ, GF_LOOM_MIN_HZ]))
-    GF_Sensor.rate = np.where(gf_sensor_is_looming, gf_rate_hz, TONIC_INHIB_HZ) * Hz
+    taxa_gf = np.zeros(len(gf_sensor_ids))
+    taxa_gf[gf_is_looming] = gf_rate_hz          # LC4/LPLC2
+    taxa_gf[gf_is_inhib] = TONIC_INHIB_HZ        # inibitorios, tonico
+    GF_Sensor.rate = taxa_gf * Hz                # o resto fica em 0 Hz
 
     # -- a tecla escolhe o OLHO, nao a direcao do giro --
     olho = "L" if keys[pygame.K_LEFT] else ("R" if keys[pygame.K_RIGHT] else None)

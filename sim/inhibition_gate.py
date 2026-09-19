@@ -17,13 +17,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from brian2 import (
-    NeuronGroup, Synapses, SpikeMonitor, run, ms, mV, Hz, start_scope, defaultclock,
+    Network, NeuronGroup, Synapses, SpikeMonitor, ms, mV, Hz, defaultclock,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
 from connectome_model import (  # noqa: E402
-    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST,
-    load_properties, signed_weights, nt_sign,
+    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, TONIC_INHIB_HZ,
+    load_properties, signed_weights, gf_input_population,
 )
 
 HERE = Path(__file__).parent
@@ -32,17 +32,15 @@ up = pd.read_csv(CONNECTOME / "gf_upstream_connections.csv")
 down = pd.read_csv(CONNECTOME / "gf_downstream_connections.csv")
 
 GF_IDS = [10001, 10010]
-sensor_ids = up.groupby("bodyId_pre")["weight"].sum().sort_values(ascending=False).head(8).index.tolist()
 motor_ids = down[down["type"] == "TTMn"]["bodyId_post"].unique().tolist()
+sensor_ids, is_looming, is_inhib = gf_input_population(props, up)
 
-TONIC_INHIB_HZ = 20
 DURATION = 300 * ms
 N_TRIALS = 8  # Poisson e estocastico; uma corrida so nao diz nada
 
 
 def trial(loom_hz, inhib_on, seed):
     np.random.seed(seed)
-    start_scope()
     defaultclock.dt = 0.1 * ms
 
     GF = NeuronGroup(len(GF_IDS), LIF_EQS, **LIF_KWARGS)
@@ -50,9 +48,12 @@ def trial(loom_hz, inhib_on, seed):
     Motor = NeuronGroup(len(motor_ids), LIF_EQS, **LIF_KWARGS)
     Motor.v = V_REST
 
+    # LC4/LPLC2 recebem o looming, os inibitorios ficam tonicos, o resto em 0 Hz
     Sensor = NeuronGroup(len(sensor_ids), "rate : Hz", threshold="rand()<rate*dt", method="euler")
-    is_exc = np.array([nt_sign(props, b) > 0 for b in sensor_ids])
-    Sensor.rate = np.where(is_exc, loom_hz, TONIC_INHIB_HZ) * Hz
+    taxa = np.zeros(len(sensor_ids))
+    taxa[np.array(is_looming)] = loom_hz
+    taxa[np.array(is_inhib)] = TONIC_INHIB_HZ
+    Sensor.rate = taxa * Hz
 
     six = {b: i for i, b in enumerate(sensor_ids)}
     gix = {b: i for i, b in enumerate(GF_IDS)}
@@ -73,11 +74,12 @@ def trial(loom_hz, inhib_on, seed):
     S2.w = b["w_mV"].values * mV
 
     mon = SpikeMonitor(Motor)
-    run(DURATION)
+    Network(Sensor, GF, Motor, S1, S2, mon).run(DURATION)
     return mon.num_spikes
 
 
-LOOM = [5, 10, 20, 35, 50, 75, 100, 150, 200]
+# faixa por celula LC4/LPLC2 -- sao 311 delas, entao o que chega no GF e bem maior
+LOOM = [0, 1, 2, 3, 5, 7, 10, 15, 20]
 res = {True: [], False: []}
 for inhib_on in (True, False):
     for loom in LOOM:
@@ -96,7 +98,7 @@ for inhib_on, color, label in [
     ax.plot(LOOM, m, "o-", color=color, label=label)
     ax.fill_between(LOOM, m - sd, m + sd, color=color, alpha=0.15)
 
-ax.set_xlabel("intensidade do looming (Hz nos neuronios excitatorios)")
+ax.set_xlabel("intensidade do looming (Hz por celula LC4/LPLC2)")
 ax.set_ylabel(f"spikes do TTMn em {int(DURATION/ms)} ms\n(= comandos de pulo)")
 ax.set_title("A inibicao nao desliga a fuga: ela suprime alarme falso\n"
              f"media de {N_TRIALS} corridas, sombra = desvio padrao", fontsize=11)

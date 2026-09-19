@@ -148,3 +148,36 @@ def describe_drive(agg, props, label):
         return
     print(f"{label}: {int(exc)} sinapses excitatorias ({exc/total:.0%}), "
           f"{int(inh)} inibitorias ({inh/total:.0%})")
+
+
+# ---------- populacao de entrada do Giant Fiber ----------
+# Os detectores de looming que entram no GF sao LC4 e LPLC2 -- e o dataset que
+# diz: sao os unicos tipos com peso relevante entre os upstream de superclass
+# "visual_projection" (6362 e 4862 sinapses; o terceiro colocado tem 20). Bate
+# com a literatura, que descreve os dois como a via de aproximacao que dispara
+# a fuga.
+#
+# Isso corrigiu um erro: antes o "sensor visual" era os 8 upstream de maior peso,
+# que pegava DNp70 e neuronios SAD e NAO incluia nenhum LC4 ou LPLC2. Cada celula
+# LC4 tem peso pequeno (6362 espalhados em centenas de celulas) enquanto DNp70
+# sao 2 celulas de 799 e 617 -- ordenar por peso por celula escondia a via certa.
+LOOMING_TYPES = {"LC4", "LPLC2"}
+
+# Taxa de base dos inibitorios. SUPOSICAO nossa: no cerebro inteiro eles sao
+# disparados pelo resto da rede, que nao simulamos. Todo o resto fica em 0 Hz,
+# seguindo o protocolo de Shiu et al. (baseline de 0 Hz, so o sensorio e
+# estimulado) -- por Poisson de fundo em tudo, o GF dispara ate em repouso.
+TONIC_INHIB_HZ = 5.0
+
+
+def gf_input_population(props, upstream):
+    """
+    Separa os upstream do GF em looming / inibitorio / silencioso.
+
+    Devolve (ids, mascara_looming, mascara_inibitoria), na mesma ordem.
+    """
+    ids = sorted(upstream["bodyId_pre"].unique())
+    tipos = [props.at[b, "type"] if b in props.index else None for b in ids]
+    is_looming = [t in LOOMING_TYPES for t in tipos]
+    is_inhib = [nt_sign(props, b) < 0 for b in ids]
+    return ids, is_looming, is_inhib

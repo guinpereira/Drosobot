@@ -17,13 +17,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from brian2 import (
     Network, NeuronGroup, Synapses, SpikeMonitor, TimedArray,
-    ms, mV, Hz, start_scope, defaultclock,
+    ms, mV, Hz, defaultclock,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
 from connectome_model import (  # noqa: E402
-    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST,
-    load_properties, signed_weights, nt_sign,
+    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, TONIC_INHIB_HZ,
+    load_properties, signed_weights, gf_input_population,
 )
 
 HERE = Path(__file__).parent
@@ -32,28 +32,29 @@ props = load_properties()
 up = pd.read_csv(CONNECTOME / "gf_upstream_connections.csv")
 down = pd.read_csv(CONNECTOME / "gf_downstream_connections.csv")
 GF_IDS = [10001, 10010]
-sensor_ids = up.groupby("bodyId_pre")["weight"].sum().sort_values(ascending=False).head(8).index.tolist()
 motor_ids = down[down["type"] == "TTMn"]["bodyId_post"].unique().tolist()
+sensor_ids, is_looming, is_inhib = gf_input_population(props, up)
 
-start_scope()
 defaultclock.dt = 0.1 * ms
 STIM_MS = 300
-TONIC_INHIB_HZ = 20
+LOOM_MAX_HZ = 20  # por celula LC4/LPLC2 (sao 311)
 
 GF = NeuronGroup(len(GF_IDS), LIF_EQS, **LIF_KWARGS)
 GF.v = V_REST
 Motor = NeuronGroup(len(motor_ids), LIF_EQS, **LIF_KWARGS)
 Motor.v = V_REST
 
-# looming so no caminho excitatorio; os upstream inibitorios ficam tonicos
-# (nao sao detectores de aproximacao -- ver comentario em giant_fiber_network.py)
-ramp = np.linspace(5, 120, int(STIM_MS * ms / defaultclock.dt)) * Hz
+# rampa de looming nos LC4/LPLC2, tonico nos inibitorios, 0 Hz no resto
+# (mesma estrutura de giant_fiber_network.py, ver comentarios la)
+ramp = np.linspace(0, LOOM_MAX_HZ, int(STIM_MS * ms / defaultclock.dt)) * Hz
 rate_ta = TimedArray(ramp, dt=defaultclock.dt)
 Sensor = NeuronGroup(len(sensor_ids), "rate : Hz", threshold="rand()<rate*dt", method="euler")
-Sensor.variables.add_array("is_looming", size=len(sensor_ids), dtype=bool)
-Sensor.is_looming = np.array([nt_sign(props, b) > 0 for b in sensor_ids])
+Sensor.variables.add_array("looming", size=len(sensor_ids), dtype=bool)
+Sensor.looming = np.array(is_looming)
+Sensor.variables.add_array("tonico", size=len(sensor_ids), dtype=bool)
+Sensor.tonico = np.array(is_inhib)
 Sensor.run_regularly(
-    "rate = int(is_looming) * rate_ta(t) + (1 - int(is_looming)) * TONIC_INHIB_HZ * Hz",
+    "rate = int(looming) * rate_ta(t) + int(tonico) * TONIC_INHIB_HZ * Hz",
     dt=defaultclock.dt,
 )
 
@@ -95,7 +96,7 @@ for i, ti in enumerate(t):
         pos += JUMP
     x[i] = pos
 
-# "objeto se aproximando": a rampa 5->120 Hz mapeada em distancia 100cm -> 0cm
+# "objeto se aproximando": a rampa 0->20 Hz mapeada em distancia 100cm -> 0cm
 looming_distance = np.interp(t, [0, STIM_MS], [100, 0])
 
 fig, axes = plt.subplots(2, 1, sharex=True, figsize=(9, 5))

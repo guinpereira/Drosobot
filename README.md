@@ -59,59 +59,89 @@ puxa neurotransmissor e hemisferio de cada neuronio do neuPrint.
 
 ## Circuito 1 — Giant Fiber (reflexo de fuga)
 
-Pathway: **PVLP** (visual) → **DNp01** (Giant Fiber, o neuronio de fuga mais estudado
-da mosca) → **TTMn** (Tergotrochanteral Motor Neuron, motoneuronio real do musculo de pulo).
+Pathway: **LC4 / LPLC2** (deteccao de looming) → **DNp01** (Giant Fiber, o neuronio
+de fuga mais estudado da mosca) → **TTMn** (Tergotrochanteral Motor Neuron,
+motoneuronio real do musculo de pulo).
+
+O modelo usa **os 1271 neuronios pre-sinapticos do GF**, nao um recorte:
+
+| grupo | celulas | sinapses | estimulo |
+|---|---|---|---|
+| LC4 / LPLC2 (looming) | 311 | 11.224 | rampa 0→20 Hz por celula |
+| inibitorios (GABA/glutamato) | 501 | 13.122 | 5 Hz tonico |
+| resto | 459 | — | 0 Hz |
 
 ![Raster Giant Fiber](docs/images/giant_fiber_raster.png)
 
-O potencial do GF fica preso abaixo do repouso enquanto o looming e fraco, e so
-cruza o limiar quando a entrada excitatoria vence — o escape aparece depois de
-~100 ms, esparso. Repare que so o TTMn direito dispara: no dado, DNp01_R → TTMn_R
-tem peso 70 contra 20 do lado esquerdo.
+A inibicao (vermelho) empurra o potencial do GF ate −120 mV enquanto o looming
+(azul) ainda e fraco. Conforme a rampa sobe, a excitacao vence, o potencial cruza
+o limiar em ~100 ms e a fuga sai em 140 ms. Repare que so o TTMn direito dispara
+quase sempre: no dado, DNp01_R → TTMn_R tem peso 70 contra 20 do lado esquerdo.
+
+### Achar o sensor certo
+
+O "sensor visual" costumava ser os 8 upstream de maior peso — e esse conjunto
+**nao continha nenhum LC4 nem LPLC2**, justamente os tipos que a literatura
+descreve como a via de aproximacao que dispara a fuga. Ordenar por peso por
+celula escondia a via certa: cada LC4 tem peso pequeno e sao centenas delas,
+enquanto DNp70 sao 2 celulas de 799 e 617 sinapses.
+
+Quem apontou o caminho certo foi a anotacao do proprio dataset. Entre os upstream
+de superclass `visual_projection`, so dois tipos tem peso relevante:
+
+```
+LC4     6362 sinapses
+LPLC2   4862
+LoVP85    20     <- o terceiro colocado ja e ruido
+```
 
 ### O que a inibicao faz aqui
 
-Quando o modelo tratava tudo como excitatorio, o peso dos neuronios inibitorios
-empurrava pro lado errado. Com o sinal correto, o balanco dos 8 upstream mais
-fortes do GF e:
-
-| neuronio | neurotransmissor | efeito | peso |
-|---|---|---|---|
-| DNp70(CL305)_L | acetilcolina | excita | 799 |
-| DNp70(CL305)_R | acetilcolina | excita | 617 |
-| PVLP010_L | glutamato | **inibe** | 414 |
-| SAD109_M | GABA | **inibe** | 360 |
-| SAD091_M | GABA | **inibe** | 348 |
-| SAD073_R | GABA | **inibe** | 324 |
-| SAD073_L | GABA | **inibe** | 324 |
-| PVLP010_R | glutamato | **inibe** | 297 |
-
-**59% do peso e inibitorio.** A pergunta obvia: isso nao deveria matar a fuga?
-Nao — desligando so as sinapses inibitorias e deixando o resto igual:
+Dos 1271 upstream, 501 sao inibitorios e carregam 36% do peso. Desligando **so**
+as sinapses inibitorias e deixando todo o resto igual:
 
 ![Inibicao como portao](docs/images/inhibition_gate.png)
 
-Em looming fraco (20 Hz) a inibicao derruba os disparos de pulo de 3,4 para 0,6,
-**5,7x menos alarme falso**; em estimulo forte as duas curvas convergem. Ou seja,
-a inibicao nao desliga o reflexo, ela levanta o limiar de evidencia necessario —
-que e exatamente o papel de portao que a literatura do Giant Fiber descreve.
-Isso saiu do dado depois de corrigir o sinal, nao de ajuste de parametro.
+| looming (Hz/celula) | com inibicao | sem inibicao |
+|---|---|---|
+| 2 | 0,0 | 2,0 |
+| 3 | 0,0 | 7,1 |
+| 5 | 0,1 | 16,2 |
+| 10 | 11,4 | 31,5 |
+| 20 | 38,4 | 46,9 |
+
+Ate 5 Hz a inibicao zera a fuga enquanto o circuito sem ela ja pula; em estimulo
+forte as curvas convergem. A inibicao nao desliga o reflexo, ela levanta o limiar
+de evidencia — o papel de portao que a literatura do Giant Fiber descreve. Saiu
+do dado depois de corrigir o sinal, nao de ajuste de parametro.
+
+### Um resultado negativo que vale registrar
+
+A primeira tentativa de modelar os 1271 upstream deu **Poisson de fundo em todos
+eles**. O GF passou a disparar 23 vezes em repouso, sem nenhum estimulo.
+
+O motivo: com `W_sinapse` = 0,275 mV e limiar 7 mV acima do repouso, qualquer
+conexao de 25 sinapses ou mais e supralimiar com **um** spike. No modelo de cerebro
+inteiro isso e absorvido pela inibicao recorrente da rede toda; num recorte de duas
+camadas, nao. Shiu et al. tratam disso com baseline de 0 Hz — nada dispara
+espontaneamente, so o sensorio e estimulado. Adotamos o mesmo protocolo, e por
+isso os 459 neuronios que nao sao nem looming nem inibitorios ficam em 0 Hz.
+
+A taxa tonica de 5 Hz nos inibitorios continua sendo **suposicao nossa**: o
+conectoma diz quem inibe e com que forca, nao a que taxa esses neuronios disparam.
+Eles ficam ativos porque no cerebro inteiro quem os dispara e o resto da rede, que
+nao simulamos.
 
 Robo digital reagindo ao disparo real (pulo pra tras a cada spike do TTMn):
 
 ![Robo reagindo - Giant Fiber](docs/images/digital_robot_reaction.png)
 
-Uma ressalva honesta: o GF real dispara 1 ou 2 spikes por episodio de fuga, e o
-nosso dispara dezenas. O refratario de 2,2 ms de Shiu et al. e um valor generico
-pra todo neuronio do cerebro; nao captura o comportamento de tiro unico do GF.
+Ressalva honesta: o GF real dispara 1 ou 2 spikes por episodio de fuga, e o nosso
+dispara dezenas. O refratario de 2,2 ms de Shiu et al. e generico pra todo neuronio
+do cerebro e nao captura o comportamento de tiro unico do GF. Modelar a entrada
+inteira melhorou o limiar (silencio real em repouso e abaixo de 5 Hz), mas nao
+resolveu a taxa de disparo acima do limiar.
 
-O estimulo tambem nao entra igual em todo mundo: a rampa de looming vai so nos
-neuronios colinergicos (os DNp70, que estao no caminho visual de aproximacao), e
-os inibitorios ficam numa taxa tonica de 20 Hz. SAD073/091/109 sao subesofagicos e
-nao sao detectores de looming — dispara-los junto com o objeto se aproximando
-seria artefato de ter escolhido "sensor" por peso bruto, numa epoca em que o
-sinal era ignorado. Essa taxa tonica e **suposicao nossa**: o conectoma diz quem
-inibe e com que forca, nao a que taxa esses neuronios disparam em repouso.
 
 ## Circuito 2 — Optomotor (vira em resposta a movimento visual)
 
@@ -370,8 +400,10 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Sinal da sinapse vindo do neurotransmissor real (nao mais tudo excitatorio)
       e biofisica publicada de Shiu et al. 2024 no lugar do LIF sem unidade
 - [x] Dois hemisferios separados no optomotor: a direcao do giro sai do circuito
-- [ ] Refratario especifico do Giant Fiber (o generico de 2,2 ms nao captura o
-      comportamento de tiro unico documentado)
+- [x] Entrada real do Giant Fiber: 1271 upstream, com LC4/LPLC2 como via de
+      looming (o top-8 por peso nao continha nenhum dos dois)
+- [ ] Taxa de disparo do GF acima do limiar: dispara dezenas de vezes onde o real
+      dispara 1 ou 2. O refratario generico de 2,2 ms nao captura o tiro unico
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta

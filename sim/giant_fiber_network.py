@@ -1,14 +1,32 @@
 """
-Circuito Giant Fiber (DNp01) com peso E SINAL reais do Male CNS.
-sensor (top upstream por peso) -> GF (DNp01 L/R) -> TTMn (motoneuronio de pulo)
+Circuito Giant Fiber (DNp01) com a entrada REAL do neuronio, nao um recorte.
 
-Duas coisas mudaram em relacao a v1:
+LC4 e LPLC2 (deteccao de looming) -> GF (DNp01 L/R) -> TTMn (motoneuronio de pulo),
+com os 1271 neuronios pre-sinapticos do GF no modelo, nao os 8 de maior peso.
 
-- o sinal da sinapse agora vem do neurotransmissor do neuronio pre-sinaptico,
-  nao e mais "tudo excitatorio". Isso importa muito aqui: 6 dos 8 upstream mais
-  fortes do Giant Fiber sao GABA ou glutamato, e carregam 59% do peso total.
-- LIF unitless com ganho por camada deu lugar a biofisica publicada de
-  Shiu et al. 2024 (ver sim/connectome_model.py). W_SYN e o unico parametro livre.
+Tres coisas mudaram em relacao a v1:
+
+- **sensor certo**. Antes o "sensor visual" eram os 8 upstream de maior peso, que
+  pegava DNp70 e neuronios SAD e nao incluia nenhum LC4 nem LPLC2 -- justamente os
+  tipos que o dataset aponta como a via visual de aproximacao (ver comentario em
+  connectome_model.py). Ordenar por peso por celula escondia a via certa, porque
+  cada LC4 tem peso pequeno e sao centenas delas.
+- **sinal da sinapse** vem do neurotransmissor do pre-sinaptico, nao e mais
+  "tudo excitatorio". Dos 1271 upstream, 501 sao inibitorios (13122 sinapses).
+- **biofisica publicada** de Shiu et al. 2024 no lugar de LIF sem unidade com
+  ganho por camada. W_SYN e o unico parametro livre.
+
+Quem dispara e quem fica quieto, seguindo o protocolo de Shiu et al. (baseline de
+0 Hz, so o sensorio recebe estimulo):
+
+- LC4/LPLC2      -> rampa de looming
+- inibitorios    -> taxa tonica de base (SUPOSICAO nossa: no cerebro inteiro quem
+                    dispara eles e o resto da rede, que nao simulamos)
+- todo o resto   -> 0 Hz
+
+Poisson de fundo em todos os 1271 nao funciona: o GF passa a disparar ate em
+repouso, porque com W_SYN do Shiu qualquer conexao de 25 sinapses ou mais ja
+cruza o limiar com um spike so.
 """
 import sys
 from pathlib import Path
@@ -17,14 +35,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from brian2 import (
-    NeuronGroup, Synapses, SpikeMonitor, StateMonitor, TimedArray,
-    run, ms, mV, Hz, start_scope, defaultclock,
+    Network, NeuronGroup, Synapses, SpikeMonitor, StateMonitor, TimedArray,
+    ms, mV, Hz, defaultclock,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
 from connectome_model import (  # noqa: E402
-    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, V_RESET, V_THRESHOLD,
-    TAU_MBR, TAU_SYN, load_properties, signed_weights, describe_drive, nt_sign,
+    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, V_THRESHOLD,
+    TONIC_INHIB_HZ, load_properties, signed_weights, describe_drive,
+    gf_input_population,
 )
 
 HERE = Path(__file__).parent
@@ -34,119 +53,109 @@ up = pd.read_csv(CONNECTOME / "gf_upstream_connections.csv")
 down = pd.read_csv(CONNECTOME / "gf_downstream_connections.csv")
 
 GF_IDS = [10001, 10010]  # DNp01 R, L
-sensor_ids = up.groupby("bodyId_pre")["weight"].sum().sort_values(ascending=False).head(8).index.tolist()
 motor_ids = down[down["type"] == "TTMn"]["bodyId_post"].unique().tolist()
+sensor_ids, is_looming, is_inhib = gf_input_population(props, up)
 
-print("Sensores (top-8 upstream do GF):")
-for b in sensor_ids:
-    peso = int(up[up["bodyId_pre"] == b]["weight"].sum())
-    s = nt_sign(props, b)
-    print(f"  {props.at[b,'instance']:<16} {props.at[b,'consensusNt']:<14} "
-          f"{'excita' if s > 0 else 'INIBE ':<7} peso {peso}")
+peso = up.groupby("bodyId_pre")["weight"].sum()
+n_silencioso = sum(1 for a, b in zip(is_looming, is_inhib) if not a and not b)
+print(f"Upstream do GF no modelo: {len(sensor_ids)} neuronios")
+print(f"  looming (LC4/LPLC2): {sum(is_looming):4d} celulas, "
+      f"{int(peso[np.array(sensor_ids)[is_looming]].sum()):6d} sinapses  -> rampa")
+print(f"  inibitorios:         {sum(is_inhib):4d} celulas, "
+      f"{int(peso[np.array(sensor_ids)[is_inhib]].sum()):6d} sinapses  -> {TONIC_INHIB_HZ:.0f} Hz tonico")
+print(f"  resto:               {n_silencioso:4d} celulas                    -> 0 Hz")
 
-start_scope()
 defaultclock.dt = 0.1 * ms
 STIM = 300 * ms
+# 0 -> 20 Hz POR CELULA LC4/LPLC2. Parece baixo perto da rampa ate 120 Hz da
+# versao antiga, mas antes eram 2 celulas colinergicas carregando o estimulo e
+# agora sao 311 -- o que chega no GF e muito maior.
+LOOM_MAX_HZ = 20
 
 GF = NeuronGroup(len(GF_IDS), LIF_EQS, **LIF_KWARGS)
 GF.v = V_REST
 Motor = NeuronGroup(len(motor_ids), LIF_EQS, **LIF_KWARGS)
 Motor.v = V_REST
 
-# Estimulo. Nem todo upstream do GF e um detector de looming: dos 8 mais fortes,
-# so os DNp70 (colinergicos) estao no caminho visual de aproximacao. SAD073/091/109
-# sao subesofagicos e PVLP010 e glutamatergico -- disparar todos eles em rampa junto
-# com o objeto se aproximando nao e biologia, e artefato de ter escolhido "sensor"
-# por peso bruto, quando o sinal ainda era ignorado.
-#
-# Entao: rampa de looming so no caminho excitatorio; os inibitorios ficam em taxa
-# tonica de base. Isso da a inibicao o papel que a literatura do Giant Fiber
-# descreve -- portao que segura o pulo, evitando alarme falso -- em vez de um
-# freio que cresce junto com o proprio estimulo.
-#
-# TONIC_INHIB_HZ e SUPOSICAO nossa, nao vem do conectoma: o dado diz quem inibe e
-# com que forca, nao a que taxa esses neuronios disparam em repouso.
-TONIC_INHIB_HZ = 20 * Hz
-
-# 5 -> 120 Hz. A faixa importa agora que o modelo tem unidade: Shiu et al.
-# calibraram W_SYN com entrada sensorial em torno de 100 Hz. A rampa ate 400 Hz
-# da versao antiga foi ajustada pro LIF unitless e aqui satura o circuito.
-ramp = np.linspace(5, 120, int(STIM / defaultclock.dt)) * Hz
+ramp = np.linspace(0, LOOM_MAX_HZ, int(STIM / defaultclock.dt)) * Hz
 rate_ta = TimedArray(ramp, dt=defaultclock.dt)
 Sensor = NeuronGroup(len(sensor_ids), "rate : Hz", threshold="rand()<rate*dt", method="euler")
-excitatory_mask = np.array([nt_sign(props, b) > 0 for b in sensor_ids])
-Sensor.rate = TONIC_INHIB_HZ
-Sensor.run_regularly("rate = int(is_looming) * rate_ta(t) + (1 - int(is_looming)) * TONIC_INHIB_HZ",
-                     dt=defaultclock.dt)
-Sensor.variables.add_array("is_looming", size=len(sensor_ids), dtype=bool)
-Sensor.is_looming = excitatory_mask
+Sensor.variables.add_array("looming", size=len(sensor_ids), dtype=bool)
+Sensor.looming = np.array(is_looming)
+Sensor.variables.add_array("tonico", size=len(sensor_ids), dtype=bool)
+Sensor.tonico = np.array(is_inhib)
+Sensor.run_regularly(
+    "rate = int(looming) * rate_ta(t) + int(tonico) * TONIC_INHIB_HZ * Hz",
+    dt=defaultclock.dt,
+)
 
 sensor_ix = {b: i for i, b in enumerate(sensor_ids)}
 gf_ix = {b: i for i, b in enumerate(GF_IDS)}
 motor_ix = {b: i for i, b in enumerate(motor_ids)}
 
-
-def connect(source, target, conn, src_ix, tgt_ix, label):
-    agg = signed_weights(conn, props)
-    agg = agg[agg["bodyId_pre"].isin(src_ix) & agg["bodyId_post"].isin(tgt_ix)]
-    describe_drive(agg, props, f"  {label}")
-    S = Synapses(source, target, "w : volt", on_pre="g_post += w", delay=T_DELAY)
-    S.connect(i=[src_ix[b] for b in agg["bodyId_pre"]],
-              j=[tgt_ix[b] for b in agg["bodyId_post"]])
-    S.w = agg["w_mV"].values * mV
-    return S
-
-
 print("\nBalanco do drive (sinapses EM, sinal pelo neurotransmissor):")
-S_sg = connect(Sensor, GF, up, sensor_ix, gf_ix, "sensor -> GF   ")
-S_gm = connect(GF, Motor, down, gf_ix, motor_ix, "GF     -> TTMn ")
+synapses = []
+for src, tgt, conn, si, ti, label in [
+    (Sensor, GF, up, sensor_ix, gf_ix, "upstream -> GF  "),
+    (GF, Motor, down, gf_ix, motor_ix, "GF       -> TTMn"),
+]:
+    agg = signed_weights(conn, props)
+    agg = agg[agg["bodyId_pre"].isin(si) & agg["bodyId_post"].isin(ti)]
+    describe_drive(agg, props, "  " + label)
+    S = Synapses(src, tgt, "w : volt", on_pre="g_post += w", delay=T_DELAY)
+    S.connect(i=[si[b] for b in agg["bodyId_pre"]], j=[ti[b] for b in agg["bodyId_post"]])
+    S.w = agg["w_mV"].values * mV
+    synapses.append(S)
 
 mon_sensor = SpikeMonitor(Sensor)
 mon_gf = SpikeMonitor(GF)
 mon_motor = SpikeMonitor(Motor)
 trace_gf = StateMonitor(GF, "v", record=True)
 
-run(STIM)
+Network(Sensor, GF, Motor, *synapses,
+        mon_sensor, mon_gf, mon_motor, trace_gf).run(STIM)
 
-print(f"\nSpikes -- Sensor: {mon_sensor.num_spikes}  GF: {mon_gf.num_spikes}  TTMn: {mon_motor.num_spikes}")
+print(f"\nSpikes -- Sensor: {mon_sensor.num_spikes}  GF: {mon_gf.num_spikes}  "
+      f"TTMn: {mon_motor.num_spikes}")
 if mon_motor.num_spikes:
-    print(f">>> ESCAPE em t={float(mon_motor.t[0]/ms):.1f}ms")
+    t0 = float(mon_motor.t[0] / ms)
+    print(f">>> ESCAPE em t={t0:.1f}ms (looming em {t0 / float(STIM/ms) * LOOM_MAX_HZ:.1f} Hz por celula)")
 else:
-    v_max = float(trace_gf.v.max() / mV)
-    print(f">>> Sem escape. Pico do GF: {v_max:.2f} mV (limiar {float(V_THRESHOLD/mV):.0f} mV, "
-          f"repouso {float(V_REST/mV):.0f} mV)")
+    print(f">>> Sem escape. Pico do GF: {float(trace_gf.v.max()/mV):.2f} mV "
+          f"(limiar {float(V_THRESHOLD/mV):.0f} mV)")
 
 # ---------- raster ----------
 fig, axes = plt.subplots(4, 1, sharex=True, figsize=(9, 8),
                          gridspec_kw={"height_ratios": [2, 2, 1, 1]})
 
-for i, b in enumerate(sensor_ids):
-    t = mon_sensor.t[mon_sensor.i == i] / ms
-    exc = nt_sign(props, b) > 0
-    axes[0].plot(t, np.full_like(t, i), ".", ms=2,
-                 color="#2a7fff" if exc else "#d62728")
-axes[0].set_yticks(range(len(sensor_ids)))
-axes[0].set_yticklabels([props.at[b, "instance"] for b in sensor_ids], fontsize=7)
-axes[0].set_ylabel("Sensores")
-axes[0].set_title("Giant Fiber -- Male CNS, sinal da sinapse pelo neurotransmissor real\n"
-                  "azul = excitatorio (ACh)   vermelho = inibitorio (GABA/glutamato)", fontsize=10)
+loom_idx = {i for i, v in enumerate(is_looming) if v}
+inh_idx = {i for i, v in enumerate(is_inhib) if v}
+ti_all = mon_sensor.t / ms
+ii_all = np.asarray(mon_sensor.i)
+for nome, idxs, cor in [("looming (LC4/LPLC2)", loom_idx, "#2a7fff"),
+                        ("inibitorios", inh_idx, "#d62728")]:
+    m = np.isin(ii_all, list(idxs))
+    axes[0].plot(ti_all[m], ii_all[m], ".", ms=1, color=cor, label=nome)
+axes[0].set_ylabel("upstream do GF\n(1271 neuronios)")
+axes[0].legend(fontsize=7, loc="upper left", markerscale=6)
+axes[0].set_title("Giant Fiber -- entrada real do neuronio (1271 upstream), "
+                  "sinal pelo neurotransmissor", fontsize=10)
 
 for i, b in enumerate(GF_IDS):
-    axes[1].plot(trace_gf.t / ms, trace_gf.v[i] / mV, lw=1,
-                 label=props.at[b, "instance"])
+    axes[1].plot(trace_gf.t / ms, trace_gf.v[i] / mV, lw=1, label=props.at[b, "instance"])
 axes[1].axhline(float(V_THRESHOLD / mV), color="k", ls="--", lw=0.8, label="limiar")
 axes[1].axhline(float(V_REST / mV), color="gray", ls=":", lw=0.8, label="repouso")
 axes[1].set_ylabel("GF  v (mV)")
 axes[1].legend(fontsize=7, loc="upper left")
 
-axes[2].plot(mon_gf.t / ms, mon_gf.i, "o", color="crimson", ms=5)
+axes[2].plot(mon_gf.t / ms, mon_gf.i, "o", color="crimson", ms=4)
 axes[2].set_ylabel("GF spikes")
 axes[2].set_ylim(-0.5, len(GF_IDS) - 0.5)
 
 axes[3].plot(mon_motor.t / ms, mon_motor.i, "s", color="darkgreen", ms=5)
 axes[3].set_ylabel("TTMn")
 axes[3].set_ylim(-0.5, max(len(motor_ids) - 0.5, 0.5))
-axes[3].set_xlabel("tempo (ms) -- taxa do sensor sobe em rampa (looming)")
+axes[3].set_xlabel(f"tempo (ms) -- looming sobe de 0 a {LOOM_MAX_HZ} Hz por celula LC4/LPLC2")
 
 plt.tight_layout()
 out = HERE.parent / "docs" / "images" / "giant_fiber_raster.png"
