@@ -259,9 +259,11 @@ retina do flygym (2 olhos x 721 omatideos)
   -> a mosca anda e vira -> o mundo muda na retina -> fecha o laco
 ```
 
+![Mosca andando no MuJoCo](docs/images/flygym_optomotor.gif)
+
 ![Laco fechado no MuJoCo](docs/images/flygym_optomotor.png)
 
-Video: [`docs/images/flygym_optomotor.mp4`](docs/images/flygym_optomotor.mp4)
+Video em resolucao cheia: [`docs/images/flygym_optomotor.mp4`](docs/images/flygym_optomotor.mp4)
 
 O encaixe e direto de um jeito que vale apontar: o `HybridTurningController` recebe
 o que a documentacao dele chama de *"descending signal encoding turning"*, de dois
@@ -304,14 +306,52 @@ amostra nao sustenta. A direcao do giro continua vindo de qual lado disparou.
   via `importlib` apontando pro arquivo.
 
 
+### Assistir ao vivo
+
+Os dois scripts acima rodam headless e cospem video. Pra ver acontecendo, com o
+viewer do MuJoCo e o estado do circuito no terminal:
+
+```
+.venv\Scripts\python sim\flygym_live.py            # Giant Fiber (objeto aproximando)
+.venv\Scripts\python sim\flygym_live.py optomotor  # giro por fluxo optico
+```
+
+Arrastar gira a camera, scroll da zoom, espaco pausa. O terminal mostra o limiar
+acontecendo:
+
+```
+t= 2.95s  objeto  12.1mm  LC4/LPLC2 L=  6.2 R=  4.7 Hz  TTMn=51  andando
+t= 3.01s  objeto  10.2mm  LC4/LPLC2 L=  0.0 R=  6.8 Hz  TTMn=51  andando
+t= 3.04s  objeto   9.2mm  LC4/LPLC2 L= 12.0 R=  8.0 Hz  TTMn=53  FUGA
+```
+
+Dispara perto de 9 mm, quando a taxa cruza ~10 Hz -- que e onde a curva do portao
+(`sim/inhibition_gate.py`) diz que a fuga comeca.
+
+Roda cerca de 35x mais devagar que tempo real, entao um ciclo de aproximacao leva
+uns 28 s de relogio. Pra assistir isso ate ajuda. Duas coisas foram decisivas pra
+chegar nessa velocidade, e valem pra quem for mexer:
+
+- **`net.run()` do Brian2 tem ~113 ms de overhead FIXO por chamada**, independente
+  da duracao simulada: medimos `run(2ms)` e `run(20ms)` custando o mesmo. Chamar a
+  cada 2 ms de mosca fazia a janela arrastar. Em janela de 10 ms o custo cai 5x.
+- **Renderizar a retina domina o passo de fisica.** A 500 Hz, o custo era 30 s por
+  segundo de mosca; a 100 Hz cai muito e ainda sobram 80 amostras por ciclo.
+
+Cuidado ao mexer nisso: a adaptacao do fundo do detector de looming e 0,3 s de
+tempo real, mas no codigo vira numero de atualizacoes de retina. Mudar a taxa da
+retina sem recalcular deixa a adaptacao 5x mais lenta sem avisar.
+
 ### Giant Fiber no mesmo laco: objeto aproxima, a mosca recua
 
 `sim/flygym_escape.py` leva o circuito de fuga pro corpo biomecanico. Uma esfera se
 aproxima de frente em ciclos: vem de 30 mm ate 4 mm, some, reaparece longe, repete.
 
+![Esfera se aproximando da mosca](docs/images/flygym_escape.gif)
+
 ![Giant Fiber no MuJoCo](docs/images/flygym_escape.png)
 
-Video: [`docs/images/flygym_escape.mp4`](docs/images/flygym_escape.mp4)
+Video em resolucao cheia: [`docs/images/flygym_escape.mp4`](docs/images/flygym_escape.mp4)
 
 A taxa de LC4/LPLC2 sobe acompanhando a aproximacao e zera quando o objeto reinicia
 longe. GF e TTMn disparam em rajada so perto do fim de cada ciclo, e o comando de
@@ -481,7 +521,7 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
   regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
   `flygym_optomotor.py` e `flygym_escape.py` fecham o laco no corpo
-  biomecanico em MuJoCo
+  biomecanico em MuJoCo, `flygym_live.py` mostra isso numa janela
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
@@ -508,6 +548,7 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
       real -> marcha da mosca biomecanica em MuJoCo (`sim/flygym_optomotor.py`)
 - [x] Giant Fiber no mesmo laco 3D: esfera aproximando dispara recuo
       (`sim/flygym_escape.py`)
+- [x] Janela ao vivo do laco 3D (`sim/flygym_live.py`) e GIFs no README
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
