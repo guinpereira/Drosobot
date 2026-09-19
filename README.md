@@ -80,6 +80,80 @@ freios foram empilhados junto (o cooldown multiplicou o efeito do grau baixo).
 Solução: manter só 1 parâmetro (2°/spike) e deixar a velocidade real do circuito
 (refratário de 20ms do DNa02) decidir o ritmo, sem freio artificial por cima.
 
+## Visualização 3D — a morfologia real dos neurônios usados
+
+Os dois circuitos acima não são grafo abstrato: cada neurônio tem morfologia 3D
+reconstruída por microscopia eletrônica. `blender/render_circuits.py` monta a cena
+no Blender com a malha do cérebro+VNC do Male CNS (template `JRCFIB2022M`, via
+`navis-flybrains`) e os esqueletos reais dos 54 neurônios das duas simulações,
+coloridos por papel no circuito.
+
+![CNS frontal com os dois circuitos](docs/images/cns_circuitos_frontal.png)
+
+| cor | grupo | papel |
+|---|---|---|
+| vermelho | `gf_dnp01_giantfiber` | Giant Fiber (DNp01) |
+| laranja | `gf_ttmn_motor` | motoneurônio de pulo (TTMn) |
+| azul | `gf_sensor_visual` | entrada visual (PVLP) |
+| azul claro | `om_sensor_t4t5` | detecção de movimento (T4/T5) |
+| amarelo | `om_hs_widefield` | integração wide-field (HS) |
+| verde | `om_dna02_steering` | comando de giro (DNa02) |
+| magenta | `om_leg_motor` | motoneurônio de perna |
+
+A vista frontal é a melhor checagem de sanidade do pipeline: os dois hemisférios
+espelham limpo. Escala ou eixo errados quebrariam essa simetria na hora.
+
+A espessura não é decorativa — usa o raio real de cada ponto do SWC. Por isso o
+Giant Fiber aparece visivelmente mais grosso que o resto: ele é o axônio de maior
+calibre do CNS da mosca (raio até 964 unidades contra mediana 32).
+
+![CNS em perspectiva](docs/images/cns_circuitos_perspectiva.png)
+
+### Como rodar
+
+```
+.venv\Scripts\python connectome\fetch_skeletons_for_blender.py   # gera .swc + .obj (uma vez)
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --python blender\render_circuits.py
+```
+
+Pra regerar as imagens acima sem abrir janela: `blender.exe --background --python blender\render_doc.py`.
+
+O Python embutido do Blender é isolado (ignora user-site e `PYTHONPATH`), então o
+`navis` precisa ser instalado num diretório próprio que o script insere no
+`sys.path`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.2\5.2\python\bin\python.exe" -m pip install --target blender\_pylibs navis
+```
+
+`blender/_pylibs/`, os `.swc` e os `.obj` são gerados/vendorizados (~420 MB) e não
+sobem pro git, igual os CSV do `connectome/`.
+
+### Percalços reais, documentados pra não repetir
+
+Os neurônios simplesmente **não apareciam** na cena — carregavam sem erro, 54
+objetos com nome certo, nada visível. Quatro causas empilhadas:
+
+1. **`navis.interfaces.blender.Handler` tem `scaling=1/10000` por padrão.** Ele
+   aplica isso *em cima* de qualquer escala já aplicada no neurônio. O esqueleto
+   ficava 10.000x menor que a malha — um ponto preto perto da origem. Toda a
+   conversão (voxel → nm → viewport) deve ir no construtor do `Handler`, e só lá.
+2. **Unidade.** O esqueleto do neuPrint vem em voxel (`n.units == "8 nanometer"`),
+   a malha do `flybrains` já vem em nanômetro puro. Sem o fator 8 o neurônio sai
+   8x menor.
+3. **`bpy.ops.wm.obj_import` converte eixo por padrão** (OBJ Y-up → Blender Z-up,
+   troca Y↔Z e nega um deles). Os esqueletos entram pelo navis sem essa conversão,
+   então malha e neurônio ficavam em orientações diferentes. Corrigido com
+   `forward_axis='Y', up_axis='Z'`.
+4. **Bevel chapado escondia a estrutura.** `bevel_depth` fixo era ~8x a mediana do
+   raio real, e os arbores finos inchavam até se fundirem num bloco sólido.
+   `use_radii=True` usa o raio real por ponto.
+
+Lição de método: `obj.dimensions` levou a diagnóstico errado por um bom tempo. Com
+um bevel grosso numa curva minúscula, ele reporta basicamente o bevel — mudar a
+escala dos pontos quase não mexia no número. `blender/diagnose.py` calcula o bbox
+percorrendo os pontos da curva com a matriz de mundo, que é o que de fato mede.
+
 ## Firmware — testado no Wokwi, sem placa física
 
 Ponte "burra" de propósito (`hardware/motor_bridge`): só lê HC-SR04 e executa o
@@ -142,6 +216,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - `connectome/` — scripts de fetch no neuPrint + CSV de conectividade (dado bruto, não sobe pro git)
 - `sim/` — simulações Brian2 (rede spiking com peso sináptico real) + imagens de resultado
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
+- `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
+  `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
 - `docs/images/` — imagens usadas neste README
 
 ## Roadmap / Status
@@ -152,6 +228,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Circuito 2 (Optomotor) — fetch, rede, robô digital virando
 - [x] Combinar os dois circuitos num robô só, ao vivo, controlado por teclado (`sim/live_robot_sim.py`), com HUD e prioridade escape > giro validados visualmente
 - [x] Firmware com drive diferencial (2 motores, `E`/`L`/`R`, prioridade escape > giro)
+- [x] Visualizacao 3D da morfologia real dos 54 neuronios sobre a malha do CNS
+      (`blender/render_circuits.py`), validada pela simetria bilateral
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta

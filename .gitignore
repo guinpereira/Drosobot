@@ -8,3 +8,10 @@ connectome/*.parquet
 *.egg-info/
 .ipynb_checkpoints/
 hardware/**/build/
+
+# blender: libs vendorizadas (navis instalado a parte porque o Python do Blender
+# e isolado e ignora user-site) + dado gerado pelo fetch. 420MB, nao vai pro git.
+blender/_*
+blender/skeletons/
+blender/*.obj
+blender/HANDOFF_PROMPT.md
