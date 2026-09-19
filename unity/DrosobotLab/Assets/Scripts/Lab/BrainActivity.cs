@@ -216,6 +216,10 @@ namespace Drosobot.Lab
                     ? bruto
                     : softClip + Mathf.Log(1f + (bruto - softClip));
 
+                bool selecionado = n.bodyId == SelectedBodyId;
+                if (SelectedBodyId >= 0 && !selecionado) i *= 0.25f;   // atenua o resto
+                if (selecionado) i += 0.5f + 0.35f * Mathf.Sin(Time.time * 6f);
+
                 var albedo = n.roleColor * Mathf.Clamp01(0.45f + i * 0.35f);
                 n.block.SetColor(EmissionColor, n.roleColor * i);
                 n.block.SetColor(ColorBuiltIn, albedo);
@@ -244,5 +248,41 @@ namespace Drosobot.Lab
         }
 
         public IEnumerable<long> MappedBodyIds() => _porBodyId.Keys;
+
+        // ---------------------------------------------------------- selecao
+
+        public long SelectedBodyId { get; private set; } = -1;
+
+        /// <summary>
+        /// Neuronio sob o raio, ou -1.
+        ///
+        /// Testa contra o bounding box de cada renderer, nao contra a malha. Sao
+        /// 54 testes, entao e barato, mas um neuronio ramificado tem um box bem
+        /// maior que ele -- em regiao densa a selecao pode pegar o vizinho.
+        /// Colisor de malha aqui custaria construir 54 MeshColliders sobre
+        /// geometria de centenas de milhares de triangulos.
+        /// </summary>
+        public long Pick(Ray raio)
+        {
+            long achado = -1;
+            float maisPerto = float.MaxValue;
+            foreach (var kv in _porBodyId)
+            {
+                var n = kv.Value;
+                if (!n.renderer.enabled) continue;
+                if (!n.renderer.bounds.IntersectRay(raio, out float dist)) continue;
+                if (dist < maisPerto) { maisPerto = dist; achado = n.bodyId; }
+            }
+            SelectedBodyId = achado;
+            return achado;
+        }
+
+        public void ClearSelection() => SelectedBodyId = -1;
+
+        /// <summary>Atividade recente do selecionado, pra alimentar o grafico.</summary>
+        public float SelectedActivity()
+        {
+            return _porBodyId.TryGetValue(SelectedBodyId, out var n) ? n.recentRate : 0f;
+        }
     }
 }

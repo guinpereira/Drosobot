@@ -81,7 +81,30 @@ ao vivo e replay.
 
 ### 5. Unity
 
-![Drosobot Lab rodando](images/drosobot_lab_unity.png)
+![Drosobot Lab rodando](images/drosobot_lab_paineis.png)
+
+Paineis:
+
+- **SINAIS** (canto inferior esquerdo): janela rolante de taxa sensorial por olho
+  e spikes motores por hemisferio. Cada rotulo sai na cor da procedencia.
+- **VISAO** (direita): os 721 omatideos de cada olho. A grade **nao e
+  retinotopica** -- e leitura por omatideo na ordem em que o FlyGym entrega, nao
+  mapa espacial do olho. Dito no codigo pra ninguem ler posicao onde nao ha.
+- **INSPECTOR**: botao direito seleciona um neuronio, ESC limpa. Cada campo sai
+  com sua etiqueta:
+
+![Inspector](images/drosobot_lab_inspector.png)
+
+```
+bodyId            DATA    10580
+type              DATA    DNp70
+group             DATA    gf_sensor_visual
+side              DATA    L
+neurotransmitter  DATA    acetylcholine
+polarity          MODEL   excitatory
+```
+
+Selecionar atenua os outros neuronios pra 25% e pulsa o escolhido.
 
 Verificado ao vivo: CNS real, cores por papel no circuito, atividade chegando
 pela telemetria. Atalhos: **B** casca do cerebro, **N** neuronios, **P** modo

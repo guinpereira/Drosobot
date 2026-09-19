@@ -63,9 +63,24 @@ namespace Drosobot.Lab
         private float[] _retinaDerivadaL, _retinaDerivadaR;
         private string _retinaLabel = "";
 
+        // paineis
+        private readonly List<Sparkline> _graficos = new List<Sparkline>();
+        private Sparkline _gSensorL, _gSensorR, _gEsquerda, _gDireita, _gSelecionado;
+        private readonly RetinaView _retL = new RetinaView(), _retR = new RetinaView();
+        private float[] _retinaL, _retinaR;
+        private readonly Dictionary<string, string> _infoSelecionado = new Dictionary<string, string>();
+        private long _ultimoSelecionado = -1;
+
         IEnumerator Start()
         {
             BuildScene();
+
+            _gSensorL = new Sparkline("sensor L (Hz)", new Color(0.35f, 0.65f, 1f), Provenance.Assumption);
+            _gSensorR = new Sparkline("sensor R (Hz)", new Color(1f, 0.6f, 0.25f), Provenance.Assumption);
+            _gEsquerda = new Sparkline("spikes esq", new Color(0.4f, 0.8f, 1f), Provenance.Model);
+            _gDireita = new Sparkline("spikes dir", new Color(1f, 0.45f, 0.4f), Provenance.Model);
+            _gSelecionado = new Sparkline("neuronio sel.", new Color(0.8f, 0.9f, 0.4f), Provenance.Model);
+            _graficos.AddRange(new[] { _gSensorL, _gSensorR, _gEsquerda, _gDireita, _gSelecionado });
 
             _tel = gameObject.AddComponent<TelemetryClient>();
             _tel.host = host;
@@ -239,9 +254,31 @@ namespace Drosobot.Lab
                             if (c["spikes"] is JArray sp) foreach (var v in sp) soma += (int)v;
                             _spikesPorCamada[(string)c["name"] ?? "?"] = soma;
                         }
+                    // esquerda/direita da ultima camada (a motora), por hemisferio
+                    int esq = 0, dir = 0;
+                    if (msg["layers"] is JArray ls && ls.Count > 0)
+                    {
+                        var ultima = ls[ls.Count - 1];
+                        if (ultima["spikes"] is JArray sp2)
+                            for (int i = 0; i < sp2.Count; i++)
+                                { if (i % 2 == 0) dir += (int)sp2[i]; else esq += (int)sp2[i]; }
+                    }
+                    _gEsquerda.Push(esq);
+                    _gDireita.Push(dir);
+                    _gSelecionado.Push(_brain != null ? _brain.SelectedActivity() : 0f);
                     break;
 
                 case "retina":
+                    if (msg["left"] is JArray rl)
+                    {
+                        if (_retinaL == null || _retinaL.Length != rl.Count) _retinaL = new float[rl.Count];
+                        for (int i = 0; i < rl.Count; i++) _retinaL[i] = (float)rl[i];
+                    }
+                    if (msg["right"] is JArray rr)
+                    {
+                        if (_retinaR == null || _retinaR.Length != rr.Count) _retinaR = new float[rr.Count];
+                        for (int i = 0; i < rr.Count; i++) _retinaR[i] = (float)rr[i];
+                    }
                     if (msg["derived"] is JObject der)
                     {
                         foreach (var kv in der)
@@ -250,6 +287,8 @@ namespace Drosobot.Lab
                             _retinaLabel = kv.Key;
                             _retinaDerivadaL = new[] { (float)lr["L"] };
                             _retinaDerivadaR = new[] { (float)lr["R"] };
+                            _gSensorL.Push(_retinaDerivadaL[0]);
+                            _gSensorR.Push(_retinaDerivadaR[0]);
                             break;
                         }
                     }
@@ -314,11 +353,18 @@ namespace Drosobot.Lab
                 foreach (var e in _eventos) GUILayout.Label("  " + e, _mono);
                 GUILayout.Space(6);
                 GUILayout.Label("B casca  N neuronios  P apresentacao", _mono);
+                GUILayout.Label("botao direito seleciona  ESC limpa", _mono);
             }
 
             GUILayout.EndArea();
 
-            if (!presentationMode) DesenhaLegendaProcedencia();
+            if (!presentationMode)
+            {
+                DesenhaLegendaProcedencia();
+                DesenhaTimeline();
+                DesenhaRetina();
+                DesenhaInspector();
+            }
         }
 
         private void DesenhaLegendaProcedencia()
@@ -339,6 +385,78 @@ namespace Drosobot.Lab
             GUILayout.EndArea();
         }
 
+        private void DesenhaTimeline()
+        {
+            float alturaG = 46f, margem = 8f;
+            float h = _graficos.Count * (alturaG + margem) + 30f;
+            var r = new Rect(10, Screen.height - h - 10, 262, h);
+            GUI.Box(r, GUIContent.none);
+            GUILayout.BeginArea(new Rect(r.x + 10, r.y + 6, r.width - 18, r.height - 10));
+            GUILayout.Label("SINAIS (janela rolante)", _rotulo);
+            foreach (var g in _graficos)
+            {
+                var antes = GUI.color;
+                GUI.color = ProvenanceUtil.Color(g.procedencia);
+                GUILayout.Label(g.Rotulo, _mono);
+                GUI.color = antes;
+                var tex = g.Desenhar();
+                var rg = GUILayoutUtility.GetRect(240, alturaG - 16);
+                GUI.DrawTexture(rg, tex, ScaleMode.StretchToFill);
+            }
+            GUILayout.EndArea();
+        }
+
+        private void DesenhaRetina()
+        {
+            if (_retinaL == null && _retinaR == null) return;
+            float lw = _retL.Largura, lh = _retL.Altura;
+            var r = new Rect(Screen.width - 250, 112, 240, lh * 2 + 76);
+            GUI.Box(r, GUIContent.none);
+            GUILayout.BeginArea(new Rect(r.x + 10, r.y + 6, r.width - 18, r.height - 10));
+            GUILayout.Label("VISAO  (721 omatideos/olho)", _rotulo);
+            GUILayout.Label("LEFT EYE", _mono);
+            GUI.DrawTexture(GUILayoutUtility.GetRect(lw, lh), _retL.Desenhar(_retinaL),
+                            ScaleMode.StretchToFill);
+            GUILayout.Label("RIGHT EYE", _mono);
+            GUI.DrawTexture(GUILayoutUtility.GetRect(lw, lh), _retR.Desenhar(_retinaR),
+                            ScaleMode.StretchToFill);
+            GUILayout.EndArea();
+        }
+
+        private void DesenhaInspector()
+        {
+            long sel = _brain != null ? _brain.SelectedBodyId : -1;
+            var r = new Rect(Screen.width - 330, Screen.height - 196, 320, 186);
+            GUI.Box(r, GUIContent.none);
+            GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
+            GUILayout.Label("INSPECTOR", _rotulo);
+            if (sel < 0)
+            {
+                GUILayout.Label("clique num neuronio", _mono);
+                GUILayout.Label("ESC limpa a selecao", _mono);
+                GUILayout.EndArea();
+                return;
+            }
+            if (sel != _ultimoSelecionado)
+            {
+                _ultimoSelecionado = sel;
+                var d = _brain.Describe(sel);
+                _infoSelecionado.Clear();
+                if (d != null) foreach (var kv in d) _infoSelecionado[kv.Key] = kv.Value;
+            }
+            // cada campo com sua procedencia: e o ponto do projeto inteiro
+            Badge.Linha("bodyId", Get("bodyId"), Provenance.Data, _mono);
+            Badge.Linha("type", Get("type"), Provenance.Data, _mono);
+            Badge.Linha("group", Get("group"), Provenance.Data, _mono);
+            Badge.Linha("side", Get("side"), Provenance.Data, _mono);
+            Badge.Linha("neurotransmitter", Get("neurotransmitter"), Provenance.Data, _mono);
+            Badge.Linha("polarity", Get("polarity"), Provenance.Model, _mono);
+            Badge.Linha("atividade", Get("recentActivity"), Provenance.Model, _mono);
+            GUILayout.EndArea();
+        }
+
+        private string Get(string k) => _infoSelecionado.TryGetValue(k, out var v) ? v : "-";
+
         private static string Explica(Provenance p)
         {
             switch (p)
@@ -353,6 +471,13 @@ namespace Drosobot.Lab
         void Update()
         {
             _wallTime = Time.realtimeSinceStartup;
+            if (Input.GetMouseButtonDown(1) && _camBrain != null && _brain != null)
+            {
+                // botao direito seleciona; o esquerdo ja gira a camera
+                long achou = _brain.Pick(_camBrain.ScreenPointToRay(Input.mousePosition));
+                if (achou >= 0) Debug.Log($"[lab] selecionado neuron_{achou}");
+            }
+            if (Input.GetKeyDown(KeyCode.Escape) && _brain != null) _brain.ClearSelection();
             if (Input.GetKeyDown(KeyCode.P)) presentationMode = !presentationMode;
             if (Input.GetKeyDown(KeyCode.N)) _brain.showNeurons = !_brain.showNeurons;
             if (Input.GetKeyDown(KeyCode.B))
