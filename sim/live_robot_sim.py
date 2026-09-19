@@ -165,6 +165,11 @@ while running:
                           for s in om_sensor_side] * Hz
     else:
         OM_Sensor.rate = OM_FRACO_HZ * Hz
+        # contadores do HUD sao POR EPISODIO, nao acumulados da sessao: soltando
+        # a tecla eles zeram. Acumulado engana -- depois de um giro pra direita,
+        # um giro pra esquerda aparecia como "L 48 R 101", com o lado errado
+        # maior so por causa do episodio anterior.
+        turns_L, turns_R = 0, 0
 
     STEP_MS = 5
     net.run(STEP_MS * ms)
@@ -221,7 +226,7 @@ while running:
     hud_lines = [
         f"distancia (SETA CIMA aproxima): {distance_cm:5.1f} cm   looming: {gf_rate_hz:5.0f} Hz",
         f"fluxo optico entrando no olho (SETA ESQ/DIR): {olho or '--'}",
-        f"motoneuronio de perna  L: {turns_L:5d}   R: {turns_R:5d}   <- a direcao sai daqui",
+        f"motoneuronio de perna (episodio)  L: {turns_L:4d}   R: {turns_R:4d}   <- a direcao sai daqui",
         f"spikes de escape (TTMn): {seen_escape}      ESC pra sair",
     ]
     for i, line in enumerate(hud_lines):

@@ -174,19 +174,38 @@ real: escape sempre interrompe um giro em andamento.
 A seta cima aproxima o objeto (looming). As setas esquerda/direita escolhem **em
 qual olho** entra o fluxo optico — nao a direcao do giro. Quem decide o lado e o
 motoneuronio de perna que disparou, e o HUD mostra a contagem dos dois lados
-justamente pra isso ficar visivel.
+justamente pra isso ficar auditavel na tela.
 
 Antes o pool optomotor era unico e o desenho girava pro lado da tecla: o dado
 dizia **se e quando** girar, a direcao era fiat do codigo. Agora sai do circuito.
 
-> **Nota:** as duas capturas abaixo sao anteriores a essa mudanca (pool unico,
-> direcao pela tecla, LIF sem unidade). O comportamento qualitativo — giro em
-> degraus, escape interrompendo — continua valendo, mas os numeros nao batem mais
-> com o modelo atual. Ficam aqui ate serem retiradas de novo.
+Fluxo optico entrando no olho direito. Repare no HUD: `L: 0   R: 51` — o
+motoneuronio esquerdo fica em zero absoluto enquanto o direito dispara.
 
 ![Giro ao vivo](docs/images/live_sim_turn_loop.png)
 
-![Escape e giro combinados](docs/images/live_sim_combined.png)
+Depois, fluxo no olho esquerdo. A trilha guarda o giro anterior pra direita, e o
+robo agora curva pro outro lado:
+
+![Os dois sentidos](docs/images/live_sim_combined.png)
+
+Escape disparando ao vivo (objeto a 5,4 cm, robo em vermelho durante a janela de
+lockout que bloqueia giro):
+
+![Escape ao vivo](docs/images/live_sim_escape.png)
+
+### A esquerda e mais dificil, e isso e o dataset
+
+Usando o simulador fica obvio na mao: virar pra esquerda exige mais estimulo que
+virar pra direita. Nao e bug do codigo — e o vies de reconstrucao do Male CNS
+aparecendo no comportamento. O lado direito e mais forte em toda etapa do
+circuito (T4/T5 721 contra 637, DNa02→motor 442 contra 334), e como o
+motoneuronio tem limiar, ~10% de diferenca de peso vira varias vezes de diferenca
+na resposta (48 spikes contra 8 na medida offline).
+
+O LADO que o circuito escolhe esta certo e sem vazamento. A FACILIDADE de cada
+lado carrega o vies do dataset. Vale lembrar disso antes de tratar qualquer
+assimetria de comportamento como se fosse biologia.
 
 Ajuste de ganho documentado (nao escondido): a primeira versao usava 6°/spike +
 limite de 1 giro a cada 60ms — o robo fechava um loop completo em menos de 1
@@ -353,7 +372,6 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Dois hemisferios separados no optomotor: a direcao do giro sai do circuito
 - [ ] Refratario especifico do Giant Fiber (o generico de 2,2 ms nao captura o
       comportamento de tiro unico documentado)
-- [ ] Retirar as capturas do simulador ao vivo com o modelo novo
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
