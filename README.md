@@ -245,6 +245,65 @@ cooldown multiplicou o efeito do grau baixo). Solucao: manter so 1 parametro
 artificial por cima.
 
 
+## Laco fechado em 3D — NeuroMechFly v2 (MuJoCo)
+
+O robo 2D de teste serviu pra provar que spike vira movimento. O passo seguinte e
+por o circuito dentro de um corpo com fisica e olho de verdade. `sim/flygym_optomotor.py`
+usa o **NeuroMechFly v2** (pacote `flygym`), modelo biomecanico da mosca em MuJoCo:
+
+```
+retina do flygym (2 olhos x 721 omatideos)
+  -> energia de movimento por olho
+  -> T4/T5 -> HS -> DNa02 -> motoneuronio de perna    (peso e sinal do conectoma)
+  -> acao de shape (2,) do HybridTurningController
+  -> a mosca anda e vira -> o mundo muda na retina -> fecha o laco
+```
+
+![Laco fechado no MuJoCo](docs/images/flygym_optomotor.png)
+
+Video: [`docs/images/flygym_optomotor.mp4`](docs/images/flygym_optomotor.mp4)
+
+O encaixe e direto de um jeito que vale apontar: o `HybridTurningController` recebe
+o que a documentacao dele chama de *"descending signal encoding turning"*, de dois
+elementos. DNa02 **e** um neuronio descendente de giro, e o circuito ja produz o par
+esquerdo/direito porque as tres etapas nao cruzam a linha media no conectoma. A
+interface da ferramenta e a anatomia coincidem sem adaptador no meio.
+
+Note que a assimetria do dataset reaparece aqui: numa corrida de 1,2 s o
+motoneuronio direito disparou 158 vezes contra 6 do esquerdo, entao so a perna
+direita tem a amplitude modulada. Mesmo vies de reconstrucao ja documentado no
+circuito optomotor, agora visivel na marcha.
+
+### O que e dado e o que e nosso
+
+| vem do conectoma | e suposicao nossa |
+|---|---|
+| quem conecta em quem, com que peso | retina → taxa de T4/T5 (energia de movimento = \|dI/dt\| por olho) |
+| sinal de cada sinapse (neurotransmissor) | ganho dessa transducao (`FLOW_GAIN`) |
+| de que lado esta cada neuronio | spike de motoneuronio → comando de marcha |
+| que o circuito nao cruza a linha media | constante de tempo do comando descendente |
+
+T4/T5 sao seletivos a direcao, mas nossa amostra e quase toda T5a — um subtipo so.
+Por isso usamos **magnitude** de movimento em vez de fingir uma seletividade que a
+amostra nao sustenta. A direcao do giro continua vindo de qual lado disparou.
+
+### Percalcos
+
+- **`vision_refresh_rate` nao e o passo de fisica.** Com refresh de 500 Hz e
+  timestep de 1e-4 s, a retina so atualiza a cada 20 passos. Calcular a diferenca
+  temporal a cada passo da exatamente zero em 19 de cada 20, a taxa de T4/T5 vai
+  pra 0 Hz e o circuito nunca dispara. A flag e `info["vision_updated"]`.
+- **O comando precisa ser filtrado.** Numa janela de 2 ms costuma cair 1 spike so,
+  e o balanco cru entre os lados salta entre −1 e +1 a cada quadro. Comando
+  descendente integra no tempo; sem media movel a acao vira ruido.
+- **Terreno liso nao serve.** Sem contraste visual nao ha fluxo optico e o circuito
+  nao tem o que detectar. Usamos `BlocksTerrain`.
+- **Os exemplos de visao do flygym exigem `torch`** (eles usam uma CNN treinada).
+  Nao precisamos: o circuito real faz esse papel. O `__init__.py` do pacote
+  `flygym.examples.vision` importa torch, entao as arenas visuais de la so carregam
+  via `importlib` apontando pro arquivo.
+
+
 ## Visualização 3D — a morfologia real dos neurônios usados
 
 Os dois circuitos acima não são grafo abstrato: cada neurônio tem morfologia 3D
@@ -381,7 +440,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - `connectome/` — scripts de fetch no neuPrint + CSV de conectividade e de
   propriedades por neuronio (dado bruto, nao sobe pro git)
 - `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
-  regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele
+  regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
+  `flygym_optomotor.py` fecha o laco no corpo biomecanico em MuJoCo
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
@@ -404,6 +464,9 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
       looming (o top-8 por peso nao continha nenhum dos dois)
 - [ ] Taxa de disparo do GF acima do limiar: dispara dezenas de vezes onde o real
       dispara 1 ou 2. O refratario generico de 2,2 ms nao captura o tiro unico
+- [x] Laco sensorio-motor fechado em 3D: retina do NeuroMechFly v2 -> circuito
+      real -> marcha da mosca biomecanica em MuJoCo (`sim/flygym_optomotor.py`)
+- [ ] Levar o Giant Fiber pro mesmo laco 3D (escape/freeze na mosca biomecanica)
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
