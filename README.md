@@ -304,6 +304,45 @@ amostra nao sustenta. A direcao do giro continua vindo de qual lado disparou.
   via `importlib` apontando pro arquivo.
 
 
+### Giant Fiber no mesmo laco: objeto aproxima, a mosca recua
+
+`sim/flygym_escape.py` leva o circuito de fuga pro corpo biomecanico. Uma esfera se
+aproxima de frente em ciclos: vem de 30 mm ate 4 mm, some, reaparece longe, repete.
+
+![Giant Fiber no MuJoCo](docs/images/flygym_escape.png)
+
+Video: [`docs/images/flygym_escape.mp4`](docs/images/flygym_escape.mp4)
+
+A taxa de LC4/LPLC2 sobe acompanhando a aproximacao e zera quando o objeto reinicia
+longe. GF e TTMn disparam em rajada so perto do fim de cada ciclo, e o comando de
+marcha recua em janelas curtas sincronizadas com isso. Objeto longe nao dispara
+nada — o limiar e real.
+
+LC4 e LPLC2 vem separados por hemisferio no dataset (L 165 celulas, R 146), entao
+o olho esquerdo alimenta o LC4/LPLC2 esquerdo e vice-versa, igual ao optomotor.
+
+Suposicao nossa que vale destacar: **o que "fugir" significa num modelo de
+caminhada**. O NeuroMechFly nao pula, e o TTMn real move o musculo de pulo.
+Mapeamos spike de TTMn em recuo rapido, que e o mais proximo disponivel.
+
+#### Duas tentativas que falharam antes
+
+Detectar looming a partir de uma retina simulada e menos obvio do que parece, e as
+duas primeiras versoes falharam de jeitos diferentes:
+
+1. **Diferenca de intensidade media entre quadros.** Nao funcionou: o fluxo optico
+   da propria caminhada sobre o chao xadrez domina o sinal e o objeto some no meio.
+   A taxa ficava colada no teto o tempo todo, sem nenhuma correlacao com a distancia.
+2. **Fracao de omatideos escuros, derivada entre quadros consecutivos.** A fracao
+   escura e robusta ao fluxo do chao (andar sobre chao plano nao muda quanto do
+   campo visual esta escuro), mas a mosca balanca o corpo ao andar, entao a fracao
+   treme quadro a quadro — e derivada de sinal tremido e ruido.
+
+O que funcionou foi comparar a fracao escura com uma **media lenta** dela mesma
+(~0,3 s) em vez do quadro anterior. Robusto ao tremor, e e o que um detector de
+looming real faz de qualquer jeito: adapta ao fundo e responde ao que destoa dele.
+
+
 ## Visualização 3D — a morfologia real dos neurônios usados
 
 Os dois circuitos acima não são grafo abstrato: cada neurônio tem morfologia 3D
@@ -441,7 +480,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
   propriedades por neuronio (dado bruto, nao sobe pro git)
 - `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
   regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
-  `flygym_optomotor.py` fecha o laco no corpo biomecanico em MuJoCo
+  `flygym_optomotor.py` e `flygym_escape.py` fecham o laco no corpo
+  biomecanico em MuJoCo
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
@@ -466,7 +506,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
       dispara 1 ou 2. O refratario generico de 2,2 ms nao captura o tiro unico
 - [x] Laco sensorio-motor fechado em 3D: retina do NeuroMechFly v2 -> circuito
       real -> marcha da mosca biomecanica em MuJoCo (`sim/flygym_optomotor.py`)
-- [ ] Levar o Giant Fiber pro mesmo laco 3D (escape/freeze na mosca biomecanica)
+- [x] Giant Fiber no mesmo laco 3D: esfera aproximando dispara recuo
+      (`sim/flygym_escape.py`)
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
