@@ -33,17 +33,22 @@ namespace Drosobot.Lab
         public int port = 8765;
 
         [Header("CNS")]
-        [Tooltip("Pasta com cns.glb e neuron_metadata.json. Relativa ao repo se nao for absoluta.")]
-        public string cnsFolder = "unity_assets/cns";
+        [Tooltip("Caminho dentro de Assets/Resources (sem extensao)")]
+        public string cnsResource = "CNS/cns";
+        public string metadataResource = "CNS/neuron_metadata";
 
         [Header("Apresentacao")]
         public bool presentationMode;
+        [Tooltip("Casca do cerebro/VNC visivel. Desligada por padrao: ela e contexto " +
+                 "anatomico e, opaca, esconde justamente os neuronios que sao o assunto.")]
+        public bool showShell;
 
         private TelemetryClient _tel;
         private BrainActivity _brain;
         private Transform _cnsRoot;
         private Transform _fly;
         private Camera _camBrain;
+        private readonly List<Renderer> _shellRenderers = new List<Renderer>();
 
         // ultimo estado recebido, so pra desenhar
         private string _expName = "(nenhum experimento)";
@@ -75,7 +80,7 @@ namespace Drosobot.Lab
         private void BuildScene()
         {
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.10f, 0.11f, 0.14f);
+            RenderSettings.ambientLight = new Color(0.17f, 0.19f, 0.23f);
 
             var camGo = new GameObject("BrainCamera");
             _camBrain = camGo.AddComponent<Camera>();
@@ -106,55 +111,54 @@ namespace Drosobot.Lab
 
         private IEnumerator LoadCns()
         {
-            var pasta = Path.IsPathRooted(cnsFolder)
-                ? cnsFolder
-                : Path.GetFullPath(Path.Combine(Application.dataPath, "../../..", cnsFolder));
-            var glb = Path.Combine(pasta, "cns.glb");
-            var metaPath = Path.Combine(pasta, "neuron_metadata.json");
+            // Import NATIVO da Unity a partir de Assets/Resources, em vez de
+            // carregar GLB em runtime com glTFast.
+            //
+            // O motivo nao e preferencia: glTFast arrastava Burst, Collections,
+            // Mathematics, Mono Cecil e o Performance API, e a Unity 6 sinalizou
+            // os cinco com "invalid signature". Nenhum era necessario -- a Unity
+            // importa FBX sozinha, sem pacote algum. Menos dependencia, menos
+            // aviso de seguranca, e o asset vira um asset normal do projeto.
+            var prefab = Resources.Load<GameObject>(cnsResource);
+            var metaTxt = Resources.Load<TextAsset>(metadataResource);
 
-            if (!File.Exists(glb) || !File.Exists(metaPath))
+            if (prefab == null || metaTxt == null)
             {
                 Debug.LogError(
-                    $"[lab] CNS nao encontrado em {pasta}.\n" +
+                    $"[lab] CNS nao encontrado em Resources/{cnsResource}.\n" +
                     "Gere com:\n" +
-                    "  \"C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe\" " +
+                    "\"C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe\" " +
                     "--background --python blender\\export_unity.py");
                 yield break;
             }
 
-            var raiz = new GameObject("CNS").transform;
-            _cnsRoot = raiz;
+            var inst = Instantiate(prefab);
+            inst.name = "CNS";
+            _cnsRoot = inst.transform;
+            yield return null;   // deixa a hierarquia assentar antes de ligar
 
-            var gltf = new GLTFast.GltfImport();
-            var task = gltf.Load("file://" + glb.Replace("\\", "/"));
-            while (!task.IsCompleted) yield return null;
-
-            if (!task.Result)
-            {
-                Debug.LogError("[lab] falha ao carregar cns.glb. O GLB usa compressao Draco; " +
-                               "confira se com.unity.cloud.gltfast esta instalado. " +
-                               "Alternativa: reexportar com --sem-draco.");
-                yield break;
-            }
-
-            var inst = gltf.InstantiateMainSceneAsync(raiz);
-            while (!inst.IsCompleted) yield return null;
-
-            var meta = NeuronMetadata.FromJson(File.ReadAllText(metaPath));
-            _brain.Bind(raiz, meta);
+            var meta = NeuronMetadata.FromJson(metaTxt.text);
+            _brain.Bind(_cnsRoot, meta);
 
             // malhas de contexto ficam translucidas e discretas: sao referencia
             // anatomica, nao o assunto
             foreach (var nome in meta.contextMeshes)
             {
-                var t = FindDeep(raiz, nome);
+                var t = FindDeep(_cnsRoot, nome);
                 if (t == null) continue;
+                // material proprio tambem aqui: o do FBX nao aceita transparencia
+                var sh = Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit");
                 foreach (var r in t.GetComponentsInChildren<Renderer>(true))
-                    foreach (var m in r.materials)
-                    {
-                        m.color = new Color(0.55f, 0.58f, 0.65f, 0.055f);
-                        SetTransparent(m);
-                    }
+                {
+                    var m = new Material(sh) { color = new Color(0.62f, 0.66f, 0.74f, 0.085f) };
+                    SetTransparent(m);
+                    m.SetFloat("_Glossiness", 0f);
+                    r.material = m;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    r.receiveShadows = false;
+                    r.enabled = showShell;
+                    _shellRenderers.Add(r);
+                }
             }
             Debug.Log($"[lab] CNS carregado: {meta.neuronCount} neuronios, " +
                       $"contexto: {string.Join(", ", meta.contextMeshes)}");
@@ -173,10 +177,19 @@ namespace Drosobot.Lab
 
         private static void SetTransparent(Material m)
         {
-            m.SetFloat("_Surface", 1f);
+            // Transparencia no Standard do Built-in nao sai so mudando _Mode:
+            // precisa dos blend modes, de desligar o ZWrite E das keywords. Sem
+            // as keywords a casca do cerebro fica preta e opaca, escondendo
+            // justamente os neuronios que queremos ver dentro dela.
+            m.SetFloat("_Mode", 3f);                 // Transparent
+            m.SetFloat("_Surface", 1f);              // URP
             m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
             m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             m.SetInt("_ZWrite", 0);
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.EnableKeyword("_ALPHABLEND_ON");
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            m.SetFloat("_Glossiness", 0f);
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
         }
 
@@ -299,6 +312,8 @@ namespace Drosobot.Lab
                 GUILayout.Space(6);
                 GUILayout.Label("EVENTOS", _rotulo);
                 foreach (var e in _eventos) GUILayout.Label("  " + e, _mono);
+                GUILayout.Space(6);
+                GUILayout.Label("B casca  N neuronios  P apresentacao", _mono);
             }
 
             GUILayout.EndArea();
@@ -340,6 +355,11 @@ namespace Drosobot.Lab
             _wallTime = Time.realtimeSinceStartup;
             if (Input.GetKeyDown(KeyCode.P)) presentationMode = !presentationMode;
             if (Input.GetKeyDown(KeyCode.N)) _brain.showNeurons = !_brain.showNeurons;
+            if (Input.GetKeyDown(KeyCode.B))
+            {
+                showShell = !showShell;
+                foreach (var r in _shellRenderers) if (r != null) r.enabled = showShell;
+            }
         }
     }
 

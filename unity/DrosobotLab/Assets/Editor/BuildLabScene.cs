@@ -35,8 +35,8 @@ namespace Drosobot.EditorTools
             var boot = go.AddComponent<LabBootstrap>();
             boot.host = "127.0.0.1";
             boot.port = 8765;
-            // Relativo ao Assets/: <repo>/unity/DrosobotLab/Assets/../../../unity_assets/cns
-            boot.cnsFolder = "unity_assets/cns";
+            boot.cnsResource = "CNS/cns";
+            boot.metadataResource = "CNS/neuron_metadata";
 
             if (!AssetDatabase.IsValidFolder(Pasta))
                 AssetDatabase.CreateFolder("Assets", "Scenes");

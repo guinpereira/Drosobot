@@ -33,7 +33,7 @@ namespace Drosobot.Lab
     {
         [Header("Aparencia")]
         [Tooltip("Emissao de um neuronio em repouso")]
-        public float baseIntensity = 0.06f;
+        public float baseIntensity = 0.30f;
         [Tooltip("Pulso no instante do spike")]
         public float spikeGain = 2.2f;
         [Tooltip("Quanto tempo o pulso do spike leva pra apagar (s)")]
@@ -54,7 +54,11 @@ namespace Drosobot.Lab
         public int unmappedBodyIds;
 
         private static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
-        private static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
+        // Built-in Render Pipeline usa _Color pro albedo; URP usa _BaseColor.
+        // Escrevemos nos dois: o que nao existir no shader e simplesmente ignorado.
+        private static readonly int ColorBuiltIn = Shader.PropertyToID("_Color");
+        private static readonly int BaseColorURP = Shader.PropertyToID("_BaseColor");
+        private Shader _shader;
 
         private class Neuron
         {
@@ -81,6 +85,20 @@ namespace Drosobot.Lab
         public void Bind(Transform cnsRoot, NeuronMetadata metadata)
         {
             _porBodyId.Clear();
+
+            // Material proprio em vez do que veio no FBX.
+            //
+            // Sem isso o cerebro inteiro saia de uma cor chapada: o material
+            // importado nao responde a _EmissionColor, e no Built-in a keyword
+            // _EMISSION precisa estar ligada pra emissao existir. Criando o
+            // material aqui, o brilho por atividade funciona nos dois pipelines
+            // e nao dependemos do que o exportador do Blender gerou.
+            _shader = Shader.Find("Standard")
+                      ?? Shader.Find("Universal Render Pipeline/Lit")
+                      ?? Shader.Find("Sprites/Default");
+            if (_shader == null)
+                Debug.LogError("[brain] nenhum shader utilizavel encontrado");
+
             var porNome = new Dictionary<string, Renderer>();
             foreach (var r in cnsRoot.GetComponentsInChildren<Renderer>(true))
                 porNome[r.gameObject.name] = r;
@@ -91,6 +109,13 @@ namespace Drosobot.Lab
                 var cor = m.roleColor != null && m.roleColor.Length >= 3
                     ? new Color(m.roleColor[0], m.roleColor[1], m.roleColor[2])
                     : Color.gray;
+                if (_shader != null)
+                {
+                    var mat = new Material(_shader) { color = cor * 0.5f };
+                    mat.EnableKeyword("_EMISSION");
+                    mat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+                    rend.material = mat;
+                }
                 var n = new Neuron
                 {
                     bodyId = m.bodyId, group = m.group, side = m.side, type = m.type,
@@ -191,8 +216,10 @@ namespace Drosobot.Lab
                     ? bruto
                     : softClip + Mathf.Log(1f + (bruto - softClip));
 
+                var albedo = n.roleColor * Mathf.Clamp01(0.45f + i * 0.35f);
                 n.block.SetColor(EmissionColor, n.roleColor * i);
-                n.block.SetColor(BaseColor, n.roleColor * Mathf.Clamp01(0.25f + i * 0.35f));
+                n.block.SetColor(ColorBuiltIn, albedo);
+                n.block.SetColor(BaseColorURP, albedo);
                 n.renderer.SetPropertyBlock(n.block);
             }
         }

@@ -30,10 +30,14 @@ unity/**/Logs/
 unity/**/UserSettings/
 unity/**/PackageCache/
 unity/build.log
+unity/DrosobotLab/Assets/Temp/
+unity/DrosobotLab/Assets/Temp.meta
 unity/**/MemoryCaptures/
 unity/**/*.csproj
 unity/**/*.sln
 unity/**/*.user
 
-# assets exportados do Blender pra Unity: gerados por blender/export_unity.py
+# CNS exportado do Blender: 52 MB, gerado por blender/export_unity.py
+unity/DrosobotLab/Assets/Resources/CNS/
+unity/DrosobotLab/Assets/Resources/CNS.meta
 unity_assets/

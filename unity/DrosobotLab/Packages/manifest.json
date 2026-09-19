@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "com.unity.cloud.gltfast": "6.7.1",
     "com.unity.textmeshpro": "3.0.6",
     "com.unity.ugui": "1.0.0",
     "com.unity.modules.jsonserialize": "1.0.0",
@@ -8,6 +7,7 @@
     "com.unity.modules.uielements": "1.0.0",
     "com.unity.modules.imgui": "1.0.0",
     "com.unity.modules.physics": "1.0.0",
-    "com.unity.nuget.newtonsoft-json": "3.2.1"
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.pipeline": "0.7.0-exp.1"
   }
 }

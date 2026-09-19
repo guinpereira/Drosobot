@@ -45,7 +45,11 @@ import bpy
 
 AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parent
-DESTINO = RAIZ / "unity_assets" / "cns"
+# Vai direto pra dentro do projeto Unity: FBX em Assets/ e importado NATIVAMENTE,
+# sem pacote nenhum. A alternativa (GLB + glTFast) arrastava Burst, Collections,
+# Mathematics, Mono Cecil e o Performance API -- cinco pacotes que a Unity 6
+# sinalizou com assinatura invalida. Nenhum deles era necessario pro projeto.
+DESTINO = RAIZ / "unity" / "DrosobotLab" / "Assets" / "Resources" / "CNS"
 PROPRIEDADES = RAIZ / "connectome" / "neuron_properties.csv"
 
 # ---------------------------------------------------------------------------
@@ -166,7 +170,6 @@ for nome in ("Câmera", "Camera", "Sol", "Sun", "scene_center"):
 # ou interpolado. A morfologia exportada e a mesma que o neuPrint reconstruiu.
 EXPORT_RESOLUTION_U = 1
 EXPORT_BEVEL_RESOLUTION = 0     # tubo de 4 lados em vez de 8
-USAR_DRACO = "--sem-draco" not in sys.argv
 
 n_curvas = 0
 for obj in bpy.data.objects:
@@ -181,27 +184,33 @@ print(f"[export] tesselacao reduzida em {n_curvas} curvas "
 # 6. exporta
 # ---------------------------------------------------------------------------
 DESTINO.mkdir(parents=True, exist_ok=True)
-glb = DESTINO / "cns.glb"
+fbx = DESTINO / "cns.fbx"
 
 bpy.ops.object.select_all(action="SELECT")
-bpy.ops.export_scene.gltf(
-    filepath=str(glb),
-    export_format="GLB",
+
+# curvas viram malha: o FBX nao carrega curva com bevel, e a Unity so entende malha.
+# Isto e conversao de REPRESENTACAO -- a geometria resultante e a mesma que o
+# Blender ja desenhava.
+bpy.context.view_layer.objects.active = next(
+    (o for o in bpy.data.objects if o.type == "CURVE"), None)
+if bpy.context.view_layer.objects.active is not None:
+    bpy.ops.object.convert(target="MESH")
+
+bpy.ops.export_scene.fbx(
+    filepath=str(fbx),
     use_selection=True,
-    export_apply=True,        # aplica modificadores/bevel: curva vira malha
-    export_yup=True,          # Unity e Y-up; o glTF cuida da conversao
-    export_materials="EXPORT",
-    export_cameras=False,
-    export_lights=False,
-    export_animations=False,
-    # Draco corta o GLB de ~76 MB pra uns 10-15 MB. Do lado da Unity exige um
-    # importador de glTF que entenda Draco (glTFast ou com.unity.cloud.draco).
-    # Se o import falhar, rode com --sem-draco e use o arquivo maior.
-    export_draco_mesh_compression_enable=USAR_DRACO,
-    export_draco_mesh_compression_level=6,
+    apply_unit_scale=True,
+    apply_scale_options="FBX_SCALE_ALL",
+    object_types={"MESH"},
+    use_mesh_modifiers=True,
+    mesh_smooth_type="FACE",
+    bake_space_transform=True,
+    axis_forward="-Z",
+    axis_up="Y",            # Unity e Y-up
+    path_mode="COPY",
 )
-tam = glb.stat().st_size / 1e6
-print(f"[export] {glb}  ({tam:.1f} MB)")
+tam = fbx.stat().st_size / 1e6
+print(f"[export] {fbx}  ({tam:.1f} MB)")
 
 meta = {
     "source": "Male CNS v1.0 (neuPrint, Janelia) + JRCFIB2022M via navis-flybrains",

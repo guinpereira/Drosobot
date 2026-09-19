@@ -41,7 +41,8 @@ implementacoes do cerebro divergindo em silencio.
 "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --background --python blender\export_unity.py
 ```
 
-Sai em `unity_assets/cns/`: `cns.glb` (9,4 MB) e `neuron_metadata.json`.
+Sai em `unity/DrosobotLab/Assets/Resources/CNS/`: `cns.fbx` (52 MB) e
+`neuron_metadata.json`. A Unity importa FBX **nativamente**, sem pacote algum.
 
 O exportador **executa** o `render_circuits.py` em vez de refazer a cena, porque
 aquele script carrega quatro correcoes de escala/eixo que custaram caro pra achar
@@ -79,6 +80,12 @@ Serve a corrida gravada na mesma porta. Pro visualizador nao ha diferenca entre
 ao vivo e replay.
 
 ### 5. Unity
+
+![Drosobot Lab rodando](images/drosobot_lab_unity.png)
+
+Verificado ao vivo: CNS real, cores por papel no circuito, atividade chegando
+pela telemetria. Atalhos: **B** casca do cerebro, **N** neuronios, **P** modo
+apresentacao; arrastar gira a camera, scroll da zoom.
 
 A cena ja vem pronta em `Assets/Scenes/DrosobotLab.unity`. Abrir
 `unity/DrosobotLab/` no Unity **2022.3 LTS** e dar Play.
@@ -180,24 +187,30 @@ convergido nesse passo, entao afrouxar troca fidelidade por framerate.
 
 ## Limitacoes conhecidas
 
-1. **Nao ha integracao MCP com a Unity.** Contornado por batch mode: o C#
-   **compila** (Assembly-CSharp.dll gerada, zero erros CS, glTFast e Newtonsoft
-   resolvidos), a cena e **criada por linha de comando**, e os nomes dos nos do
-   GLB foram conferidos contra o metadata (54 de 54). O que continua sem
-   verificacao e o RUNTIME: ninguem deu Play, entao carregar o GLB, acender
-   neuronio e desenhar o HUD nao foram vistos funcionando.
-2. **A mosca na Unity e um marcador provisorio**, explicitamente nomeado como
+1. **Controle do Editor: resolvido pelo Unity CLI.** O `unity` CLI
+   (`~/AppData/Local/Unity/bin/unity`) com o pacote `com.unity.pipeline` expoe o
+   Editor numa porta local, e dai saem `editor_play`, `console`,
+   `capture_game_view`, `recompile`, `get_component_properties` e o resto. Com
+   isso o laco foi verificado de ponta a ponta sem depender de ninguem operar a
+   interface. **Exige Unity 6+** -- foi por isso que o projeto migrou de 2022.3
+   LTS para 6000.3.2f1.
+2. **`com.unity.pipeline` e experimental (0.7.0-exp.1)** e puxa
+   `com.unity.nuget.mono-cecil`, que a Unity 6 sinaliza com assinatura invalida.
+   E o preco do controle do Editor. Os outros 4 avisos de assinatura que existiam
+   vinham do glTFast e sumiram quando trocamos GLB+Draco por FBX com import
+   nativo -- o FBX nao precisa de pacote nenhum.
+3. **A mosca na Unity e um marcador provisorio**, explicitamente nomeado como
    tal. Nao e o modelo do FlyGym. Trocar exige exportar a malha do NeuroMechFly.
    Um marcador identificado e melhor que anatomia inventada.
-3. **Nem todo bodyId do experimento tem geometria.** O experimento de looming usa
+4. **Nem todo bodyId do experimento tem geometria.** O experimento de looming usa
    os 1271 pre-sinapticos do Giant Fiber, e o GLB so tem os 54 dos grupos
    originais -- entao LC4/LPLC2 nao acendem no cerebro. O `BrainActivity` avisa
    no console em vez de acender algo errado. Resolve regerando os esqueletos com
    `connectome/fetch_skeletons_for_blender.py`.
-4. **7 dos 54 neuronios saem sem type/side/NT**: sao esqueletos T5a gerados antes
+5. **7 dos 54 neuronios saem sem type/side/NT**: sao esqueletos T5a gerados antes
    de `fetch_optomotor_circuit.py` passar a amostrar por hemisferio.
    `blender/skeletons/` esta desatualizado em relacao aos CSVs.
-5. **Ainda nao implementado**: seletor de experimento na interface, grafo de
+6. **Ainda nao implementado**: seletor de experimento na interface, grafo de
    conectividade, painel de retina desenhado (hoje so os derivados), graficos de
    timeline, construtor de experimentos, inspector clicavel.
 
