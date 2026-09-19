@@ -69,6 +69,11 @@ class ServidorTelemetria:
         self.fonte = fonte
         self._fila: queue.Queue = queue.Queue(maxsize=fila_max)
         self._clientes: list[socket.socket] = []
+        # Mensagens de ABERTURA guardadas pra reenviar a quem chegar depois.
+        # A Unity quase sempre conecta com a simulacao ja rodando, e sem o
+        # experiment_info ela nao sabe quais bodyIds acender nem o que e DATA e o
+        # que e ASSUMPTION. Sem isso, conectar tarde = tela vazia.
+        self._fixas: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._parar = threading.Event()
         self._descartadas = 0
@@ -104,8 +109,14 @@ class ServidorTelemetria:
     def descartadas(self) -> int:
         return self._descartadas
 
+    # tipos que descrevem a corrida e nao mudam: todo cliente novo precisa deles
+    FIXAS = ("experiment_info", "scene_info")
+
     def enviar(self, msg: dict[str, Any]) -> None:
         """Nunca bloqueia. Fila cheia: joga fora a mais antiga e poe esta."""
+        if msg.get("type") in self.FIXAS:
+            with self._lock:
+                self._fixas[msg["type"]] = msg
         try:
             self._fila.put_nowait(msg)
         except queue.Full:
@@ -169,6 +180,12 @@ class ServidorTelemetria:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             try:
                 sock.sendall(protocol.encode(protocol.hello(self.fonte)))
+                # poe o recem-chegado em dia: sem isso, quem conecta com a
+                # simulacao ja rodando nunca recebe experiment_info/scene_info
+                with self._lock:
+                    atraso = [self._fixas[t] for t in self.FIXAS if t in self._fixas]
+                for m in atraso:
+                    sock.sendall(protocol.encode(m))
             except OSError:
                 sock.close()
                 continue

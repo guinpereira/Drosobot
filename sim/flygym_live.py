@@ -15,6 +15,7 @@ Pra assistir isso ate ajuda.
 Controles do viewer sao do proprio MuJoCo: arrastar gira a camera, scroll da zoom,
 espaco pausa. Fechar a janela encerra.
 """
+import argparse
 import importlib.util
 import os
 import sys
@@ -36,8 +37,22 @@ from connectome_model import (  # noqa: E402
     gf_input_population,
 )
 import fast_lif  # noqa: E402
+from telemetry import protocol  # noqa: E402
+from telemetry.recorder import Gravador  # noqa: E402
+from telemetry.server import abrir as abrir_telemetria  # noqa: E402
 
-MODO = "optomotor" if len(sys.argv) > 1 and sys.argv[1].startswith("opto") else "escape"
+# argparse sem quebrar a forma antiga: `flygym_live.py optomotor` continua valendo
+_ap = argparse.ArgumentParser(add_help=True, description="Drosobot -- laco 3D ao vivo")
+_ap.add_argument("modo", nargs="?", default="escape",
+                 help="escape (padrao) ou optomotor")
+_ap.add_argument("--telemetry", action="store_true",
+                 help="publica o estado pro Drosobot Lab (Unity)")
+_ap.add_argument("--porta", type=int, default=8765)
+_ap.add_argument("--record", action="store_true",
+                 help="grava a corrida em runs/ pra replay")
+_args = _ap.parse_args()
+
+MODO = "optomotor" if _args.modo.startswith("opto") else "escape"
 props = load_properties()
 
 # Aqui a rede roda no integrador proprio (sim/fast_lif.py), nao no Brian2. Motivo:
@@ -97,6 +112,10 @@ if MODO == "escape":
                       (down, ix(GF_IDS), ix(motor_ids))])
     rede = fast_lif.Rede(len(sensor_ids), [len(GF_IDS), len(motor_ids)], conexoes, DT_MS)
     CAMADA_SAIDA = 1
+    CAMADAS_IDS = [("DNp01", GF_IDS, "gf_dnp01_giantfiber"),
+                   ("TTMn", motor_ids, "gf_ttmn_motor")]
+    ENTRADA_IDS = ("LC4/LPLC2", [b for b, f in zip(sensor_ids, is_loom) if f],
+                   "gf_sensor_looming")
     print(f"Giant Fiber ao vivo -- {len(sensor_ids)} upstream, "
           f"looming L={LOOM_L.sum()} R={LOOM_R.sum()}")
 else:
@@ -119,6 +138,10 @@ else:
     rede = fast_lif.Rede(len(sensor_ids), [len(hs_ids), len(dna_ids), len(motor_ids)],
                          conexoes, DT_MS)
     CAMADA_SAIDA = 2
+    CAMADAS_IDS = [("HS", hs_ids, "om_hs_widefield"),
+                   ("DNa02", dna_ids, "om_dna02_steering"),
+                   ("motor", motor_ids, "om_leg_motor")]
+    ENTRADA_IDS = ("T4/T5", sensor_ids, "om_sensor_t4t5")
     print(f"Optomotor ao vivo -- T4/T5 L={np.sum(lado=='L')} R={np.sum(lado=='R')}")
 
 # retina a 100 Hz em vez de 500: renderizar os dois olhos e o que mais custa no
@@ -151,6 +174,61 @@ escape_ate = -1.0
 bal_suave = 0.0
 passo = 0
 
+# ------------------------- telemetria (so observa) -------------------------
+# Mao unica: nada daqui volta pra simulacao. Desligada custa uma chamada vazia.
+_tel = abrir_telemetria(porta=_args.porta, ativo=_args.telemetry)
+if _args.record:
+    _tel = Gravador(_tel, f"live_{MODO}",
+                    metadata={"mode": MODO, "dt_ms": DT_MS, "vision_hz": VISION_HZ})
+
+
+def _descreve(nome, ids, papel):
+    return {
+        "name": nome,
+        "role": papel,
+        "body_ids": [int(b) for b in ids],
+        "sides": [side_of(props, b) for b in ids],
+        "types": [str(props.at[b, "type"]) if b in props.index else None for b in ids],
+        "neurotransmitters": [str(props.at[b, "consensusNt"]) if b in props.index else None
+                              for b in ids],
+    }
+
+
+_circuitos = [_descreve(*ENTRADA_IDS)] + [_descreve(n, i, p) for n, i, p in CAMADAS_IDS]
+_tel.enviar(protocol.experiment_info(
+    experiment_id=f"live_{MODO}",
+    name=("Giant Fiber / looming ao vivo" if MODO == "escape"
+          else "Optomotor / fluxo optico ao vivo"),
+    description=__doc__.strip().splitlines()[0],
+    parameters={
+        "dt_physics_s": 1e-4, "dt_network_ms": DT_MS, "vision_hz": VISION_HZ,
+        "loom_gain": LOOM_GAIN, "flow_gain": FLOW_GAIN,
+        "tonic_inhib_hz": TONIC_INHIB_HZ, "base_drive": BASE_DRIVE,
+        "escape_drive": ESCAPE_DRIVE, "turn_gain": TURN_GAIN,
+    },
+    provenance={
+        # o que e medido no conectoma
+        "body_ids": protocol.DATA, "side": protocol.DATA, "type": protocol.DATA,
+        "neurotransmitter": protocol.DATA, "synapse_weight": protocol.DATA,
+        # o que sai do modelo biofisico de Shiu et al. rodando sobre esse dado
+        "membrane_potential": protocol.MODEL, "spikes": protocol.MODEL,
+        "synaptic_conductance": protocol.MODEL, "firing_rate": protocol.MODEL,
+        # o que e escolha nossa, e nao esta em lugar nenhum do dado
+        "loom_gain": protocol.ASSUMPTION, "flow_gain": protocol.ASSUMPTION,
+        "tonic_inhib_hz": protocol.ASSUMPTION,
+        "dark_fraction_detector": protocol.ASSUMPTION,
+        "motor_to_gait_mapping": protocol.ASSUMPTION,
+        "escape_drive": protocol.ASSUMPTION,
+    },
+    circuits=_circuitos,
+))
+_tel.enviar(protocol.scene_info(
+    arena={"kind": "looming_sphere" if MODO == "escape" else "blocks_terrain"},
+    stimulus=({"kind": "approaching_sphere", "radius": 3.0,
+               "start_distance": DIST_LONGE, "end_distance": DIST_PERTO,
+               "cycle_s": CICLO_S} if MODO == "escape" else {"kind": "self_motion_flow"}),
+))
+
 print()
 print("Abrindo o viewer do MuJoCo.")
 print("  camera segue a mosca sozinha; arrastar gira, scroll da zoom, espaco pausa")
@@ -178,6 +256,7 @@ with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
     viewer.user_scn.ngeom = 1        # a esfera de estado, atualizada a cada quadro
 
     ultimo_log = time.time()
+    _t_inicio = time.time()
     while viewer.is_running():
         t_s = passo * 1e-4
 
@@ -218,6 +297,9 @@ with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
             if MODO == "escape":
                 if saida.sum() and t_s > escape_ate:
                     escape_ate = t_s + ESCAPE_MS / 1000.0
+                    _tel.enviar(protocol.event(t_s, "escape_triggered", {
+                        "distance_mm": round(dist, 2),
+                        "ttmn_spikes": int(saida.sum())}))
                 drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE]) if t_s < escape_ate
                          else np.array([BASE_DRIVE, BASE_DRIVE]))
             else:
@@ -232,6 +314,10 @@ with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
                 else:
                     drive[0] -= -bal_suave * TURN_GAIN
                 drive = np.clip(drive, -0.5, 1.5)
+                if n_L + n_R > 0:
+                    _tel.enviar(protocol.event(
+                        t_s, "turn_right" if n_R > n_L else "turn_left",
+                        {"motor_L": n_L, "motor_R": n_R}))
 
             # esfera de estado acima da mosca: sem ela a janela nao diz se o
             # circuito esta fazendo alguma coisa, e a simulacao parece morta
@@ -259,6 +345,33 @@ with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
                 np.array(cor, dtype=np.float32),
             )
 
+            # ---- telemetria: publica o que acabou de ser calculado ----
+            # Nada aqui altera drive, estado da rede ou fisica. Se o Lab nao
+            # estiver conectado, `enviar` so encosta numa fila e volta.
+            _rel = time.time()
+            _tel.enviar(protocol.frame(
+                step=passo, sim_time=t_s, wall_time=_rel,
+                real_time_factor=t_s / max(1e-9, _rel - _t_inicio),
+                position=obs["fly"][0], drive=drive))
+
+            _snap = rede.snapshot([n for n, _, _ in CAMADAS_IDS])
+            _tel.enviar(protocol.neural_activity(t_s, [{
+                "name": c.get("name", f"layer{c['index']}"),
+                "spikes": c["spikes"],
+                "v_mV": c["v_mV"],
+                "g_mV": c["g_mV"],
+                "refractory": c["refratario"],
+            } for c in _snap]))
+
+            if passo % 5 == 0:     # retina e a mensagem mais cara: 1442 floats
+                _tel.enviar_se_conectado(
+                    protocol.retina, t_s, retina[0], retina[1],
+                    ({"looming": {"L": float(hz[0]), "R": float(hz[1])},
+                      "input_hz": {"L": float(hz[0]), "R": float(hz[1])}}
+                     if MODO == "escape" else
+                     {"optic_flow": {"L": float(hz[0]), "R": float(hz[1])},
+                      "input_hz": {"L": float(hz[0]), "R": float(hz[1])}}))
+
             viewer.sync()
 
             agora = time.time()
@@ -274,4 +387,6 @@ with mujoco.viewer.launch_passive(_modelo, sim.physics.data.ptr) as viewer:
                           f"motor total={total_saida:4d}  "
                           f"marcha L={drive[0]:5.2f} R={drive[1]:5.2f}")
 
+_tel.enviar(protocol.bye("viewer fechado"))
+_tel.fechar()
 print("encerrado.")

@@ -137,6 +137,31 @@ def test_servidor_entrega_mensagens():
         srv.fechar()
 
 
+def test_cliente_tardio_recebe_a_abertura():
+    """
+    A Unity quase sempre conecta com a simulacao ja rodando. Sem receber o
+    experiment_info ela nao sabe quais bodyIds acender -- tela vazia.
+    """
+    porta = _porta_livre()
+    srv = ServidorTelemetria(porta=porta)
+    try:
+        srv.enviar(protocol.experiment_info("exp1", "Experimento 1", "desc",
+                                            provenance={"body_ids": protocol.DATA}))
+        srv.enviar(protocol.scene_info(arena={"kind": "flat"}))
+        srv.enviar(protocol.frame(step=0, sim_time=0, wall_time=0,
+                                  real_time_factor=1, position=[0, 0, 0]))
+        time.sleep(0.3)
+
+        cli = socket.create_connection(("127.0.0.1", porta), timeout=3)
+        cli.settimeout(3)
+        f = cli.makefile("r", encoding="utf-8")
+        tipos = [protocol.decode(f.readline())["type"] for _ in range(3)]
+        assert tipos == ["hello", "experiment_info", "scene_info"], tipos
+        cli.close()
+    finally:
+        srv.fechar()
+
+
 def test_servidor_nao_bloqueia_sem_cliente():
     """
     A garantia central: a simulacao nunca pode esperar pelo visualizador.
