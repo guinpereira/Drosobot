@@ -15,3 +15,23 @@ blender/_*
 blender/skeletons/
 blender/*.obj
 blender/HANDOFF_PROMPT.md
+
+# corridas gravadas: telemetria bruta, cresce rapido, e sempre regeravel
+runs/
+
+# Unity: so o projeto vai pro git, nao o que o Editor gera
+unity/**/Library/
+unity/**/Temp/
+unity/**/Obj/
+unity/**/obj/
+unity/**/Build/
+unity/**/Builds/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/**/MemoryCaptures/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/*.user
+
+# assets exportados do Blender pra Unity: gerados por blender/export_unity.py
+unity_assets/
