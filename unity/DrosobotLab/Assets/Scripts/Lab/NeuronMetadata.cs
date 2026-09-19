@@ -35,6 +35,28 @@ namespace Drosobot.Lab
         public int sign;        // MODEL -- regra de Shiu et al. sobre o NT do pre
     }
 
+    /// <summary>
+    /// Quanto da populacao simulada tem morfologia exportada.
+    ///
+    /// Existe porque mostramos uma AMOSTRA dos LC4/LPLC2, nao a populacao toda.
+    /// Sem estes numeros a interface nao teria como dizer isso, e deixar
+    /// implicito que sao todos seria falso.
+    /// </summary>
+    [Serializable]
+    public class CoverageEntry
+    {
+        public string group;
+        public string[] types;
+        public int total_simulated;
+        public int total_visualized;
+        public float fraction_visualized;
+        public int total_synaptic_weight;
+        public int synaptic_weight_covered;
+        public float fraction_weight_covered;
+        public string selection;
+        public long[] population_body_ids;
+    }
+
     [Serializable]
     public class NeuronMetadata
     {

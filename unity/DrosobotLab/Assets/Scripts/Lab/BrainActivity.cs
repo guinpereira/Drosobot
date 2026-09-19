@@ -51,7 +51,18 @@ namespace Drosobot.Lab
 
         [Header("Estado")]
         public int mappedNeurons;
-        public int unmappedBodyIds;
+        public int knownWithoutGeometry;   // simulado, sem morfologia exportada
+        public int unknownBodyIds;         // nao esta no metadata: isso SIM e suspeito
+
+        /// <summary>
+        /// Como um bodyId do experimento se relaciona com a geometria.
+        ///
+        /// A distincao importa: um LC4/LPLC2 simulado que ficou de fora da
+        /// amostra de morfologia NAO e erro -- e escolha registrada no metadata.
+        /// Um bodyId que nao esta nem no metadata, esse sim indica descompasso
+        /// entre a simulacao e o export.
+        /// </summary>
+        public enum Conhecimento { ComGeometria, SemGeometria, Desconhecido }
 
         private static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
         // Built-in Render Pipeline usa _Color pro albedo; URP usa _BaseColor.
@@ -80,6 +91,17 @@ namespace Drosobot.Lab
         // ordem dos bodyIds por camada, como o experiment_info declarou
         private readonly Dictionary<string, long[]> _idsPorCamada = new Dictionary<string, long[]>();
         private readonly HashSet<long> _semGeometria = new HashSet<long>();
+        private readonly HashSet<long> _desconhecidos = new HashSet<long>();
+        private readonly HashSet<long> _conhecidosSemGeometria = new HashSet<long>();
+        // atividade agregada por camada, so dos que NAO tem morfologia individual
+        private readonly Dictionary<string, float> _atividadeAgregada = new Dictionary<string, float>();
+        private readonly Dictionary<string, int> _semGeometriaPorCamada = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> _totalPorCamada = new Dictionary<string, int>();
+
+        public IReadOnlyDictionary<string, float> AtividadeAgregada => _atividadeAgregada;
+        public IReadOnlyDictionary<string, int> SemGeometriaPorCamada => _semGeometriaPorCamada;
+        public IReadOnlyDictionary<string, int> TotalPorCamada => _totalPorCamada;
+        public CoverageEntry[] Coverage { get; private set; } = new CoverageEntry[0];
 
         /// <summary>Chamado depois que o GLB estiver na cena e o metadata lido.</summary>
         public void Bind(Transform cnsRoot, NeuronMetadata metadata)
@@ -125,6 +147,9 @@ namespace Drosobot.Lab
                 _porBodyId[m.bodyId] = n;
             }
             mappedNeurons = _porBodyId.Count;
+            _conhecidosSemGeometria.Clear();
+            foreach (var m in metadata.neurons)
+                if (!_porBodyId.ContainsKey(m.bodyId)) _conhecidosSemGeometria.Add(m.bodyId);
             Debug.Log($"[brain] {mappedNeurons} neuronios ligados ao CNS " +
                       $"(de {metadata.neurons.Length} no metadata)");
         }
@@ -142,23 +167,68 @@ namespace Drosobot.Lab
                 var ids = c["body_ids"] as JArray;
                 if (nome == null || ids == null) continue;
                 var arr = new long[ids.Count];
-                for (int i = 0; i < ids.Count; i++)
-                {
-                    arr[i] = (long)ids[i];
-                    if (!_porBodyId.ContainsKey(arr[i])) _semGeometria.Add(arr[i]);
-                }
+                for (int i = 0; i < ids.Count; i++) arr[i] = (long)ids[i];
                 _idsPorCamada[nome] = arr;
+                _totalPorCamada[nome] = arr.Length;
             }
-            unmappedBodyIds = _semGeometria.Count;
-            if (unmappedBodyIds > 0)
+            Reclassificar();
+
+
+        }
+
+        /// <summary>
+        /// Recalcula a classificacao de todos os bodyIds declarados.
+        ///
+        /// Precisa ser re-executavel porque o experiment_info chega pela
+        /// telemetria e o coverage vem do metadata em disco -- a ordem entre os
+        /// dois nao e garantida. Classificar uma vez so fazia os 271 LC4/LPLC2
+        /// fora da amostra virarem "desconhecidos" quando o experiment_info
+        /// chegava primeiro.
+        /// </summary>
+        private void Reclassificar()
+        {
+            _semGeometria.Clear();
+            _desconhecidos.Clear();
+            foreach (var kv in _idsPorCamada)
             {
-                // Isto acontece de verdade e nao e bug: o experimento de looming
-                // usa 1271 neuronios pre-sinapticos do GF, e o GLB so tem os 54
-                // dos grupos originais. Avisamos em vez de acender algo errado.
-                Debug.LogWarning($"[brain] {unmappedBodyIds} bodyIds do experimento nao tem " +
-                                 "geometria no GLB; a atividade deles nao aparece no cerebro. " +
-                                 "Regerar com connectome/fetch_skeletons_for_blender.py resolve.");
+                int semGeo = 0;
+                foreach (var b in kv.Value)
+                {
+                    var estado = Classificar(b);
+                    if (estado == Conhecimento.SemGeometria) { _semGeometria.Add(b); semGeo++; }
+                    else if (estado == Conhecimento.Desconhecido) { _desconhecidos.Add(b); semGeo++; }
+                }
+                _semGeometriaPorCamada[kv.Key] = semGeo;
             }
+            knownWithoutGeometry = _semGeometria.Count;
+            unknownBodyIds = _desconhecidos.Count;
+
+            if (unknownBodyIds > 0)
+                Debug.LogWarning($"[brain] {unknownBodyIds} bodyIds do experimento nao aparecem " +
+                                 "nem no metadata do CNS nem na populacao declarada -- simulacao " +
+                                 "e export podem estar fora de sincronia.");
+        }
+
+        /// <summary>Em que estado esta este bodyId em relacao a geometria.</summary>
+        public Conhecimento Classificar(long bodyId)
+        {
+            if (_porBodyId.ContainsKey(bodyId)) return Conhecimento.ComGeometria;
+            if (_conhecidosSemGeometria.Contains(bodyId)) return Conhecimento.SemGeometria;
+            return Conhecimento.Desconhecido;
+        }
+
+        public void SetCoverage(CoverageEntry[] cobertura)
+        {
+            Coverage = cobertura ?? new CoverageEntry[0];
+            // A populacao declarada no coverage e o que permite dizer "simulado,
+            // sem morfologia exportada" em vez de "bodyId desconhecido". Sem ela
+            // os 271 LC4/LPLC2 fora da amostra viravam suspeita de descompasso.
+            foreach (var c in Coverage)
+                if (c.population_body_ids != null)
+                    foreach (var b in c.population_body_ids)
+                        if (!_porBodyId.ContainsKey(b)) _conhecidosSemGeometria.Add(b);
+            // o experiment_info pode ter chegado antes disto
+            Reclassificar();
         }
 
         /// <summary>neural_activity: spikes e estado por camada.</summary>
@@ -175,11 +245,19 @@ namespace Drosobot.Lab
                 if (spikes == null) continue;
 
                 int n = Mathf.Min(ids.Length, spikes.Count);
+                float agregado = 0f;
                 for (int i = 0; i < n; i++)
                 {
                     int s = (int)spikes[i];
                     if (s <= 0) continue;
-                    if (!_porBodyId.TryGetValue(ids[i], out var neur)) continue;
+                    if (!_porBodyId.TryGetValue(ids[i], out var neur))
+                    {
+                        // Sem morfologia individual a atividade NAO se perde: vira
+                        // sinal de populacao. Nao inventamos posicao pra quem nao
+                        // foi exportado.
+                        agregado += s;
+                        continue;
+                    }
                     neur.spikeAge = 0f;
                     // taxa recente: quantos spikes por segundo, suavizada.
                     // A janela da rede e ~10 ms de mosca, entao `s` ja e contagem
@@ -187,6 +265,8 @@ namespace Drosobot.Lab
                     // que nao mandamos. Usamos como intensidade relativa, nao Hz.
                     neur.recentRate += s;
                 }
+                _atividadeAgregada[nome] = _atividadeAgregada.TryGetValue(nome, out var ant)
+                    ? ant + agregado : agregado;
             }
         }
 
@@ -194,6 +274,12 @@ namespace Drosobot.Lab
         {
             float dt = Time.deltaTime;
             float decaimento = Mathf.Exp(-dt / Mathf.Max(0.01f, rateWindow));
+
+            if (_atividadeAgregada.Count > 0)
+            {
+                var chaves = new List<string>(_atividadeAgregada.Keys);
+                foreach (var k in chaves) _atividadeAgregada[k] *= decaimento;
+            }
 
             foreach (var kv in _porBodyId)
             {

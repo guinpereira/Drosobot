@@ -163,6 +163,24 @@ namespace Drosobot.Lab
 
             var meta = NeuronMetadata.FromJson(metaTxt.text);
             _brain.Bind(_cnsRoot, meta);
+
+            // coverage vem como dicionario no JSON, que o JsonUtility nao le --
+            // por isso passa pelo Newtonsoft aqui
+            try
+            {
+                var raiz = JObject.Parse(metaTxt.text);
+                if (raiz["coverage"] is JObject cov)
+                {
+                    var lista = new List<CoverageEntry>();
+                    foreach (var kv in cov)
+                        lista.Add(kv.Value.ToObject<CoverageEntry>());
+                    _brain.SetCoverage(lista.ToArray());
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[lab] coverage ilegivel: {e.Message}");
+            }
             _grafo.Build(_cnsRoot, meta, _brain);
 
             // malhas de contexto ficam translucidas e discretas: sao referencia
@@ -349,7 +367,19 @@ namespace Drosobot.Lab
                 GUILayout.Space(8);
                 GUILayout.Label("ATIVIDADE (spikes na janela)", _rotulo);
                 foreach (var kv in _spikesPorCamada)
-                    GUILayout.Label($"  {kv.Key,-10} {kv.Value,4}", _mono);
+                {
+                    int total = 0, semGeo = 0;
+                    _brain.TotalPorCamada.TryGetValue(kv.Key, out total);
+                    _brain.SemGeometriaPorCamada.TryGetValue(kv.Key, out semGeo);
+                    int comGeo = System.Math.Max(0, total - semGeo);
+                    // Dizer so "LC4/LPLC2 67" daria a entender que sao todos os
+                    // que aparecem no cerebro. Mostramos quantos sao simulados e
+                    // quantos tem morfologia individual.
+                    string sufixo = semGeo > 0
+                        ? $"   {total} sim / {comGeo} com morfologia"
+                        : "";
+                    GUILayout.Label($"  {kv.Key,-10} {kv.Value,4}{sufixo}", _mono);
+                }
 
                 if (_retinaDerivadaL != null)
                 {
@@ -378,6 +408,7 @@ namespace Drosobot.Lab
             if (!presentationMode)
             {
                 DesenhaLegendaProcedencia();
+                DesenhaPopulacao();
                 DesenhaTimeline();
                 DesenhaRetina();
                 DesenhaInspector();
@@ -440,17 +471,59 @@ namespace Drosobot.Lab
             GUILayout.EndArea();
         }
 
+        private void DesenhaPopulacao()
+        {
+            if (_brain == null || _brain.AtividadeAgregada.Count == 0) return;
+            var linhas = new List<string>();
+            foreach (var kv in _brain.AtividadeAgregada)
+            {
+                if (!_brain.SemGeometriaPorCamada.TryGetValue(kv.Key, out int semGeo) || semGeo <= 0)
+                    continue;
+                linhas.Add(kv.Key + "|" + kv.Value.ToString("F0") + "|" + semGeo);
+            }
+            if (linhas.Count == 0) return;
+
+            var r = new Rect(290, 10, 330, 34 + linhas.Count * 40);
+            GUI.Box(r, GUIContent.none);
+            GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
+            GUILayout.Label("ATIVIDADE DE POPULACAO", _rotulo);
+            foreach (var linha in linhas)
+            {
+                var partes = linha.Split('|');
+                float v = float.Parse(partes[1]);
+                // Barra de populacao: os neuronios sem morfologia exportada
+                // contribuem aqui, e NAO num ponto inventado do cerebro.
+                int blocos = Mathf.Clamp(Mathf.RoundToInt(v / 3f), 0, 28);
+                GUILayout.Label($"{partes[0]}  ({partes[2]} sem morfologia individual)", _mono);
+                GUILayout.Label("  " + new string('#', blocos), _mono);
+            }
+            GUILayout.EndArea();
+        }
+
         private void DesenhaInspector()
         {
             long sel = _brain != null ? _brain.SelectedBodyId : -1;
-            var r = new Rect(Screen.width - 330, Screen.height - 196, 320, 186);
+            var r = new Rect(Screen.width - 340, Screen.height - 232, 330, 222);
             GUI.Box(r, GUIContent.none);
             GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
             GUILayout.Label("INSPECTOR", _rotulo);
             if (sel < 0)
             {
-                GUILayout.Label("clique num neuronio", _mono);
-                GUILayout.Label("ESC limpa a selecao", _mono);
+                // Sem selecao, o espaco vira o aviso de amostragem. Afirmar ou
+                // sugerir que a morfologia mostrada e a populacao toda seria
+                // falso, e este e o lugar onde o usuario olharia.
+                foreach (var c in _brain.Coverage)
+                {
+                    GUILayout.Label(c.group, _mono);
+                    GUILayout.Label($"  Simulated: {c.total_simulated} neurons", _mono);
+                    GUILayout.Label($"  3D morphology shown: {c.total_visualized} representative", _mono);
+                    GUILayout.Label($"  Synaptic-weight coverage: {c.fraction_weight_covered * 100f:F0}%", _mono);
+                    var antes = GUI.color;
+                    GUI.color = ProvenanceUtil.Color(Provenance.Data);
+                    GUILayout.Label("  DATA - morphology subset", _mono);
+                    GUI.color = antes;
+                }
+                GUILayout.Label("botao direito seleciona um neuronio", _mono);
                 GUILayout.EndArea();
                 return;
             }

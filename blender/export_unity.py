@@ -255,6 +255,20 @@ print(f"[export] {len(arestas)} arestas entre os neuronios exportados "
       f"(peso de {min(a['weight'] for a in arestas) if arestas else 0} a "
       f"{max(a['weight'] for a in arestas) if arestas else 0})")
 
+# cobertura da amostragem, escrita por fetch_skeletons_for_blender.py.
+# Sem isto a interface nao teria como dizer que mostra uma AMOSTRA e nao a
+# populacao -- e afirmar que sao todos os LC4/LPLC2 seria falso.
+cobertura = {}
+cov_path = SKEL_DIR / "coverage.json"
+if cov_path.exists():
+    try:
+        cobertura = json.loads(cov_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[export] AVISO: coverage.json ilegivel ({e})")
+for g, c in cobertura.items():
+    print(f"[export] cobertura {g}: {c['total_visualized']}/{c['total_simulated']} neuronios, "
+          f"{c['fraction_weight_covered']:.0%} do peso sinaptico")
+
 meta = {
     "source": "Male CNS v1.0 (neuPrint, Janelia) + JRCFIB2022M via navis-flybrains",
     "generator": "blender/export_unity.py",
@@ -266,6 +280,7 @@ meta = {
     "contextMeshes": malhas_contexto,
     "groupColors": {g: [round(c, 4) for c in cor] for g, cor in GROUP_COLORS.items()},
     "neuronCount": len(neuronios),
+    "coverage": cobertura,
     "edgeCount": len(arestas),
     "edges": arestas,
     "neurons": neuronios,
