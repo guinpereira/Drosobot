@@ -414,6 +414,53 @@ O que funcionou foi comparar a fracao escura com uma **media lenta** dela mesma
 looming real faz de qualquer jeito: adapta ao fundo e responde ao que destoa dele.
 
 
+### O reflexo serve pra alguma coisa? (resultado negativo)
+
+Ate aqui a mosca reagia a um estimulo que **nos** empurravamos na cara dela num
+cronograma fixo. `sim/flygym_avoidance.py` testa a pergunta seguinte: ela anda
+livre entre postes, o fluxo optico vem do movimento dela propria, e o circuito
+deveria desviar. Como o conectoma da o lado mas nao diz para que lado virar,
+rodamos as duas convencoes contra um controle cego.
+
+![Desvio de obstaculo](docs/images/flygym_avoidance.png)
+
+| | avanco | folga media | postes tocados |
+|---|---|---|---|
+| sem circuito (controle) | 79,0 mm | 6,91 mm | 0 |
+| vira PRA o obstaculo | 73,3 mm | 6,88 mm | 0 |
+| vira PRA LONGE dele | 73,1 mm | 6,88 mm | 0 |
+
+**Nao funciona, e nao e ajuste de parametro.** Medindo o circuito isolado com as
+taxas que um poste lateral realmente produz (~205 Hz no olho de perto, ~122 no
+outro, medidos na propria simulacao):
+
+| entrada (Hz) | motor L | motor R | L − R |
+|---|---|---|---|
+| 122 / 122 (sem poste) | 0,0 | 16,0 | −16,0 |
+| 205 / 122 (poste a esquerda) | 5,8 | 16,0 | −10,2 |
+| 122 / 205 (poste a direita) | 0,0 | 38,6 | −38,6 |
+
+O sinal de (L − R) e **sempre negativo**, esteja o obstaculo de que lado for. O
+canal esquerdo fica mudo com entrada simetrica e so acorda perto de 205 Hz. Um
+controlador que leia "de que lado" pela comparacao bilateral nao tem como
+funcionar: nessa faixa o circuito reporta QUANTO, nao DE QUE LADO.
+
+A causa e a assimetria de reconstrucao do Male CNS, a mesma ja documentada no
+circuito optomotor -- o hemisferio direito e mais forte em toda etapa (T4/T5 721
+contra 637, DNa02→motor 442 contra 334). Com limiar nao-linear o lado esquerdo
+fica abaixo do limiar e nao contribui. Com contraste extremo entre os olhos (200
+contra 15 Hz) a lateralizacao e limpa; um poste passando nao chega perto disso.
+
+Vale dizer o que isso **nao** significa. Nao e que a mosca real nao desvie de
+obstaculo, nem que o circuito biologico nao saiba de que lado esta a coisa. E que
+**este modelo, com este dataset, nesta faixa de entrada**, perde a informacao de
+lado. O gargalo e o vies do dataset atravessando ate o comportamento -- o que ja
+tinha aparecido como "virar pra esquerda e mais dificil" no simulador 2D, aqui
+aparece como incapacidade de desviar.
+
+As seis tentativas ate chegar nessa conclusao estao no cabecalho do script, pra
+quem quiser atacar de novo sem repetir o caminho.
+
 ## Visualização 3D — a morfologia real dos neurônios usados
 
 Os dois circuitos acima não são grafo abstrato: cada neurônio tem morfologia 3D
@@ -553,7 +600,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
   regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
   `flygym_optomotor.py` e `flygym_escape.py` fecham o laco no corpo
   biomecanico em MuJoCo, `flygym_live.py` mostra isso numa janela.
-  `fast_lif.py` e o integrador do laco ao vivo, verificado contra o Brian2
+  `fast_lif.py` e o integrador do laco ao vivo, verificado contra o Brian2.
+  `flygym_avoidance.py` testa se o circuito guia desvio (nao guia -- ver secao)
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
@@ -581,6 +629,9 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [x] Giant Fiber no mesmo laco 3D: esfera aproximando dispara recuo
       (`sim/flygym_escape.py`)
 - [x] Janela ao vivo do laco 3D (`sim/flygym_live.py`) e GIFs no README
+- [x] Testar se o reflexo tem FUNCAO (desvio de obstaculo): resultado negativo,
+      o vies do dataset apaga a informacao de lado nessa faixa de entrada
+- [ ] Corrigir o vies de hemisferio (normalizar por lado?) e repetir o desvio
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
