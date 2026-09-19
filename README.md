@@ -328,15 +328,40 @@ t= 3.04s  objeto   9.2mm  LC4/LPLC2 L= 12.0 R=  8.0 Hz  TTMn=53  FUGA
 Dispara perto de 9 mm, quando a taxa cruza ~10 Hz -- que e onde a curva do portao
 (`sim/inhibition_gate.py`) diz que a fuga comeca.
 
-Roda cerca de 35x mais devagar que tempo real, entao um ciclo de aproximacao leva
-uns 28 s de relogio. Pra assistir isso ate ajuda. Duas coisas foram decisivas pra
-chegar nessa velocidade, e valem pra quem for mexer:
+Roda cerca de 29x mais devagar que tempo real. Pra assistir isso ate ajuda.
 
-- **`net.run()` do Brian2 tem ~113 ms de overhead FIXO por chamada**, independente
-  da duracao simulada: medimos `run(2ms)` e `run(20ms)` custando o mesmo. Chamar a
-  cada 2 ms de mosca fazia a janela arrastar. Em janela de 10 ms o custo cai 5x.
-- **Renderizar a retina domina o passo de fisica.** A 500 Hz, o custo era 30 s por
-  segundo de mosca; a 100 Hz cai muito e ainda sobram 80 amostras por ciclo.
+### Onde o tempo vai (e onde NAO vai)
+
+A pergunta obvia e se da pra jogar isso na GPU. Medimos:
+
+| parte | custo por segundo de mosca |
+|---|---|
+| fisica do MuJoCo + controlador de marcha | ~22 s |
+| renderizar as duas retinas a 100 Hz | ~4 s |
+| rede spiking (integrador proprio) | ~0,1 s |
+| *(rede spiking no Brian2, como era antes)* | *~7,7 s* |
+
+**A GPU ja esta sendo usada no que ela pode fazer.** Confirmado em tempo de
+execucao: `GL_RENDERER: AMD Radeon RX 6700 XT`, OpenGL 4.6 -- a renderizacao da
+retina roda na placa. O que domina o custo e a **fisica**, e o MuJoCo classico
+resolve dinamica em CPU por design; nao existe caminho de GPU pra isso aqui.
+(Existe o MJX, que roda em JAX/GPU, mas ele serve pra simular milhares de
+ambientes em paralelo, nao pra deixar um unico mais rapido, e depende de CUDA.)
+
+Duas coisas valem pra quem for mexer:
+
+- **`net.run()` do Brian2 tem overhead FIXO por chamada**, independente da duracao
+  simulada: medimos `run(2ms)` e `run(20ms)` custando o mesmo. Por isso a janela
+  ao vivo usa `sim/fast_lif.py`, que resolve as mesmas equacoes em forma fechada e
+  sai 70x mais barato. O Brian2 continua sendo a referencia de todos os scripts de
+  figura, e `python sim/fast_lif.py` compara os dois.
+- **Renderizar a retina domina o resto.** A 500 Hz custava ~18 s por segundo de
+  mosca; a 100 Hz cai pra ~4 s e ainda sobram 80 amostras por ciclo.
+
+Aumentar o passo de fisica daria 2x, mas **nao e ganho de graca**: medimos a mosca
+andando 11 mm/s com passo de 1e-4, 14 mm/s com 2e-4 e 45 mm/s com 1e-3. A
+simulacao nao esta convergida nesse passo, entao afrouxar troca velocidade por
+fidelidade -- ruim num projeto cuja tese e que o comportamento vem do circuito.
 
 Cuidado ao mexer nisso: a adaptacao do fundo do detector de looming e 0,3 s de
 tempo real, mas no codigo vira numero de atualizacoes de retina. Mudar a taxa da
@@ -521,7 +546,8 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
   regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
   `flygym_optomotor.py` e `flygym_escape.py` fecham o laco no corpo
-  biomecanico em MuJoCo, `flygym_live.py` mostra isso numa janela
+  biomecanico em MuJoCo, `flygym_live.py` mostra isso numa janela.
+  `fast_lif.py` e o integrador do laco ao vivo, verificado contra o Brian2
 - `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
 - `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
   `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git

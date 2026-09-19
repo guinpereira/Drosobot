@@ -24,9 +24,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import mujoco.viewer
-from brian2 import (
-    Network, NeuronGroup, Synapses, SpikeMonitor, ms, mV, Hz, defaultclock,
-)
 import flygym.examples as flygym_examples
 from flygym import Fly
 from flygym.arena import BlocksTerrain
@@ -34,29 +31,38 @@ from flygym.examples.locomotion import HybridTurningController
 
 sys.path.insert(0, str(Path(__file__).parent))
 from connectome_model import (  # noqa: E402
-    CONNECTOME, LIF_EQS, LIF_KWARGS, T_DELAY, V_REST, TONIC_INHIB_HZ,
-    load_properties, signed_weights, side_of, gf_input_population,
+    CONNECTOME, TONIC_INHIB_HZ, load_properties, signed_weights, side_of,
+    gf_input_population,
 )
+import fast_lif  # noqa: E402
 
 MODO = "optomotor" if len(sys.argv) > 1 and sys.argv[1].startswith("opto") else "escape"
 props = load_properties()
-defaultclock.dt = 0.5 * ms
+
+# Aqui a rede roda no integrador proprio (sim/fast_lif.py), nao no Brian2. Motivo:
+# o Brian2 cobra ~76 ms de overhead FIXO por chamada de run(), e o laco ao vivo
+# precisa alternar entre fisica e rede centenas de vezes por segundo de mosca --
+# 7,7 s de relogio por segundo de mosca so de overhead. O integrador resolve as
+# mesmas equacoes em forma fechada e sai 70x mais barato (0,1 s/s).
+#
+# O Brian2 continua sendo a referencia: todos os scripts de figura usam ele, e
+# `python sim/fast_lif.py` compara os dois pra garantir que nao divergiram.
+DT_MS = 0.5
 
 CONTATOS = [f"{perna}{seg}"
             for perna in ["LF", "LM", "LH", "RF", "RM", "RH"]
             for seg in ["Tibia", "Tarsus1", "Tarsus2", "Tarsus3", "Tarsus4", "Tarsus5"]]
 
 
-def monta(src_tgt):
-    """Cria as Synapses de uma lista de (origem, destino, conexoes, ix_pre, ix_pos)."""
+def monta(tabelas):
+    """(conexoes, ix_pre, ix_pos) -> lista de (i_pre, j_pos, w_mV) pro fast_lif."""
     out = []
-    for src, tgt, conn, si, ti in src_tgt:
+    for conn, si, ti in tabelas:
         agg = signed_weights(conn, props)
         agg = agg[agg["bodyId_pre"].isin(si) & agg["bodyId_post"].isin(ti)]
-        S = Synapses(src, tgt, "w : volt", on_pre="g_post += w", delay=T_DELAY)
-        S.connect(i=[si[b] for b in agg["bodyId_pre"]], j=[ti[b] for b in agg["bodyId_post"]])
-        S.w = agg["w_mV"].values * mV
-        out.append(S)
+        out.append(([si[b] for b in agg["bodyId_pre"]],
+                    [ti[b] for b in agg["bodyId_post"]],
+                    agg["w_mV"].values))
     return out
 
 
@@ -86,13 +92,10 @@ if MODO == "escape":
     LOOM_L = is_loom & (lado == "L")
     LOOM_R = is_loom & (lado == "R")
 
-    Sensor = NeuronGroup(len(sensor_ids), "rate : Hz", threshold="rand()<rate*dt", method="euler")
-    GF = NeuronGroup(len(GF_IDS), LIF_EQS, **LIF_KWARGS); GF.v = V_REST
-    Saida = NeuronGroup(len(motor_ids), LIF_EQS, **LIF_KWARGS); Saida.v = V_REST
-    syn = monta([(Sensor, GF, up, ix(sensor_ids), ix(GF_IDS)),
-                 (GF, Saida, down, ix(GF_IDS), ix(motor_ids))])
-    mon = SpikeMonitor(Saida)
-    net = Network(Sensor, GF, Saida, *syn, mon)
+    conexoes = monta([(up, ix(sensor_ids), ix(GF_IDS)),
+                      (down, ix(GF_IDS), ix(motor_ids))])
+    rede = fast_lif.Rede(len(sensor_ids), [len(GF_IDS), len(motor_ids)], conexoes, DT_MS)
+    CAMADA_SAIDA = 1
     print(f"Giant Fiber ao vivo -- {len(sensor_ids)} upstream, "
           f"looming L={LOOM_L.sum()} R={LOOM_R.sum()}")
 else:
@@ -109,15 +112,12 @@ else:
     MOTOR_L = np.where(lado_motor == "L")[0]
     MOTOR_R = np.where(lado_motor == "R")[0]
 
-    Sensor = NeuronGroup(len(sensor_ids), "rate : Hz", threshold="rand()<rate*dt", method="euler")
-    HS = NeuronGroup(len(hs_ids), LIF_EQS, **LIF_KWARGS); HS.v = V_REST
-    DNa02 = NeuronGroup(len(dna_ids), LIF_EQS, **LIF_KWARGS); DNa02.v = V_REST
-    Saida = NeuronGroup(len(motor_ids), LIF_EQS, **LIF_KWARGS); Saida.v = V_REST
-    syn = monta([(Sensor, HS, sensor_hs, ix(sensor_ids), ix(hs_ids)),
-                 (HS, DNa02, hs_dna02, ix(hs_ids), ix(dna_ids)),
-                 (DNa02, Saida, dna02_motor, ix(dna_ids), ix(motor_ids))])
-    mon = SpikeMonitor(Saida)
-    net = Network(Sensor, HS, DNa02, Saida, *syn, mon)
+    conexoes = monta([(sensor_hs, ix(sensor_ids), ix(hs_ids)),
+                      (hs_dna02, ix(hs_ids), ix(dna_ids)),
+                      (dna02_motor, ix(dna_ids), ix(motor_ids))])
+    rede = fast_lif.Rede(len(sensor_ids), [len(hs_ids), len(dna_ids), len(motor_ids)],
+                         conexoes, DT_MS)
+    CAMADA_SAIDA = 2
     print(f"Optomotor ao vivo -- T4/T5 L={np.sum(lado=='L')} R={np.sum(lado=='R')}")
 
 # retina a 100 Hz em vez de 500: renderizar os dois olhos e o que mais custa no
@@ -138,17 +138,14 @@ FLOW_GAIN, FLOW_MAX_HZ = 30000.0, 250.0
 BASE_DRIVE, ESCAPE_DRIVE, ESCAPE_MS = 1.0, -0.5, 120.0
 TURN_GAIN, TURN_TAU = 1.2, 12.0
 CICLO_S, DIST_LONGE, DIST_PERTO = 0.8, 30.0, 4.0
-# Brian2 tem ~113 ms de overhead FIXO por chamada de run(), independente da duracao
-# simulada (medido: run(2ms) e run(20ms) custam o mesmo). Chamar a cada 2 ms fazia
-# a janela ao vivo arrastar. Em janela de 10 ms o custo do Brian2 cai 5x e a
-# resolucao continua sobrando pra um ciclo de aproximacao de 0.8 s.
-BRIAN_STEP = 10 * ms
+# janela em que a rede avanca entre duas leituras da retina
+JANELA_MS = 10.0
 
 _r0 = np.asarray(obs["vision"]).mean(axis=2)
 escuro_lento = (_r0 < DARK_THRESHOLD).mean(axis=1)
 retina_ant = _r0
 drive = np.array([BASE_DRIVE, BASE_DRIVE])
-visto = 0
+total_saida = 0
 escape_ate = -1.0
 bal_suave = 0.0
 passo = 0
@@ -184,25 +181,25 @@ with mujoco.viewer.launch_passive(sim.physics.model.ptr, sim.physics.data.ptr) a
                 taxa[LOOM_L] = hz[0]
                 taxa[LOOM_R] = hz[1]
                 taxa[is_inhib] = TONIC_INHIB_HZ
-                Sensor.rate = taxa * Hz
+                taxas = taxa
             else:
                 flow = np.abs(retina - retina_ant).mean(axis=1)
                 retina_ant = retina
                 hz = np.clip(flow * FLOW_GAIN, 0, FLOW_MAX_HZ)
-                Sensor.rate = np.where(lado == "L", hz[0], hz[1]) * Hz
+                taxas = np.where(lado == "L", hz[0], hz[1])
 
-            net.run(BRIAN_STEP)
-            novos = np.asarray(mon.i[visto:])
-            visto = mon.num_spikes
+            contagem = rede.roda(JANELA_MS, taxas)
+            saida = contagem[CAMADA_SAIDA]      # spikes por neuronio nesta janela
+            total_saida += int(saida.sum())
 
             if MODO == "escape":
-                if len(novos) and t_s > escape_ate:
+                if saida.sum() and t_s > escape_ate:
                     escape_ate = t_s + ESCAPE_MS / 1000.0
                 drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE]) if t_s < escape_ate
                          else np.array([BASE_DRIVE, BASE_DRIVE]))
             else:
-                n_L = int(np.isin(novos, MOTOR_L).sum())
-                n_R = int(np.isin(novos, MOTOR_R).sum())
+                n_L = int(saida[MOTOR_L].sum())
+                n_R = int(saida[MOTOR_R].sum())
                 total = n_L + n_R
                 bal = 0.0 if total == 0 else (n_R - n_L) / total
                 bal_suave += (bal - bal_suave) / TURN_TAU
@@ -222,10 +219,10 @@ with mujoco.viewer.launch_passive(sim.physics.model.ptr, sim.physics.data.ptr) a
                     estado = "FUGA" if t_s < escape_ate else "andando"
                     print(f"t={t_s:5.2f}s  objeto {dist:5.1f}mm  "
                           f"LC4/LPLC2 L={hz[0]:5.1f} R={hz[1]:5.1f} Hz  "
-                          f"TTMn total={mon.num_spikes:4d}  {estado}")
+                          f"TTMn total={total_saida:4d}  {estado}")
                 else:
                     print(f"t={t_s:5.2f}s  T4/T5 L={hz[0]:5.0f} R={hz[1]:5.0f} Hz  "
-                          f"motor total={mon.num_spikes:4d}  "
+                          f"motor total={total_saida:4d}  "
                           f"marcha L={drive[0]:5.2f} R={drive[1]:5.2f}")
 
 print("encerrado.")
