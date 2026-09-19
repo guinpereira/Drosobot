@@ -461,6 +461,40 @@ aparece como incapacidade de desviar.
 As seis tentativas ate chegar nessa conclusao estao no cabecalho do script, pra
 quem quiser atacar de novo sem repetir o caminho.
 
+## Drosobot Lab — laboratorio virtual (em construcao)
+
+Camada nova pra assistir aos circuitos rodando: a mosca em MuJoCo, o CNS 3D
+reconstruido acendendo conforme a atividade, e a separacao entre dado medido e
+suposicao nossa visivel na tela.
+
+```
+conectoma -> LIF -> MuJoCo/FlyGym -> sensores -> (laco)
+                         |
+                    TELEMETRIA (mao unica)
+                         |
+                   Unity Drosobot Lab
+                  visualizacao apenas
+```
+
+**A Unity nao decide nada.** Nao simula fisica, nao simula neuronio, nao escolhe
+se a mosca virou ou escapou. MuJoCo continua sendo a autoridade da fisica e o
+circuito a do comportamento. Isso evita o pior resultado possivel: duas
+implementacoes do cerebro divergindo em silencio.
+
+```
+blender\export_unity.py                              # CNS -> GLB (uma vez)
+.venv\Scripts\python simlygym_live.py --telemetry   # simulacao publicando
+python -m sim.telemetry.demo                          # sem MuJoCo, so interface
+```
+
+Arquitetura, protocolo, procedencia DATA/MODEL/ASSUMPTION, cores e limitacoes
+conhecidas em **[docs/DROSOBOT_LAB.md](docs/DROSOBOT_LAB.md)**.
+
+Estado: telemetria, instrumentacao do `fast_lif`, exportacao do CNS e os scripts
+C# estao prontos e testados. **A cena da Unity nunca foi aberta no Editor e o C#
+nao foi compilado** -- nao havia integracao MCP com a Unity disponivel. Detalhes
+em docs/DROSOBOT_LAB.md.
+
 ## Visualização 3D — a morfologia real dos neurônios usados
 
 Os dois circuitos acima não são grafo abstrato: cada neurônio tem morfologia 3D
