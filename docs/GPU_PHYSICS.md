@@ -4,7 +4,8 @@ Um backend de física acelerado por GPU para o NeuroMechFly, sem CUDA, medido
 contra o MuJoCo CPU como referência.
 
 Este documento é o estado real do trabalho: o que foi construído, o que foi
-medido, e — a parte mais importante — **o que a medição refuta**.
+medido, e — a parte mais importante — **o que a medição refuta e o que ela
+ainda permite**.
 
 ---
 
@@ -24,28 +25,46 @@ Hardware do alvo primário: **AMD Radeon RX 6700 XT / Windows 11**, `gfx1031`,
 
 ## A resposta curta
 
-**Para este modelo, nesta placa, não.** E a razão é estrutural, não de
-implementação.
+**Ainda não — mas a medição não diz que é impossível, e essa distinção é o
+resultado mais importante desta rodada.**
 
-O modelo tem `nv = 72`. Isso é minúsculo para uma GPU. Três medidas
-independentes, cada uma refutando uma esperança diferente:
+O modelo tem `nv = 72`. Isso é minúsculo para uma GPU, e três medidas
+independentes fecham o espaço de desenhos possíveis:
 
 | medida | valor | o que refuta |
 |---|---|---|
 | despacho OpenCL síncrono | **84 us** | CPU no laço a cada passo, em qualquer API |
-| Cholesky densa 72×72, um work-group | **40 us** | porte direto do solver Newton |
-| cinemática direta portada, fp32 | **12,3 us** contra **6,3 us** da CPU | que o problema fosse só o solver |
+| Cholesky densa 72×72, um work-group | **40 us** | porte direto do solver Newton no primal |
+| cinemática direta portada, fp32 | **9,3 us** contra **5,0–7,3 us** da CPU | que bastasse portar bem |
+
+Mas o teto **não** proíbe. Um passo de física sobre este modelo tem ~470
+estágios sequenciais — trechos que não podem começar antes de o anterior
+terminar. O custo de um estágio nesta placa, medido em isolamento:
+
+```
+piso absoluto, trabalho zero          0,060 us   ->  470 estagios =  28 us
+com trabalho moderado                 0,248 us   ->  470 estagios = 116 us
+na taxa real da cinematica portada    0,77  us   ->  470 estagios = 362 us
+MuJoCo CPU hoje                                                     117 us
+```
+
+O hardware comporta um passo inteiro em 28 us. Uma implementação com trabalho
+moderado por estágio empata com o MuJoCo. **O que falta é implementação, não
+placa** — e a distância exata é 3×, do que temos hoje até a paridade.
+
+Uma parte desses 3× já foi recuperada nesta sessão, por diagnóstico e não por
+tentativa: o kernel lia as constantes do modelo da memória global a cada nível,
+com ~7 corpos ativos e nada para esconder a latência. Passando-as para
+registrador, a cinemática em fp64 caiu de 26,4 para 20,6 us. Em fp32 a diferença
+ficou dentro do ruído de corrida a corrida (~10 us nas duas variantes).
 
 A cinemática está **correta** — erro máximo 6,7e-16 contra o `mjData` em fp64 —
-e ainda assim é 2× mais lenta que a CPU em fp32 e 4× em fp64. E o tempo dela é
-**plano de 16 a 256 threads**: não falta paralelismo. O que limita é a cadeia
-serial de 10 níveis da árvore de corpos, onde cada elo é uma operação escalar
-dependente da anterior. Um núcleo de CPU com execução fora de ordem e cache L1
-resolve essa cadeia melhor que um CU de GPU, e nenhuma quantidade de threads a
-encurta.
+e ainda assim é 1,3–2× mais lenta que a CPU. E o tempo dela é **plano de 16 a
+256 threads**: não falta paralelismo. O que limita é a cadeia serial de 10
+níveis da árvore de corpos, onde cada elo é uma operação escalar dependente da
+anterior.
 
-O que isso **não** significa: que o trabalho foi perdido, ou que a resposta seja
-a mesma para outro modelo. Ver [O que mudaria a resposta](#o-que-mudaria-a-resposta).
+Ver [O que mudaria a resposta](#o-que-mudaria-a-resposta).
 
 ---
 
@@ -346,27 +365,37 @@ maior parte.
 
 ### Latência, e o que ela diz
 
-```
-                       fp64      fp32
-work-group 16         32,9      15,3   us
-work-group 32         29,9      14,0
-work-group 64         27,2      13,2
-work-group 128        27,0      12,3
-work-group 256        27,3      12,8
+Arena de looming, melhor work-group de cada variante:
 
-MuJoCo CPU (mj_kinematics)        6,3   us
+```
+                              fp64      fp32
+modelo em memoria global      26,4       9,8   us
+constantes em registrador     20,6      10,2   us
+
+MuJoCo CPU (mj_kinematics)               5,0   us
 ```
 
-**Plano.** Dezesseis vezes mais threads, o mesmo tempo. Esse é o diagnóstico
-inteiro: o kernel não está limitado por paralelismo, nem por barreiras (12
-barreiras × 0,035 us = 0,4 us dos 12,3), nem por banda. Está limitado pela
+**O tempo é plano de 16 a 256 threads.** Dezesseis vezes mais threads, o mesmo
+tempo. O kernel não está limitado por paralelismo, nem por barreiras (12
+barreiras × 0,035 us = 0,4 us do total), nem por banda. Está limitado pela
 cadeia serial de 10 níveis de operações escalares dependentes.
 
-Duas otimizações foram tentadas e medidas, não supostas:
+Três otimizações foram tentadas e medidas, não supostas:
 
 * **estado dos corpos em `__local`** em vez de memória global entre níveis:
-  32 → 27 us em fp64, 12,9 → 13,0 em fp32. Praticamente nada. Não era memória.
+  32 → 27 us em fp64, sem efeito em fp32. Quase nada — o estado não era o
+  problema.
+* **constantes do modelo em registrador**, uma thread adotando um corpo:
+  26,4 → 20,6 us em fp64 (−24%); em fp32 as duas variantes ficam dentro do
+  ruído de corrida a corrida. A leitura: fp64 é mais sensível porque cada
+  leitura é duas vezes mais larga, e com ~7 corpos ativos por nível não há
+  trabalho para escondê-la.
 * **varredura de tamanho de work-group** de 16 a 256: acima.
+
+O que sobra, em número: **0,77–0,85 us por estágio sequencial**, contra 0,248 us
+de um estágio sintético com trabalho comparável. Esse fator ~3 é a distância que
+separa o que está escrito do que a placa comporta — e é exatamente o fator que
+decide o projeto inteiro, porque ele multiplica os ~470 estágios do passo.
 
 ### Precisão
 
@@ -391,7 +420,8 @@ Sem eufemismo:
 ### Roda no Drosobot GPU Physics
 
 * cinemática direta completa: quadros dos corpos, quadros inerciais, quadros dos
-  geoms, âncoras e eixos das juntas — validada contra o `mjData`
+  geoms, âncoras e eixos das juntas — validada contra o `mjData`, em duas
+  variantes (modelo em memória global, constantes em registrador)
 
 ### Continua no MuJoCo CPU
 
@@ -416,6 +446,13 @@ A conclusão é sobre **este modelo, nesta placa, com um mundo**. Três coisas a
 mudariam, e vale dizer quais para que a medição não seja lida como mais geral do
 que é:
 
+0. **Fechar o fator 3 até o piso.** É a que está mais perto e a única sobre a
+   qual há número: 0,77 us por estágio hoje, 0,248 us no sintético com trabalho
+   comparável. Recuperar isso põe o passo projetado em ~116 us, empatando com o
+   MuJoCo CPU — antes de qualquer outra mudança. O caminho que a medição aponta
+   é reduzir o que cada estágio espera: menos leituras dependentes, mais
+   trabalho por thread ativa, e menos estágios (fundir níveis onde a árvore
+   permite).
 1. **Um modelo maior.** `nv` na casa dos milhares muda tudo: a cadeia serial da
    árvore cresce como o logaritmo da profundidade, o trabalho paralelo cresce
    linearmente. É o regime em que o MJX e o MuJoCo Warp ganham.
@@ -458,6 +495,9 @@ traduzir.
 ## Como executar
 
 ```bat
+REM quantos estagios sequenciais cabem no orcamento
+.venv-flygym2\Scripts\python benchmarks\physics\gpu\orcamento_de_estagios.py
+
 REM o que o modelo usa do MuJoCo
 .venv-flygym2\Scripts\python -m sim.gpu_physics.inventario
 

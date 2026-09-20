@@ -766,10 +766,11 @@ CNS, os `_pylibs/` e `skeletons/` do Blender, os clones em `research/upstream/`.
 - [x] Drosobot GPU Physics: compilador de subconjunto MJCF, `physics_model_hash`,
       backend na receita, e a cinematica direta portada e validada (6,7e-16 em
       fp64 contra o `mjData`)
-- [x] Medir antes de prometer: com `nv=72` e um mundo, a GPU PERDE em todos os
-      estagios medidos -- 84 us por despacho sincrono, 40 us por Cholesky 72x72,
-      12,3 us de cinematica contra 6,3 us da CPU, e o tempo e plano de 16 a 256
-      threads. Ver [docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)
+- [x] Medir antes de prometer: com `nv=72` e um mundo a GPU ainda PERDE (9,3 us
+      de cinematica contra 5-7 us da CPU), mas o TETO nao proibe -- o piso desta
+      placa e 0,060 us por estagio sequencial, e os ~470 estagios de um passo
+      cabem em 28 us. A distancia ate a paridade e 3x de implementacao, nao de
+      hardware. Ver [docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)
 - [ ] Cortar os 82 us/passo de Python em volta da fisica -- hoje valem mais que
       qualquer ganho disponivel dentro do `mj_step`
 

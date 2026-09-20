@@ -1,0 +1,36 @@
+{
+ "gerado_em": "2026-09-20T16:24:00",
+ "device": "gfx1031",
+ "nv": 72,
+ "referencias": {
+  "cinematica_portada": {
+   "estagios": 12,
+   "us": 12.3,
+   "us_por_estagio": 1.025
+  },
+  "mj_step_cpu_us": 117.0,
+  "orcamento_tempo_real_us": 100.0,
+  "estagios_estimados_por_passo": 470
+ },
+ "custo_por_estagio": {
+  "W64_flops0": 0.1222,
+  "W64_flops4": 0.2273,
+  "W64_flops16": 0.4476,
+  "W64_flops64": 1.2708,
+  "W256_flops0": 0.0602,
+  "W256_flops4": 0.1318,
+  "W256_flops16": 0.2476,
+  "W256_flops64": 0.6729
+ },
+ "projecao": {
+  "piso_por_estagio_us": 0.0602,
+  "estagio_com_trabalho_moderado_us": 0.2476,
+  "estagio_medido_na_cinematica_us": 1.025,
+  "passo_no_piso_us": 28.3,
+  "passo_com_trabalho_moderado_us": 116.4,
+  "passo_na_taxa_da_cinematica_us": 481.8,
+  "estagios_que_cabem_no_mj_step": 1943,
+  "estagios_que_cabem_no_tempo_real": 1661
+ },
+ "leitura": "No piso absoluto (0.060 us/estagio, trabalho zero) cabem 1943 estagios dentro dos 117 us do mj_step, contra ~470 necessarios. Na taxa REAL medida na cinematica portada (1.03 us/estagio) o passo projetado sai a 482 us. O piso nao proibe; a taxa real, sim -- e a diferenca entre os dois e exatamente o que uma implementacao melhor teria que recuperar."
+}

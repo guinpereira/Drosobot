@@ -19,6 +19,17 @@ especifica: **o kernel esta limitado por paralelismo?** Se o tempo cair quando
 o grupo cresce, sim, e a saida e mais threads. Se ficar plano de 16 a 256
 threads, nao -- e ai o que limita e a cadeia serial de dependencias da arvore,
 que nenhum numero de threads encurta.
+
+Duas variantes do mesmo kernel sao medidas lado a lado, porque a diferenca
+entre elas foi o achado desta rodada:
+
+    lds    quadros dos corpos em __local, MODELO em memoria global
+    reg    cada thread adota um corpo e carrega as constantes dele em
+           REGISTRADOR antes do laco -- durante a arvore nao ha leitura de
+           modelo nenhuma
+
+Com ~7 corpos ativos por nivel nao ha trabalho para esconder a latencia das
+leituras de modelo, e cada nivel comecava esperando a VRAM.
 """
 from __future__ import annotations
 
@@ -95,17 +106,25 @@ def mede(arena: str, estimulo: dict) -> dict:
         for k, v in ref.items():
             got = gpu.le(k).reshape(v.shape).astype(np.float64)
             erros[k] = float(np.abs(got - v).max())
-        por_grupo = {}
+        por_grupo, por_grupo_lds = {}, {}
         for W in GRUPOS:
             g = CinematicaGPU(mod, dev=dev, fp64=fp64, grupo=W)
             g.escreve_estado(d.qpos, d.mocap_pos, d.mocap_quat)
             por_grupo[W] = round(_marginal(lambda reps: g.passo(reps), 1, 21), 3)
+            por_grupo_lds[W] = round(
+                _marginal(lambda reps: g.passo_lds(reps), 1, 21), 3)
+        melhor = min(por_grupo.values())
         r["precisao"][nome] = {
             "erro_max_por_campo": {k: float(f"{v:.3e}") for k, v in erros.items()},
             "erro_max": float(f"{max(erros.values()):.3e}"),
             "us_por_fk_por_work_group": por_grupo,
-            "us_por_fk_melhor": min(por_grupo.values()),
+            "us_por_fk_por_work_group_lds": por_grupo_lds,
+            "us_por_fk_melhor": melhor,
+            "us_por_fk_melhor_lds": min(por_grupo_lds.values()),
             "arvore_profundidade": gpu.profundidade,
+            "estagios_sequenciais": gpu.profundidade + 2,
+            "us_por_estagio": round(melhor / (gpu.profundidade + 2), 3),
+            "usa_registradores": gpu.usa_registradores,
         }
 
     # referencia: mj_kinematics sozinho, sem o resto do passo
@@ -143,8 +162,10 @@ def main() -> int:
         print(f"  MuJoCo CPU            {r['mujoco_cpu_us_por_fk']:>8.2f} us")
         for p, v in r["precisao"].items():
             print(f"  Drosobot GPU {p}      {v['us_por_fk_melhor']:>8.2f} us   "
-                  f"erro max {v['erro_max']:.2e}")
-            print(f"      por work-group: {v['us_por_fk_por_work_group']}")
+                  f"erro max {v['erro_max']:.2e}   "
+                  f"{v['us_por_estagio']:.2f} us/estagio")
+            print(f"      registradores: {v['us_por_fk_por_work_group']}")
+            print(f"      modelo global: {v['us_por_fk_por_work_group_lds']}")
         print(f"  -> {r['leitura']}")
 
     dest = RAIZ / "benchmarks" / "physics" / "gpu" / "fk_gpu_vs_cpu.json"

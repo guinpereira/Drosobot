@@ -1,5 +1,5 @@
 {
- "gerado_em": "2026-09-20T16:01:17",
+ "gerado_em": "2026-09-20T17:03:00",
  "mujoco": "3.9.0",
  "arenas": {
   "looming": {
@@ -39,14 +39,25 @@
      },
      "erro_max": 6.661e-16,
      "us_por_fk_por_work_group": {
-      "16": 32.854,
-      "32": 29.935,
-      "64": 27.195,
-      "128": 27.017,
-      "256": 27.312
+      "16": 32.494,
+      "32": 30.58,
+      "64": 28.273,
+      "128": 23.929,
+      "256": 20.622
      },
-     "us_por_fk_melhor": 27.017,
-     "arvore_profundidade": 10
+     "us_por_fk_por_work_group_lds": {
+      "16": 38.567,
+      "32": 32.875,
+      "64": 26.381,
+      "128": 29.2,
+      "256": 31.602
+     },
+     "us_por_fk_melhor": 20.622,
+     "us_por_fk_melhor_lds": 26.381,
+     "arvore_profundidade": 10,
+     "estagios_sequenciais": 12,
+     "us_por_estagio": 1.718,
+     "usa_registradores": true
     },
     "fp32": {
      "erro_max_por_campo": {
@@ -62,18 +73,29 @@
      },
      "erro_max": 3.593e-07,
      "us_por_fk_por_work_group": {
-      "16": 15.267,
-      "32": 13.994,
-      "64": 13.211,
-      "128": 12.28,
-      "256": 12.771
+      "16": 16.977,
+      "32": 14.761,
+      "64": 14.978,
+      "128": 10.23,
+      "256": 11.409
      },
-     "us_por_fk_melhor": 12.28,
-     "arvore_profundidade": 10
+     "us_por_fk_por_work_group_lds": {
+      "16": 13.206,
+      "32": 12.94,
+      "64": 9.842,
+      "128": 11.267,
+      "256": 9.91
+     },
+     "us_por_fk_melhor": 10.23,
+     "us_por_fk_melhor_lds": 9.842,
+     "arvore_profundidade": 10,
+     "estagios_sequenciais": 12,
+     "us_por_estagio": 0.853,
+     "usa_registradores": true
     }
    },
-   "mujoco_cpu_us_por_fk": 6.33,
-   "razao_gpu_sobre_cpu_melhor_caso": 1.94,
+   "mujoco_cpu_us_por_fk": 5.005,
+   "razao_gpu_sobre_cpu_melhor_caso": 2.04,
    "limitado_por_paralelismo": false,
    "leitura": "tempo plano de 16 a 256 threads: o kernel NAO esta limitado por paralelismo. O que limita e a cadeia serial da arvore -- 10 niveis de operacoes escalares dependentes -- e nenhum numero de threads a encurta."
   },
@@ -114,14 +136,25 @@
      },
      "erro_max": 8.882e-16,
      "us_por_fk_por_work_group": {
-      "16": 30.677,
-      "32": 32.368,
-      "64": 27.173,
-      "128": 27.918,
-      "256": 25.466
+      "16": 25.452,
+      "32": 29.441,
+      "64": 27.938,
+      "128": 22.124,
+      "256": 19.947
      },
-     "us_por_fk_melhor": 25.466,
-     "arvore_profundidade": 10
+     "us_por_fk_por_work_group_lds": {
+      "16": 29.206,
+      "32": 33.683,
+      "64": 25.503,
+      "128": 28.223,
+      "256": 28.885
+     },
+     "us_por_fk_melhor": 19.947,
+     "us_por_fk_melhor_lds": 25.503,
+     "arvore_profundidade": 10,
+     "estagios_sequenciais": 12,
+     "us_por_estagio": 1.662,
+     "usa_registradores": true
     },
     "fp32": {
      "erro_max_por_campo": {
@@ -137,18 +170,29 @@
      },
      "erro_max": 5.036e-07,
      "us_por_fk_por_work_group": {
-      "16": 16.384,
-      "32": 13.925,
-      "64": 12.967,
-      "128": 12.189,
-      "256": 11.968
+      "16": 16.392,
+      "32": 14.257,
+      "64": 13.282,
+      "128": 9.273,
+      "256": 9.397
      },
-     "us_por_fk_melhor": 11.968,
-     "arvore_profundidade": 10
+     "us_por_fk_por_work_group_lds": {
+      "16": 13.762,
+      "32": 12.364,
+      "64": 11.458,
+      "128": 13.033,
+      "256": 16.23
+     },
+     "us_por_fk_melhor": 9.273,
+     "us_por_fk_melhor_lds": 11.458,
+     "arvore_profundidade": 10,
+     "estagios_sequenciais": 12,
+     "us_por_estagio": 0.773,
+     "usa_registradores": true
     }
    },
-   "mujoco_cpu_us_por_fk": 6.492,
-   "razao_gpu_sobre_cpu_melhor_caso": 1.84,
+   "mujoco_cpu_us_por_fk": 7.335,
+   "razao_gpu_sobre_cpu_melhor_caso": 1.26,
    "limitado_por_paralelismo": false,
    "leitura": "tempo plano de 16 a 256 threads: o kernel NAO esta limitado por paralelismo. O que limita e a cadeia serial da arvore -- 10 niveis de operacoes escalares dependentes -- e nenhum numero de threads a encurta."
   }

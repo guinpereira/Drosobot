@@ -711,3 +711,301 @@ __kernel void fk_lds(
 }
 
 #endif  // NBODY && NJNT && NGEOM
+
+// ------------------------------------- residente com constantes em registrador
+//
+// `fk_lds` mede 12,3 us (fp32) em 12 estagios sequenciais: 1,03 us por estagio.
+// O piso sintetico desta placa, medido em
+// `benchmarks/physics/gpu/orcamento_de_estagios.py`, e 0,060 us por estagio com
+// trabalho zero e 0,25 us com trabalho moderado. Estamos 17x acima do piso, e
+// o teto nao e o culpado: a 0,25 us/estagio um passo de fisica inteiro
+// (~470 estagios) sairia a 116 us, empatando com o MuJoCo CPU.
+//
+// O diagnostico: em `fk_lds` cada corpo le ~8 arrays do MODELO da memoria
+// global toda vez que e processado -- `body_pos`, `body_quat`, `jnt_axis`,
+// `jnt_pos`, `qpos0`, mais tres de indice. Com ~7 corpos ativos por nivel nao
+// ha trabalho nenhum para esconder essas latencias, e cada nivel paga ~400
+// ciclos de espera antes de comecar a contar.
+//
+// Aqui cada thread ADOTA um corpo, uma vez, e carrega as constantes dele em
+// REGISTRADOR antes do laco. Durante a arvore inteira nao ha mais leitura de
+// modelo: so `qpos` (em __local) e o quadro do pai (em __local). O nivel deixa
+// de comecar com uma ida a VRAM.
+//
+// Exige `get_local_size(0) >= NBODY` e `>= NGEOM`. Para a mosca sao 72 e 73,
+// e o teto desta placa e 256.
+//
+// Registradores por thread: 4 indices + 7 reais do corpo + 3 juntas x 9 = ~38.
+// `body_jntnum` chega a 3 neste modelo, e MAX_JNT cobre isso com folga.
+
+#if defined(NBODY) && defined(NJNT) && defined(NGEOM)
+
+#define MAX_JNT 4
+
+__kernel void fk_registradores(
+    const int profundidade, const int nq,
+    __global const int* nivel_de,
+    __global const int* body_parentid, __global const int* body_jntadr,
+    __global const int* body_jntnum, __global const int* body_mocapid,
+    __global const real* body_pos, __global const real* body_quat,
+    __global const real* body_ipos, __global const real* body_iquat,
+    __global const int* body_sameframe,
+    __global const int* jnt_type, __global const int* jnt_qposadr,
+    __global const real* jnt_axis, __global const real* jnt_pos,
+    __global const real* qpos0,
+    __global const int* geom_bodyid, __global const real* geom_pos,
+    __global const real* geom_quat, __global const int* geom_sameframe,
+    __global const real* qpos, __global const real* mocap_pos,
+    __global const real* mocap_quat,
+    __global real* xpos, __global real* xquat, __global real* xmat,
+    __global real* xanchor, __global real* xaxis,
+    __global real* xipos, __global real* ximat,
+    __global real* geom_xpos, __global real* geom_xmat,
+    const int repeticoes)
+{
+    __local real l_xpos[3*NBODY];
+    __local real l_xquat[4*NBODY];
+    __local real l_xmat[9*NBODY];
+    __local real l_xipos[3*NBODY];
+    __local real l_ximat[9*NBODY];
+    __local real l_qpos[NQ];
+
+    int t = get_local_id(0);
+    int W = get_local_size(0);
+
+    // ---- constantes do corpo adotado, uma vez, em registrador --------------
+    int b = t;                       // a thread t cuida do corpo t
+    int meu_nivel = -1, jntadr = 0, jntnum = 0, mocapid = -1, pid = 0, sf_b = 0;
+    real bpos[3] = {REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    real bquat[4] = {REAL_ONE, REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    real ipos[3] = {REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    real iquat[4] = {REAL_ONE, REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    int jtype[MAX_JNT], jqadr[MAX_JNT];
+    real jax[MAX_JNT][3], jps[MAX_JNT][3], jq0[MAX_JNT];
+    for (int j = 0; j < MAX_JNT; ++j) {
+        jtype[j] = 0; jqadr[j] = 0; jq0[j] = REAL_ZERO;
+        jax[j][0] = jax[j][1] = jax[j][2] = REAL_ZERO;
+        jps[j][0] = jps[j][1] = jps[j][2] = REAL_ZERO;
+    }
+    if (b < NBODY) {
+        meu_nivel = nivel_de[b];
+        jntadr = body_jntadr[b];
+        jntnum = body_jntnum[b];
+        mocapid = body_mocapid[b];
+        pid = body_parentid[b];
+        sf_b = body_sameframe[b];
+        for (int k = 0; k < 3; ++k) {
+            bpos[k] = body_pos[3*b+k];
+            ipos[k] = body_ipos[3*b+k];
+        }
+        for (int k = 0; k < 4; ++k) {
+            bquat[k] = body_quat[4*b+k];
+            iquat[k] = body_iquat[4*b+k];
+        }
+        for (int j = 0; j < jntnum && j < MAX_JNT; ++j) {
+            int jid = jntadr + j;
+            jtype[j] = jnt_type[jid];
+            jqadr[j] = jnt_qposadr[jid];
+            jq0[j] = qpos0[jqadr[j]];
+            for (int k = 0; k < 3; ++k) {
+                jax[j][k] = jnt_axis[3*jid+k];
+                jps[j][k] = jnt_pos[3*jid+k];
+            }
+        }
+    }
+
+    // ---- constantes do geom adotado ---------------------------------------
+    int g = t;
+    int g_body = 0, g_sf = 0;
+    real gpos[3] = {REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    real gquat[4] = {REAL_ONE, REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    if (g < NGEOM) {
+        g_body = geom_bodyid[g];
+        g_sf = geom_sameframe[g];
+        for (int k = 0; k < 3; ++k) gpos[k] = geom_pos[3*g+k];
+        for (int k = 0; k < 4; ++k) gquat[k] = geom_quat[4*g+k];
+    }
+
+    // mundo: identidade
+    if (t == 0) {
+        l_xpos[0] = l_xpos[1] = l_xpos[2] = REAL_ZERO;
+        l_xipos[0] = l_xipos[1] = l_xipos[2] = REAL_ZERO;
+        l_xquat[0] = REAL_ONE;
+        l_xquat[1] = l_xquat[2] = l_xquat[3] = REAL_ZERO;
+        for (int k = 0; k < 9; ++k) {
+            l_xmat[k] = (k == 0 || k == 4 || k == 8) ? REAL_ONE : REAL_ZERO;
+            l_ximat[k] = l_xmat[k];
+        }
+    }
+    for (int i = t; i < NQ; i += W) l_qpos[i] = qpos[i];
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int rep = 0; rep < repeticoes; ++rep) {
+        for (int d = 1; d < profundidade; ++d) {
+            if (meu_nivel == d) {
+                real px[3], pq[4];
+                if (jntnum == 1 && jtype[0] == JNT_FREE) {
+                    int qadr = jqadr[0];
+                    px[0] = l_qpos[qadr]; px[1] = l_qpos[qadr+1];
+                    px[2] = l_qpos[qadr+2];
+                    pq[0] = l_qpos[qadr+3]; pq[1] = l_qpos[qadr+4];
+                    pq[2] = l_qpos[qadr+5]; pq[3] = l_qpos[qadr+6];
+                    normalize4(pq);
+                    xanchor[3*jntadr+0] = px[0];
+                    xanchor[3*jntadr+1] = px[1];
+                    xanchor[3*jntadr+2] = px[2];
+                    xaxis[3*jntadr+0] = jax[0][0];
+                    xaxis[3*jntadr+1] = jax[0][1];
+                    xaxis[3*jntadr+2] = jax[0][2];
+                } else {
+                    real bp[3], bq[4];
+                    if (mocapid >= 0) {
+                        bp[0] = mocap_pos[3*mocapid];
+                        bp[1] = mocap_pos[3*mocapid+1];
+                        bp[2] = mocap_pos[3*mocapid+2];
+                        bq[0] = mocap_quat[4*mocapid];
+                        bq[1] = mocap_quat[4*mocapid+1];
+                        bq[2] = mocap_quat[4*mocapid+2];
+                        bq[3] = mocap_quat[4*mocapid+3];
+                        normalize4(bq);
+                    } else {
+                        bp[0] = bpos[0]; bp[1] = bpos[1]; bp[2] = bpos[2];
+                        bq[0] = bquat[0]; bq[1] = bquat[1];
+                        bq[2] = bquat[2]; bq[3] = bquat[3];
+                    }
+                    if (pid) {
+                        __local const real* pm = l_xmat + 9*pid;
+                        px[0] = pm[0]*bp[0] + pm[1]*bp[1] + pm[2]*bp[2]
+                                + l_xpos[3*pid];
+                        px[1] = pm[3]*bp[0] + pm[4]*bp[1] + pm[5]*bp[2]
+                                + l_xpos[3*pid+1];
+                        px[2] = pm[6]*bp[0] + pm[7]*bp[1] + pm[8]*bp[2]
+                                + l_xpos[3*pid+2];
+                        real pqp[4] = {l_xquat[4*pid], l_xquat[4*pid+1],
+                                       l_xquat[4*pid+2], l_xquat[4*pid+3]};
+                        quat_mul(pq, pqp, bq);
+                    } else {
+                        px[0] = bp[0]; px[1] = bp[1]; px[2] = bp[2];
+                        pq[0] = bq[0]; pq[1] = bq[1];
+                        pq[2] = bq[2]; pq[3] = bq[3];
+                    }
+                    for (int j = 0; j < jntnum; ++j) {
+                        real ax[3], anc[3];
+                        real a[3] = {jax[j][0], jax[j][1], jax[j][2]};
+                        real p[3] = {jps[j][0], jps[j][1], jps[j][2]};
+                        rot_vec_quat(ax, a, pq);
+                        rot_vec_quat(anc, p, pq);
+                        anc[0] += px[0]; anc[1] += px[1]; anc[2] += px[2];
+                        if (jtype[j] == JNT_SLIDE) {
+                            real dd = l_qpos[jqadr[j]] - jq0[j];
+                            px[0] += ax[0]*dd; px[1] += ax[1]*dd;
+                            px[2] += ax[2]*dd;
+                        } else {
+                            real qloc[4], vec[3];
+                            axis_angle2quat(qloc, a, l_qpos[jqadr[j]] - jq0[j]);
+                            quat_mul(pq, pq, qloc);
+                            rot_vec_quat(vec, p, pq);
+                            px[0] = anc[0] - vec[0];
+                            px[1] = anc[1] - vec[1];
+                            px[2] = anc[2] - vec[2];
+                        }
+                        int jid = jntadr + j;
+                        xanchor[3*jid+0] = anc[0];
+                        xanchor[3*jid+1] = anc[1];
+                        xanchor[3*jid+2] = anc[2];
+                        xaxis[3*jid+0] = ax[0];
+                        xaxis[3*jid+1] = ax[1];
+                        xaxis[3*jid+2] = ax[2];
+                    }
+                }
+                normalize4(pq);
+                real mm[9];
+                quat2mat(mm, pq);
+                l_xquat[4*b] = pq[0]; l_xquat[4*b+1] = pq[1];
+                l_xquat[4*b+2] = pq[2]; l_xquat[4*b+3] = pq[3];
+                l_xpos[3*b] = px[0]; l_xpos[3*b+1] = px[1]; l_xpos[3*b+2] = px[2];
+                for (int k = 0; k < 9; ++k) l_xmat[9*b+k] = mm[k];
+            }
+            barrier(CLK_LOCAL_MEM_FENCE);
+        }
+
+        // quadro inercial do corpo adotado
+        if (b >= 1 && b < NBODY) {
+            if (sf_b == SF_BODY) {
+                l_xipos[3*b] = l_xpos[3*b];
+                l_xipos[3*b+1] = l_xpos[3*b+1];
+                l_xipos[3*b+2] = l_xpos[3*b+2];
+            } else {
+                __local const real* mm = l_xmat + 9*b;
+                l_xipos[3*b]   = mm[0]*ipos[0] + mm[1]*ipos[1] + mm[2]*ipos[2]
+                                 + l_xpos[3*b];
+                l_xipos[3*b+1] = mm[3]*ipos[0] + mm[4]*ipos[1] + mm[5]*ipos[2]
+                                 + l_xpos[3*b+1];
+                l_xipos[3*b+2] = mm[6]*ipos[0] + mm[7]*ipos[1] + mm[8]*ipos[2]
+                                 + l_xpos[3*b+2];
+            }
+            if (sf_b == SF_BODY || sf_b == SF_BODYROT) {
+                for (int k = 0; k < 9; ++k) l_ximat[9*b+k] = l_xmat[9*b+k];
+            } else {
+                real q[4] = {iquat[0], iquat[1], iquat[2], iquat[3]};
+                real bq[4] = {l_xquat[4*b], l_xquat[4*b+1],
+                              l_xquat[4*b+2], l_xquat[4*b+3]};
+                real tmp[4], mm[9];
+                quat_mul(tmp, bq, q);
+                quat2mat(mm, tmp);
+                for (int k = 0; k < 9; ++k) l_ximat[9*b+k] = mm[k];
+            }
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        // quadro do geom adotado
+        if (g < NGEOM) {
+            int gb = g_body;
+            if (g_sf == SF_BODY) {
+                geom_xpos[3*g] = l_xpos[3*gb];
+                geom_xpos[3*g+1] = l_xpos[3*gb+1];
+                geom_xpos[3*g+2] = l_xpos[3*gb+2];
+            } else if (g_sf == SF_INERTIA) {
+                geom_xpos[3*g] = l_xipos[3*gb];
+                geom_xpos[3*g+1] = l_xipos[3*gb+1];
+                geom_xpos[3*g+2] = l_xipos[3*gb+2];
+            } else {
+                __local const real* mm = l_xmat + 9*gb;
+                geom_xpos[3*g]   = mm[0]*gpos[0] + mm[1]*gpos[1] + mm[2]*gpos[2]
+                                   + l_xpos[3*gb];
+                geom_xpos[3*g+1] = mm[3]*gpos[0] + mm[4]*gpos[1] + mm[5]*gpos[2]
+                                   + l_xpos[3*gb+1];
+                geom_xpos[3*g+2] = mm[6]*gpos[0] + mm[7]*gpos[1] + mm[8]*gpos[2]
+                                   + l_xpos[3*gb+2];
+            }
+            if (g_sf == SF_BODY || g_sf == SF_BODYROT) {
+                for (int k = 0; k < 9; ++k) geom_xmat[9*g+k] = l_xmat[9*gb+k];
+            } else if (g_sf == SF_INERTIA || g_sf == SF_INERTIAROT) {
+                for (int k = 0; k < 9; ++k) geom_xmat[9*g+k] = l_ximat[9*gb+k];
+            } else {
+                real q[4] = {gquat[0], gquat[1], gquat[2], gquat[3]};
+                real bq[4] = {l_xquat[4*gb], l_xquat[4*gb+1],
+                              l_xquat[4*gb+2], l_xquat[4*gb+3]};
+                real tmp[4], mm[9];
+                quat_mul(tmp, bq, q);
+                quat2mat(mm, tmp);
+                for (int k = 0; k < 9; ++k) geom_xmat[9*g+k] = mm[k];
+            }
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    for (int i = t; i < NBODY; i += W) {
+        for (int k = 0; k < 3; ++k) {
+            xpos[3*i+k] = l_xpos[3*i+k];
+            xipos[3*i+k] = l_xipos[3*i+k];
+        }
+        for (int k = 0; k < 4; ++k) xquat[4*i+k] = l_xquat[4*i+k];
+        for (int k = 0; k < 9; ++k) {
+            xmat[9*i+k] = l_xmat[9*i+k];
+            ximat[9*i+k] = l_ximat[9*i+k];
+        }
+    }
+}
+
+#endif  // NBODY && NJNT && NGEOM

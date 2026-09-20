@@ -227,18 +227,24 @@ def test_cinematica_da_gpu_bate_com_o_mujoco():
         for fp64, tol in ((True, TOL_FP64), (False, TOL_FP32)):
             gpu = CinematicaGPU(mod, dev=dev, fp64=fp64)
             gpu.escreve_estado(d.qpos, d.mocap_pos, d.mocap_quat)
-            gpu.passo()
-            pior, onde = 0.0, ""
-            for k, v in ref.items():
-                got = gpu.le(k).reshape(v.shape).astype(np.float64)
-                e = float(np.abs(got - v).max())
-                if e > pior:
-                    pior, onde = e, k
-            assert pior < tol, (
-                f"cinematica fp{'64' if fp64 else '32'} divergiu {pior:.2e} em "
-                f"{onde} (limite {tol:.0e})")
-            print(f"    fp{'64' if fp64 else '32'}: erro maximo {pior:.2e} "
-                  f"em {onde}")
+            assert gpu.usa_registradores, (
+                "o work-group nao cobre nbody/ngeom nesta placa; o caminho "
+                "normal nao esta sendo exercitado")
+            marca = "64" if fp64 else "32"
+            for variante, roda in (("registradores", gpu.passo),
+                                   ("modelo global", gpu.passo_lds)):
+                roda()
+                pior, onde = 0.0, ""
+                for k, v in ref.items():
+                    got = gpu.le(k).reshape(v.shape).astype(np.float64)
+                    e = float(np.abs(got - v).max())
+                    if e > pior:
+                        pior, onde = e, k
+                assert pior < tol, (
+                    f"cinematica fp{marca} ({variante}) divergiu {pior:.2e} em "
+                    f"{onde} (limite {tol:.0e})")
+                print(f"    fp{marca} {variante:<14} erro maximo {pior:.2e} "
+                      f"em {onde}")
     finally:
         corpo.fecha()
 

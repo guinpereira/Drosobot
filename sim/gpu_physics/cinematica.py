@@ -110,9 +110,18 @@ class CinematicaGPU:
         self.k_completa = d.kernel(ARQUIVO, "fk_completa", self.fp64)
         # a versao com estado em __local precisa das dimensoes em tempo de
         # compilacao; o programa e compilado uma vez por modelo
-        self._defines = (("NBODY", nbody), ("NJNT", njnt), ("NGEOM", ngeom))
+        self._defines = (("NBODY", nbody), ("NJNT", njnt), ("NGEOM", ngeom),
+                         ("NQ", mod.dims["nq"]))
         self.k_lds = d.kernel(ARQUIVO, "fk_lds", self.fp64, self._defines)
-        self._args_lds_fixos = None
+        # A versao de registrador adota um corpo por thread, entao o grupo tem
+        # que cobrir nbody e ngeom. Quando nao cobrir, `passo()` cai na versao
+        # `fk_lds` em vez de calcular errado em silencio.
+        self.k_reg = d.kernel(ARQUIVO, "fk_registradores", self.fp64,
+                              self._defines)
+        self.usa_registradores = self.grupo >= max(nbody, ngeom)
+        self.b["nivel_de"] = d.sobe(
+            np.asarray(self.arvore.nivel_de, dtype=np.int32))
+        self._args_fixos = None
         d.espera()
 
     def _mundo(self) -> None:
@@ -213,17 +222,43 @@ class CinematicaGPU:
                 b["xipos"], b["ximat"], b["geom_xpos"], b["geom_xmat"],
                 np.int32(repeticoes))
 
+    def _args_reg(self, repeticoes: int) -> tuple:
+        b = self.b
+        return (np.int32(self.profundidade), np.int32(self.mod.dims["nq"]),
+                b["nivel_de"],
+                b["body_parentid"], b["body_jntadr"], b["body_jntnum"],
+                b["body_mocapid"], b["body_pos"], b["body_quat"],
+                b["body_ipos"], b["body_iquat"], b["body_sameframe"],
+                b["jnt_type"], b["jnt_qposadr"], b["jnt_axis"], b["jnt_pos"],
+                b["qpos0"], b["geom_bodyid"], b["geom_pos"], b["geom_quat"],
+                b["geom_sameframe"], b["qpos"], b["mocap_pos"], b["mocap_quat"],
+                b["xpos"], b["xquat"], b["xmat"], b["xanchor"], b["xaxis"],
+                b["xipos"], b["ximat"], b["geom_xpos"], b["geom_xmat"],
+                np.int32(repeticoes))
+
     def passo(self, repeticoes: int = 1, esperar: bool = True) -> None:
         """
-        O caminho do laco quente: um dispatch, quadros dos corpos em __local.
+        O caminho do laco quente: um dispatch, nada de modelo na memoria global.
 
-        Os argumentos sao ligados UMA vez. `set_args` com 35 argumentos custa
+        Os argumentos sao ligados UMA vez. `set_args` com 34 argumentos custa
         microssegundos por chamada, e a 10.000 passos por segundo simulado isso
         apareceria no numero que estamos tentando medir.
         """
-        if self._args_lds_fixos != repeticoes:
-            self.k_lds.set_args(*self._args_lds(repeticoes))
-            self._args_lds_fixos = repeticoes
+        if self.usa_registradores:
+            kern, args = self.k_reg, self._args_reg
+        else:
+            kern, args = self.k_lds, self._args_lds
+        if self._args_fixos != repeticoes:
+            kern.set_args(*args(repeticoes))
+            self._args_fixos = repeticoes
+        self.dev.roda(kern, self.grupo, self.grupo)
+        if esperar:
+            self.dev.espera()
+
+    def passo_lds(self, repeticoes: int = 1, esperar: bool = True) -> None:
+        """A versao anterior, com o modelo em memoria global. Para comparar."""
+        self.k_lds.set_args(*self._args_lds(repeticoes))
+        self._args_fixos = None
         self.dev.roda(self.k_lds, self.grupo, self.grupo)
         if esperar:
             self.dev.espera()
