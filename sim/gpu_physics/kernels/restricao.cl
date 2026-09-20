@@ -567,4 +567,35 @@ __kernel void forcas_segmentos(
     for (int k = 0; k < 3; ++k) forcas[3*s+k] = acc[k];
 }
 
+// ------------------------------------------ pacote de observacao do controlador
+//
+// Tudo que o controlador de marcha le por passo, num buffer contiguo:
+//
+//     [0            .. 3*nfly)          xpos dos corpos da mosca
+//     [3*nfly       .. 3*nfly+9)        xmat do torax
+//     [3*nfly+9     .. 3*nfly+9+3*nseg) forca de contato por segmento
+//
+// Eram tres leituras de volta por passo, e cada `enqueue_copy` do pyopencl e
+// BLOQUEANTE: tres esperas pela placa, ~80 us de ida e volta cada. Uma leitura
+// so paga uma.
+//
+// Isto nao reduz o acoplamento com o Python -- o controlador continua na CPU.
+// Reduz o numero de vezes que a CPU para para esperar.
+__kernel void empacota_observacao(
+    const int nfly, const int nseg, const int id_torax,
+    __global const int* bodyids_fly,
+    __global const real* xpos, __global const real* xmat,
+    __global const real* forcas_seg, __global real* pacote)
+{
+    int i = get_global_id(0);
+    if (i < nfly) {
+        int b = bodyids_fly[i];
+        pacote[3*i+0] = xpos[3*b+0];
+        pacote[3*i+1] = xpos[3*b+1];
+        pacote[3*i+2] = xpos[3*b+2];
+    }
+    if (i < 9) pacote[3*nfly + i] = xmat[9*id_torax + i];
+    if (i < 3*nseg) pacote[3*nfly + 9 + i] = forcas_seg[i];
+}
+
 #endif  // NV && NEFC_MAX && NCON_MAX

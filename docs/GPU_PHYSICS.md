@@ -537,34 +537,83 @@ em aberto, não resolvida por tolerância ajustada até bater.
 ### Latência do passo completo
 
 ```
-caminho       despachos      host        GPU      total
-estagios             80    1924 us    2035 us    3959 us
-fundido              15     231 us    1908 us    2138 us
-MuJoCo CPU            -          -          -     162 us
+caminho                host   pipelinado   c/ finish   eventos GPU
+estagios (referencia) 2583u       2603u       6036u          546u
+fundido (15 desp.)     305u       1168u       1752u          575u
+grupos (6 desp.)       252u       1522u       2050u          856u
+MuJoCo CPU                -        225u
 ```
 
-Contra o baseline da rodada anterior (6174 us, 80 despachos, host 3960 us), o
-passo fundido é **2,9× mais rápido**. O host deixou de ser o gargalo: era 64%
-do total, agora é 11%.
+Histórico do passo fundido, com `finish` por passo: **6174 → 2138 → 1752 us**.
 
-**Duas correções vieram de medir em vez de supor:**
+O primeiro salto foi remover Python do caminho (80 → 15 despachos, `set_args`
+cacheado). O segundo foi este: **a matriz de massa em `__local`**.
 
-*O custo por despacho era `set_args`, não o despacho.* Com 21 argumentos,
-`set_args` custa 21 us e `enqueue_nd_range_kernel` custa 1,4 us — 94% do custo
-era religar argumentos que nunca mudam entre passos.
+### O perfil que mudou a resposta, e o método que quase a escondeu
 
-*Quarenta e seis dos 80 despachos eram `for nivel: dispatch(...)`.* Existiam
-para depurar: com um por nível dá para parar em qualquer etapa e comparar com o
-`mjData`. Os campos já estavam validados, então o laço entrou no kernel.
+Medir um kernel **dentro** da sequência do passo atribui a ele a espera pela
+dependência anterior. Com a mesma implementação, `solver_newton_rapido` mede
+**330 us dentro do passo e 39 us medido sozinho**. Foi seguindo o número de
+dentro que uma rodada de tentativas foi gasta no lugar errado.
 
-Cada kernel por estágio virou `helper + wrapper`, e os kernels fundidos chamam
-os **mesmos** helpers `..._um`. A conta existe uma vez só — os dois caminhos não
-podem divergir na física, só no número de despachos. Há teste para isso, com
-igualdade **exata** ao longo de 10 passos.
+Medindo cada etapa **isolada** (`benchmarks/physics/gpu/perfil_do_passo.py`):
 
-O que sobra são 1908 us de GPU, ~12× o MuJoCo CPU. Esse é o próximo alvo, e
-agora é genuinamente GPU: kernels com poucas dezenas de threads ativas por
-etapa, num único work-group.
+```
+etapa                              parede   eventos
+euler (factor + solve + integra)    155u      83u
+massa (CRB + factor_M)              102u      50u
+smooth (solve_M)                     83u      45u
+colisao                              80u      12u
+bias (RNE)                           50u      21u
+cinematica                           49u      25u
+solver (Newton)                      48u      20u
+restricoes                           45u      17u
+forcas                               45u      17u
+passo fundido                       863u     362u
+MuJoCo CPU mj_step                  168u
+```
+
+O gargalo era `factor_M` e `solve_M`: a fatoração esparsa da matriz de massa e
+as duas substituições triangulares. São **seriais por natureza** — a linha `k`
+depende das anteriores — e dentro de cada linha há no máximo `rownnz ≤ 17`
+elementos, ou seja **16 threads ativas de 256**. Com tão pouco paralelismo o
+que manda é a latência de cada acesso, e em memória global eram ~20 mil
+acessos quase todos dependentes.
+
+Passar a matriz para `__local` **não muda a ordem das operações** — só de onde
+se lê — e o resultado continua bit a bit idêntico:
+
+```
+euler    410 -> 155 us      massa   230 -> 102 us
+smooth   205 ->  83 us      passo  1226 -> 863 us
+```
+
+### `M` nunca mais é densificada
+
+O solver precisava multiplicar por `M` e para isso expandia `nv × nv` em
+memória global — **170 us por passo**, mais que o solver inteiro deveria
+custar. Agora há um CSR **simétrico** de 1554 entradas
+(`estrutura.massa_simetrica`), montado uma vez a partir do triangular do MuJoCo
+com um mapa de valores. Verificado contra a densa: erro 0,0 na matriz e 3e-19
+no produto. A busca de linha do solver virou O(nefc) em vez de O(nv²), pelo
+mesmo truque de `Mv`/`Jv` que o `PrimalSearch` do MuJoCo usa.
+
+### Tentado e rejeitado: agrupar 15 despachos em 6
+
+A hipótese era que a lacuna entre parede e eventos fosse custo **por
+despacho**. Não é: com 6 despachos a lacuna continua ~1000 us por passo, e os
+eventos **sobem** 160 us — o agrupamento troca paralelismo de múltiplos
+work-groups por um só. `contato_jacobiana` (11.880 itens) rodava em vários
+grupos e passou a rodar em 256 threads.
+
+O caminho ficou no código (`passo_grupos`), medido e documentado, porque a
+medida é o resultado.
+
+### O maior gargalo restante
+
+**A lacuna entre parede e eventos**: 863 us contra 362 us no passo isolado, e
+ela não escala com o número de despachos. Não está explicada. É o próximo alvo,
+e é maior que qualquer estágio individual.
 
 ### RTF, com unidades explícitas
 
@@ -573,11 +622,23 @@ etapa, num único work-group.
 RTF = 0,0467              corrida de 2 s  =  43 s
 ```
 
-Pelo laboratório, com o controlador em Python e a retina, a primeira corrida
-`physics=drosobot-gpu` mediu **RTF 0,022**. O passo do adaptador custa 4881 us
-contra 2138 us do passo nu: a diferença é o controlador e três leituras de
-volta por passo. `resumo()` reporta `leituras_por_passo` de propósito — é o
-número que a fase de laço residente tem que zerar.
+Pelo laboratório, com o controlador em Python e a retina:
+
+```
+corrida looming curta, physics=drosobot-gpu     RTF 0,029
+passo do adaptador, drosobot-gpu              2916 us
+passo do adaptador, flygym2-mujoco             296 us
+```
+
+O adaptador caiu de 4881 para 2916 us ao empacotar as três leituras de volta
+numa só (`empacota_observacao`): cada `enqueue_copy` do pyopencl é bloqueante,
+então eram três esperas pela placa por passo. `resumo()` reporta
+`leituras_por_passo` — foi de 3 para 1.
+
+**A leitura que sobra é o gargalo do adaptador.** Ela força uma sincronização
+por passo, e com isso a física paga o custo "com `finish`" (1752 us) em vez do
+pipelinado (1168 us). Zerá-la exige o controlador no device — é o que separa
+os 2916 us de algo próximo dos 1168 us.
 
 ### Trace físico
 

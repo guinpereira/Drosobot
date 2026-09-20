@@ -112,9 +112,18 @@ class DrosobotGPUAdapter(FlyGym2Adapter):
         g.b["geom_chao"] = d.sobe(chao)
         g.tam["forcas_seg"] = 3 * self._nseg
         g.b["forcas_seg"] = d.vazio(3 * self._nseg, g.real)
+        ARQ = __import__("gpu_physics.dinamica", fromlist=["ARQUIVOS"]).ARQUIVOS
         g.k["forcas_segmentos"] = d.kernel_proprio(
-            __import__("gpu_physics.dinamica", fromlist=["ARQUIVOS"]).ARQUIVOS,
-            "forcas_segmentos", g.fp64, g._defines)
+            ARQ, "forcas_segmentos", g.fp64, g._defines)
+        g.k["empacota_observacao"] = d.kernel_proprio(
+            ARQ, "empacota_observacao", g.fp64, g._defines)
+        # Tudo que o controlador le por passo, num buffer so: eram tres
+        # `enqueue_copy` bloqueantes, cada um com a sua espera pela placa.
+        self._nfly = int(self._bodyids_fly.size)
+        self._npacote = 3*self._nfly + 9 + 3*self._nseg
+        g.b["bodyids_fly"] = d.sobe(self._bodyids_fly.astype(np.int32))
+        g.tam["obs_pacote"] = self._npacote
+        g.b["obs_pacote"] = d.vazio(self._npacote, g.real)
 
     def _escreve_estado_inicial(self) -> None:
         d = self.sim.mj_data
@@ -140,22 +149,24 @@ class DrosobotGPUAdapter(FlyGym2Adapter):
                  g.b["con_efcadr"], g.b["con_pair"], g.b["pair_friction"],
                  g.b["con_frame"], g.b["efc_force"], g.b["geom_saida"],
                  g.b["geom_chao"], np.int32(1), g.b["forcas_seg"]))
-        xpos = g.le("xpos").reshape(-1, 3)
-        xmat = g.le("xmat").reshape(-1, 9)
-        forcas = g.le("forcas_seg").reshape(self._nseg, 3)
-        self._leituras += 3
-        self._xpos_cache = xpos
-
-        # o indice do FlyGym conta os corpos da MOSCA; o da GPU conta todos
-        ids = self._bodyids_fly
-        pos = xpos[ids]
+        g._roda("empacota_observacao", max(self._nfly, 3*self._nseg, 9),
+                (np.int32(self._nfly), np.int32(self._nseg),
+                 np.int32(self._bodyid_torax), g.b["bodyids_fly"],
+                 g.b["xpos"], g.b["xmat"], g.b["forcas_seg"],
+                 g.b["obs_pacote"]))
+        pac = g.le("obs_pacote")
+        self._leituras += 1
+        n = self._nfly
+        pos = pac[:3*n].reshape(n, 3)
+        heading = pac[3*n:3*n+9].reshape(3, 3)[:, 0].copy()
+        forcas = pac[3*n+9:].reshape(self._nseg, 3)
         self._pos_cache = pos
         return HybridControllerObservation(
             thorax_z=float(pos[self._i_torax, 2]),
             tarsus5_z=pos[self._i_tarsus5, 2].astype(float),
             stumbling_contact_forces=forcas.reshape(
                 len(self._legs), len(self._stumbling_links), 3),
-            fly_heading=xmat[self._bodyid_torax].reshape(3, 3)[:, 0].copy(),
+            fly_heading=heading,
         )
 
     def _prepara_indices(self) -> None:
@@ -176,7 +187,9 @@ class DrosobotGPUAdapter(FlyGym2Adapter):
         apply_locomotion_action(self.sim, self.fly.name, acao,
                                 actuator_type=ActuatorType.POSITION)
         self.motor.escreve_estado(ctrl=self.sim.mj_data.ctrl)
-        self.motor.passo_fundido()
+        # `esperar=False`: quem sincroniza e a leitura do pacote no proximo
+        # passo. Esperar aqui pagaria a ida e volta duas vezes.
+        self.motor.passo_fundido(esperar=False)
         self._passo += 1
         self._passos += 1
 
