@@ -56,6 +56,7 @@ namespace Drosobot.Lab
         private readonly List<Renderer> _shellRenderers = new List<Renderer>();
         private ConnectivityGraph _grafo;
         private FlyBody _mosca;
+        private ArenaView _arena;
 
         // O cerebro ganhou camera propria. Antes CNS e mosca dividiam a mesma
         // camera; quando ela passou a seguir a mosca (que anda), o CNS saia de
@@ -65,8 +66,8 @@ namespace Drosobot.Lab
         private Camera _camCns;
         private RenderTexture _rtCns;
         private const int CAMADA_CNS = 30;      // layer dedicada ao CNS
-        public int larguraCaixaCns = 300;
-        public int alturaCaixaCns = 300;
+        public int larguraCaixaCns = 250;
+        public int alturaCaixaCns = 250;
         private float _cnsYaw = 0f;
         [Tooltip("Graus por segundo que a caixa do cerebro gira sozinha. " +
                  "0 = parada.")]
@@ -139,6 +140,8 @@ namespace Drosobot.Lab
             _ctl.port = controlPort;
             _seletor = gameObject.AddComponent<ExperimentSelector>();
             _seletor.Ligar(_ctl);
+            // so faz alguma coisa com -autocapture na linha de comando
+            gameObject.AddComponent<AutoCapture>();
 
             yield return StartCoroutine(LoadCns());
         }
@@ -206,6 +209,11 @@ namespace Drosobot.Lab
 
             _brain = gameObject.AddComponent<BrainActivity>();
             _grafo = gameObject.AddComponent<ConnectivityGraph>();
+
+            // A arena e o estimulo: ate agora a mosca andava sobre nada, o que
+            // parecia voo, e o objeto que dispara a fuga era invisivel.
+            _arena = gameObject.AddComponent<ArenaView>();
+            _arena.Montar(transform);
         }
 
         private IEnumerator LoadCns()
@@ -389,6 +397,28 @@ namespace Drosobot.Lab
                     // pose dos segmentos: chega a 30 Hz, nao por passo de fisica
                     if (msg["body_pose"] is JObject bp && _mosca != null)
                         _mosca.AplicarPose(bp);
+                    // o estimulo chega MEDIDO; a Unity nao recalcula trajetoria
+                    if (_arena != null)
+                    {
+                        if (msg["stimulus"] is JObject st && st["pos"] is JArray sp
+                            && sp.Count >= 3)
+                        {
+                            _passosSemEstimulo = 0;
+                            _arena.AplicaEstimulo((float)sp[0], (float)sp[1],
+                                                  (float)sp[2],
+                                                  (float?)st["radius"] ?? 3f);
+                        }
+                        // Some so depois de um tempo SEM receber. Um quadro
+                        // isolado sem estimulo nao quer dizer que ele acabou --
+                        // some so se parar de chegar de vez.
+                        else if (++_passosSemEstimulo > 120)
+                            _arena.SemEstimulo();
+                    }
+                    break;
+
+                case "scene_info":
+                    if (_arena != null && msg["arena"] is JObject ar)
+                        _arena.DefineArena((string)ar["kind"] ?? "");
                     break;
 
                 case "neural_activity":
@@ -457,6 +487,13 @@ namespace Drosobot.Lab
                         _gfLiquido = (float)gg["liquido_mV"];
                         _gfVmin = (float)gg["v_min_mV"];
                         _gfSpikes = (int)gg["spikes_gf"];
+                        // O aviso de limitacao vinha SO do evento, que e
+                        // emitido uma vez por corrida. Quem conectasse depois
+                        // -- o caso normal: a simulacao sobe primeiro --
+                        // nunca via. Agora o estado tambem sai do proprio
+                        // v minimo, que chega em toda janela.
+                        if (_limitacaoLimiar < 0f && _gfVmin < _limitacaoLimiar)
+                            _limitacaoDisparou = true;
                         _gfTopInib.Clear();
                         if (gg["top_inib"] is JArray ti)
                             foreach (var e in ti)
@@ -500,7 +537,7 @@ namespace Drosobot.Lab
         //    esquerda   estado e sinais
         //    centro     o cerebro, sem nada por cima
         //    direita    inspecao e controles
-        private Coluna _colEsquerda, _colDireita, _colRodape;
+        private Coluna _colEsquerda, _colEsquerda2, _colDireita, _colRodape;
         private readonly Painel _pPrincipal = new Painel("principal");
         private readonly Painel _pExperimento = new Painel("experimento");
         private readonly Painel _pPopulacao = new Painel("populacao");
@@ -513,6 +550,7 @@ namespace Drosobot.Lab
         private readonly Painel _pCns3D = new Painel("cns3d");
         private readonly Painel _pCorpo = new Painel("corpo");
         private float _ultimaMensagem = -1f;
+        private int _passosSemEstimulo;
 
         void OnGUI()
         {
@@ -545,6 +583,11 @@ namespace Drosobot.Lab
                 // a Coluna rola sozinha em vez de comprimir os paineis.
                 _colDireita = new Coluna(Coluna.Ancora.SuperiorDireita, 384f);
                 _colRodape = new Coluna(Coluna.Ancora.InferiorEsquerda, 300f);
+                // Segunda coluna da esquerda. Entre a primeira (x=364) e a da
+                // direita (x=1530) havia 1.100 px vazios enquanto o painel de
+                // VISAO ficava fora da tela precisando de rolagem. E a mesma
+                // ancora, so deslocada.
+                _colEsquerda2 = new Coluna(Coluna.Ancora.SuperiorEsquerda, 300f);
             }
 
             GUI.color = new Color(1, 1, 1, 0.93f);
@@ -555,6 +598,7 @@ namespace Drosobot.Lab
 
             _colDireita.Limpar();
             _colRodape.Limpar();
+            _colEsquerda2.Limpar();
             if (!presentationMode)
             {
                 // atividade de populacao e sinal, entao mora com os outros
@@ -574,16 +618,23 @@ namespace Drosobot.Lab
                 MontaGate();
                 MontaCns3D();
                 MontaCorpo();
+                // EXPERIMENTO primeiro: e o unico painel com que se AGE.
+                // Deixar o controle no fim de uma coluna que rola significa
+                // que trocar de experimento exige procurar.
+                _colDireita.Adiciona(_pExperimento);
                 _colDireita.Adiciona(_pCns3D);
                 // CORPO logo abaixo do cerebro: sao os dois inspetores do que
                 // esta sendo simulado, um de cada lado da fronteira.
                 _colDireita.Adiciona(_pCorpo);
-                _colDireita.Adiciona(_pProcedencia);
                 _colDireita.Adiciona(_pRuntime);
-                _colDireita.Adiciona(_pGate);
-                _colDireita.Adiciona(_pRetina);
+                _colDireita.Adiciona(_pProcedencia);
+                // GATE e VISAO vao pra ESQUERDA. Medido na sessao ao vivo: com
+                // os oito paineis a direita, a coluna passava de 1080 px e os
+                // quatro de baixo -- gate, retina, inspector, experimento --
+                // ficavam fora da tela. A esquerda tinha ~500 px livres.
+                _colEsquerda.Adiciona(_pGate);
+                _colEsquerda2.Adiciona(_pRetina);
                 _colDireita.Adiciona(_pInspector);
-                _colDireita.Adiciona(_pExperimento);
                 _colRodape.Adiciona(_pSinais);
             }
 
@@ -592,6 +643,7 @@ namespace Drosobot.Lab
             DesenhaRotulosCorpo();
 
             float usadoEsquerda = _colEsquerda.Desenhar();
+            _colEsquerda2.Desenhar(_colEsquerda.largura + Espaco.Vao);
             _colDireita.Desenhar();
             // o rodape so ocupa o que sobra abaixo da coluna de cima
             _colRodape.Desenhar(0f, usadoEsquerda + Espaco.Vao);
@@ -687,6 +739,33 @@ namespace Drosobot.Lab
             { "Persp", "Lado", "Topo", "Frente" };
         private static readonly string[] RotulosCor =
             { "Clay", "Flybody", "Drosophila" };
+
+        // ------------------------------------------------- captura headless
+        //
+        // O AutoCapture precisa mexer no Lab pelos MESMOS caminhos que um
+        // clique usaria -- se ele chamasse o render direto, a foto provaria o
+        // render e nao o controle. Sao tres entradas, so isso.
+
+        /// <summary>Aponta a camera (0=persp, 1=lado, 2=topo, 3=frente).</summary>
+        public void CapturaVista(int i)
+        {
+            var orb = _camBrain != null ? _camBrain.GetComponent<OrbitCamera>() : null;
+            if (orb == null) return;
+            orb.Aponta((OrbitCamera.Preset)Mathf.Clamp(i, 0, 3));
+            if (_mosca != null) orb.Focar(_mosca.Extensao());
+        }
+
+        /// <summary>Modo do corpo (0=normal, 1=bind, 2=eixos, 3=rotulos).</summary>
+        public void CapturaModo(int i)
+        {
+            if (_mosca != null) _mosca.modo = (FlyBody.Modo)Mathf.Clamp(i, 0, 3);
+        }
+
+        /// <summary>Paleta (0=clay, 1=flybody, 2=drosophila).</summary>
+        public void CapturaPaleta(int i)
+        {
+            if (_mosca != null) _mosca.aparencia = (Aparencia)Mathf.Clamp(i, 0, 2);
+        }
 
         private void MontaCorpo()
         {

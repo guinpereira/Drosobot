@@ -57,3 +57,8 @@ data/male-cns/
 #   .venv-flygym2\Scripts\python tools\export_fly_mesh.py
 unity/DrosobotLab/Assets/Resources/Fly/*.obj
 unity/DrosobotLab/Assets/Resources/Fly/*.obj.meta
+unity/DrosobotLab/Build/
+unity/buildplayer.log
+unity/sessao_sim.log
+unity/sessao_sim.err
+unity/sessao_player.log

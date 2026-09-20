@@ -33,7 +33,13 @@ import mujoco as mj
 import numpy as np
 
 
-def constroi_mundo_looming(raio_mm: float = 3.0,
+# Raio da esfera de looming, em mm. Um so lugar: o mundo do MuJoCo e a esfera
+# que a Unity desenha tem que ter o mesmo tamanho, senao a tela mente sobre o
+# estimulo que a retina de fato viu.
+RAIO_ESTIMULO = 3.0
+
+
+def constroi_mundo_looming(raio_mm: float = RAIO_ESTIMULO,
                            pos_inicial=(30.0, 0.0, 2.5)):
     """
     `FlatGroundWorld` mais uma esfera mocap. Devolve (world, nome_do_corpo).

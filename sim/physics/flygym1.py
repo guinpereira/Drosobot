@@ -88,6 +88,7 @@ class FlyGym1Adapter:
         self._dist_estimulo = float(self._estimulo.distancia(t_s))
         self.arena.ball_pos = alvo
         self.sim.physics.bind(self.arena.object_body).mocap_pos = alvo
+        self._pos_estimulo = np.asarray(alvo, dtype=float)
 
     def passo(self, motor: MotorFrame) -> SensorFrame:
         self._obs, _, _, _, info = self.sim.step(np.asarray(motor.drive))
@@ -125,6 +126,13 @@ class FlyGym1Adapter:
                 .replace("0/", "")
                 for i in range(m.nbody)]
         return self._nomes_seg, d.xpos.copy(), d.xquat.copy()
+
+    def estado_estimulo(self):
+        p = getattr(self, "_pos_estimulo", None)
+        if p is None:
+            return None
+        from .looming_world import RAIO_ESTIMULO
+        return (float(p[0]), float(p[1]), float(p[2]), float(RAIO_ESTIMULO))
 
     def resumo(self) -> dict:
         m = self.sim.physics.model.ptr if self.sim else None

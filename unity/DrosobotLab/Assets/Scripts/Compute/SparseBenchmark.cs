@@ -99,8 +99,7 @@ namespace Drosobot.Compute
             _n = rowOffsets.Length - 1;
             _e = targets.Length;
 
-            _cs = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(
-                "Assets/Compute/SynapticScatter.compute");
+            _cs = CarregaShader("Assets/Compute/SynapticScatter.compute");
             if (_cs == null) return "ERRO: SynapticScatter.compute nao encontrado";
             _kLimpa = _cs.FindKernel("LimpaAcum");
             _kComp = _cs.FindKernel("CompactaSpikes");
@@ -253,5 +252,21 @@ namespace Drosobot.Compute
             File.WriteAllText(caminho, sb.ToString());
             Debug.Log($"[sparse-bench] salvo em {caminho}");
         }
+
+        // `AssetDatabase` so existe no Editor. Sem a guarda, o codigo compila no
+        // Editor e QUEBRA o build do player -- foi o que aconteceu na primeira
+        // tentativa de gerar o executavel. Estes benchmarks sao ferramenta de
+        // Editor; num player eles nao tem shader pra carregar, e dizem isso em
+        // vez de estourar.
+        private static ComputeShader CarregaShader(string caminho)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(caminho);
+#else
+            Debug.LogWarning($"[benchmark] {caminho} so carrega no Editor");
+            return null;
+#endif
+        }
+
     }
 }

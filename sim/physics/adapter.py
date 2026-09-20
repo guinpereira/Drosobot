@@ -104,6 +104,19 @@ class PhysicsAdapter(Protocol):
         """
         ...
 
+    def estado_estimulo(self):
+        """
+        Onde o estimulo esta agora: `(x, y, z, raio)` em mm, ou None.
+
+        Existe porque a Unity nao pode CALCULAR isso. Ela sabe o ciclo e a
+        distancia inicial pelo `scene_info`, e seria facil reproduzir a formula
+        na tela -- e ai a interface estaria simulando, que e exatamente o que
+        ela nao faz. A posicao vem medida de quem move a esfera.
+
+        Padrao None: arena sem estimulo nao tem o que reportar.
+        """
+        return None
+
     def resumo(self) -> dict:
         """Pro profiler, pra telemetria e pra interface."""
         ...

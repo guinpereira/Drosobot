@@ -98,7 +98,10 @@ namespace Drosobot.Lab
         private const int N = 721;
         private const int Colunas = 31;          // 31 x 24 = 744 >= 721
         private const int Linhas = 24;
-        private const int Escala = 5;            // pixels por omatideo
+        // 3 e nao 5: com 5 os dois olhos somavam 320 px e empurravam o
+        // painel de sinais pra fora da tela em 1080p. A grade continua
+        // legivel -- e mapa de intensidade, nao imagem pra ler detalhe.
+        private const int Escala = 3;            // pixels por omatideo
 
         private Texture2D _tex;
         private Color32[] _pixels;

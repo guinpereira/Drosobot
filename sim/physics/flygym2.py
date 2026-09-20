@@ -32,6 +32,7 @@ import numpy as np
 
 from .adapter import MotorFrame, SensorFrame
 from .fastpath import ControladorRapido, ForcasContato
+from .looming_world import RAIO_ESTIMULO
 
 VISION_HZ = 100
 
@@ -168,6 +169,7 @@ class FlyGym2Adapter:
         alvo = self._estimulo.posicao(t_s, pos[self._i_torax])
         self.sim.mj_data.mocap_pos[self._mocapid] = alvo
         self._dist_estimulo = float(self._estimulo.distancia(t_s))
+        self._pos_estimulo = np.asarray(alvo, dtype=float)
 
     def passo(self, motor: MotorFrame) -> SensorFrame:
         from flygym.compose import ActuatorType
@@ -225,6 +227,12 @@ class FlyGym2Adapter:
         pos = np.asarray(self.sim.get_body_positions(self.fly.name))
         quat = np.asarray(self.sim.get_body_rotations(self.fly.name))
         return nomes, pos, quat
+
+    def estado_estimulo(self):
+        p = getattr(self, "_pos_estimulo", None)
+        if p is None or self._estimulo is None:
+            return None
+        return (float(p[0]), float(p[1]), float(p[2]), float(RAIO_ESTIMULO))
 
     def resumo(self) -> dict:
         m = self.sim.mj_model if self.sim else None

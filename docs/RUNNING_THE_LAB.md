@@ -38,6 +38,22 @@ afirmar** que está rodando em vez de continuar desenhando o último quadro.
 `--duracao 0` roda até a interface mandar parar. Com `--espera`, a simulação
 sobe mas não começa: quem escolhe o experimento é o painel EXPERIMENTO.
 
+### O player standalone
+
+Para rodar sem abrir o Editor (é o que a validação visual usa):
+
+```bat
+Unity.exe -batchmode -quit -projectPath unity\DrosobotLab ^
+  -executeMethod Drosobot.EditorTools.BuildLabPlayer.Build ^
+  -logFile unity\buildplayer.log
+
+unity\DrosobotLab\Build\DrosobotLab.exe
+```
+
+Com `-autocapture <segundos> -capturedir <pasta>` ele conduz uma sessão sozinho
+— troca de vista, de modo e de paleta — e fotografa. As imagens em
+`docs/images/live/` saíram assim, contra a simulação de verdade.
+
 ### Só olhar o que seria montado
 
 ```bat
@@ -99,24 +115,38 @@ py -3.14 -m venv .venv-flygym2
 **Área principal** — a mosca do NeuroMechFly (malhas reais, exportadas do modelo
 compilado que a física roda), a arena, e o estímulo de looming.
 
+**Coluna da esquerda**
+
+- **DROSOBOT LAB** — SIM / WALL / RTF, atividade por população, e os eventos
+  científicos. `looming_start` e `looming_end` são bordas, não estado: emitir a
+  cada janela enchia a lista de 100 linhas por segundo e empurrava para fora
+  justamente os eventos raros — spike do GF, fuga, limitação do modelo.
+- **ATIVIDADE DE POPULAÇÃO** — quem participa sem ter morfologia individual.
+- **GIANT FIBER — GATE** — excitação, inibição, líquido, `v` mínimo, spikes, e
+  os maiores contribuintes inibitórios do passo, rotulados por tipo
+  (`SAD073`, `CL367`, `LHAD1g1`…). Abaixo, o aviso de limitação do modelo
+  quando `v` cruza −150 mV.
+- **VISÃO** (segunda coluna) — os 721 omatídeos de cada olho.
+
 **Coluna da direita**
 
+- **EXPERIMENTO** — primeiro, porque é o único painel com que se *age*: escolha
+  do experimento, semente, Start / Pause / Reset / Stop, e o estado da corrida.
 - **MALE CNS** — o conectoma 3D numa caixa, com as sinapses pulsando. Câmera
   própria: antes ele dividia câmera com a mosca e saía de quadro quando ela
   andava.
-- **CORPO** — modos `Normal / Bind Pose / Eixos / Rótulos`, vistas
-  `Persp / Lado / Topo / Frente`, botão Focar, paletas `Clay / Flybody /
-  Drosophila`, e o estado da conexão.
-- **PROCEDÊNCIA** — a separação DATA / MODEL / ASSUMPTION, sempre visível.
+- **CORPO** — estado da conexão com a idade da telemetria, modos
+  `Normal / Bind Pose / Eixos / Rótulos`, vistas `Persp / Lado / Topo / Frente`,
+  botão Focar, e as paletas `Clay / Flybody / Drosophila`.
 - **RUNTIME** — OS, CPU, GPU, backend de física, backend neural, pares de
   colisão, neurônios simulados, morfologias na tela, arestas, VRAM, custo por
   etapa e RTF.
-- **GIANT FIBER — GATE** — excitação, inibição, líquido, `v` mínimo, spikes, e
-  os maiores contribuintes inibitórios do passo, rotulados por tipo.
-- **VISÃO** — os 721 omatídeos por olho.
-- **INSPECTOR** e **EXPERIMENTO**.
+- **PROCEDÊNCIA** e **INSPECTOR**.
 
 **Rodapé** — sinais em janela rolante.
+
+As colunas rolam quando não cabem, em vez de cortar o último painel em
+silêncio.
 
 ### Teclas
 
@@ -129,27 +159,30 @@ seleção · botão esquerdo orbita · roda aproxima · botão do meio empurra.
 ## Desempenho medido
 
 RX 6700 XT (gfx1031, 20 CUs, 12 GiB), Windows 11, FlyGym 2.1.0 / MuJoCo 3.9,
-OpenCL, looming, `legs`, 1 s de mosca:
+OpenCL, looming, `legs`, whole CNS, 1 s de mosca:
 
-| etapa | whole CNS | circuito |
+| etapa | antes | depois |
 |---|---|---|
-| física | 14.405 ms/s · 78,9% | 13.036 ms/s · 86,4% |
-| neural | 3.363 ms/s · 18,4% | 1.453 ms/s · 9,6% |
-| visão | 14 ms/s | 8 ms/s |
-| leitura | 220 ms/s | 159 ms/s |
-| telemetria | 0,1 ms/s | 192 ms/s |
-| **total** | **18.266 ms/s** | **15.092 ms/s** |
-| **RTF** | **0,055×** | **0,066×** |
+| física | 14.405 ms/s · 78,9% | **5.167 ms/s · 58,3%** |
+| neural | 3.363 ms/s · 18,4% | 3.068 ms/s · 34,6% |
+| visão | 14 ms/s | 14 ms/s |
+| leitura | 220 ms/s | 174 ms/s |
+| telemetria | 191 ms/s | 191 ms/s |
+| **total** | 18.266 ms/s | **8.860 ms/s** |
+| **RTF** | 0,055× | **0,113×** |
 
 Unidade: **ms de relógio por segundo simulado** — a única base em que as etapas
 se somam. A seção "por chamada" do profiler é outra grandeza e não soma.
 
-**O gargalo é a física**, 79–86% do relógio, mesmo com o conectoma inteiro na
-GPU. Trocar 1.261 neurônios por 164.451 — 243× mais arestas — custa 1,9 s de
-relógio por segundo simulado. Foi isso que a GPU comprou.
+O ganho veio inteiro de `sim/physics/fastpath.py`, que remove trabalho de
+bookkeeping refeito 10.000 vezes por segundo simulado. **Mesma física, mesmo
+modelo, mesmo controlador, mesmo timestep** — e igualdade bit a bit verificada
+em `tests/test_fastpath_equivalencia.py`. Ver
+[`docs/research/PHYSICS_OVERHEAD.md`](research/PHYSICS_OVERHEAD.md).
 
-A telemetria custa quase nada sem cliente conectado e ~190 ms/s com a Unity
-lendo; as duas linhas acima são de corridas diferentes nesse aspecto.
+**A física continua sendo o maior bloco**, 58%. Dentro dela, agora, o
+`mj_step` é 27% — antes era 11%. O que sobrou é cada vez mais física de
+verdade e cada vez menos Python em volta.
 
 ---
 

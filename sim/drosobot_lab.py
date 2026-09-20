@@ -279,6 +279,7 @@ class Laboratorio:
         self.t_s = 0.0
         self.escapes = 0
         self.hz = 0.0
+        self._looming_ativo = False
         self.prof = Profiler(["physics", "vision", "neural", "leitura",
                               "telemetry"])
 
@@ -355,6 +356,7 @@ class Laboratorio:
         self.escape_ate, self.escapes = -1.0, 0
         self.passo_atual, self.t_s = 0, 0.0
         self.hz, self.janelas = 0.0, 0
+        self._looming_ativo = False
         self.proxima_pose = 0.0
         self.avisou_v = False
         self.prof = Profiler(["physics", "vision", "neural", "leitura",
@@ -486,8 +488,16 @@ class Laboratorio:
     def _eventos(self, gate, ttmn):
         """Eventos CIENTIFICOS. Nao ha evento por passo de fisica aqui."""
         eventos = []
-        if self.hz > 1.0:
-            eventos.append(("looming", {"hz": round(self.hz, 2)}))
+        # Borda de SUBIDA, nao estado. Emitir a cada janela em que ha looming
+        # enche a lista com 100 linhas por segundo e empurra pra fora da tela
+        # justamente os eventos raros -- spike do GF, fuga, limitacao do modelo
+        # -- que sao o motivo de a lista existir.
+        forte = self.hz > 1.0
+        if forte and not self._looming_ativo:
+            eventos.append(("looming_start", {"hz": round(self.hz, 2)}))
+        elif not forte and self._looming_ativo:
+            eventos.append(("looming_end", {"hz": round(self.hz, 2)}))
+        self._looming_ativo = forte
         if gate["spikes_gf"]:
             eventos.append(("gf_spike", {"net_mV": gate["liquido_mV"]}))
         if ttmn:
@@ -663,6 +673,13 @@ class Laboratorio:
                 "quat": np.asarray(quat, dtype=np.float32).round(5).tolist(),
             }
             self.proxima_pose = self.t_s + 1.0 / POSE_HZ
+
+        # onde o estimulo esta AGORA, medido de quem o move. A Unity nao
+        # recalcula a trajetoria: se recalculasse, estaria simulando.
+        est = self.corpo.estado_estimulo()
+        if est is not None:
+            extra["stimulus"] = {"pos": [round(v, 4) for v in est[:3]],
+                                 "radius": round(est[3], 3)}
 
         self.tel.enviar(protocol.frame(
             step=self.passo_atual, sim_time=self.t_s, wall_time=time.time(),

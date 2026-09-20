@@ -217,8 +217,7 @@ namespace Drosobot.Compute
         /// </summary>
         public static string Validar(int n = 1000, int passos = 400)
         {
-            var cs = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(
-                "Assets/Compute/LifStep.compute");
+            var cs = CarregaShader("Assets/Compute/LifStep.compute");
             if (cs == null) return "ERRO: shader nao encontrado";
             int k = cs.FindKernel("LifStepConta");
 
@@ -329,5 +328,21 @@ namespace Drosobot.Compute
             File.WriteAllText(caminho, sb.ToString());
             Debug.Log($"[lif-bench] salvo em {caminho}");
         }
+
+        // `AssetDatabase` so existe no Editor. Sem a guarda, o codigo compila no
+        // Editor e QUEBRA o build do player -- foi o que aconteceu na primeira
+        // tentativa de gerar o executavel. Estes benchmarks sao ferramenta de
+        // Editor; num player eles nao tem shader pra carregar, e dizem isso em
+        // vez de estourar.
+        private static ComputeShader CarregaShader(string caminho)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>(caminho);
+#else
+            Debug.LogWarning($"[benchmark] {caminho} so carrega no Editor");
+            return null;
+#endif
+        }
+
     }
 }
