@@ -461,39 +461,60 @@ aparece como incapacidade de desviar.
 As seis tentativas ate chegar nessa conclusao estao no cabecalho do script, pra
 quem quiser atacar de novo sem repetir o caminho.
 
-## Drosobot Lab — laboratorio virtual (em construcao)
+## Drosobot Lab — laboratório neuromecânico integrado
 
-Camada nova pra assistir aos circuitos rodando: a mosca em MuJoCo, o CNS 3D
-reconstruido acendendo conforme a atividade, e a separacao entre dado medido e
-suposicao nossa visivel na tela.
-
-```
-conectoma -> LIF -> MuJoCo/FlyGym -> sensores -> (laco)
-                         |
-                    TELEMETRIA (mao unica)
-                         |
-                   Unity Drosobot Lab
-                  visualizacao apenas
-```
-
-**A Unity nao decide nada.** Nao simula fisica, nao simula neuronio, nao escolhe
-se a mosca virou ou escapou. MuJoCo continua sendo a autoridade da fisica e o
-circuito a do comportamento. Isso evita o pior resultado possivel: duas
-implementacoes do cerebro divergindo em silencio.
+O laço fechado inteiro, com o **Male CNS inteiro na GPU** e a mosca do
+NeuroMechFly no MuJoCo, observável enquanto roda.
 
 ```
-blender\export_unity.py                              # CNS -> GLB (uma vez)
-.venv\Scripts\python sim\flygym_live.py --telemetry   # simulacao publicando
-python -m sim.telemetry.demo                          # sem MuJoCo, so interface
+FlyGym 2.x / NeuroMechFly
+        |  retina, contatos, pose
+        v
+Drosobot Neural Engine  ->  Male CNS (164.451 neuronios, 25,5M arestas)
+        |  TTMn
+        v
+FlyGym / corpo                         e em paralelo:
+        (repete)                       telemetria -> Unity Drosobot Lab
 ```
 
-Arquitetura, protocolo, procedencia DATA/MODEL/ASSUMPTION, cores e limitacoes
-conhecidas em **[docs/DROSOBOT_LAB.md](docs/DROSOBOT_LAB.md)**.
+```bat
+.venv-flygym2\Scripts\python sim\drosobot_lab.py ^
+    --physics flygym2 --neural opencl --cns whole ^
+    --experiment looming --telemetry --duracao 600
+```
 
-Estado: telemetria, instrumentacao do `fast_lif`, exportacao do CNS e os scripts
-C# estao prontos e testados. **A cena da Unity nunca foi aberta no Editor e o C#
-nao foi compilado** -- nao havia integracao MCP com a Unity disponivel. Detalhes
-em docs/DROSOBOT_LAB.md.
+Depois, Unity em `unity/DrosobotLab` → Play. Comandos, opções, os dois ambientes
+Python, o que aparece na tela e o que fazer quando não funciona:
+**[docs/RUNNING_THE_LAB.md](docs/RUNNING_THE_LAB.md)**.
+
+**A Unity não decide nada.** Não simula física, não simula neurônio, não escolhe
+se a mosca virou ou escapou. MuJoCo continua sendo a autoridade da física e o
+conectoma a do comportamento. A telemetria é mão única; o único caminho de volta
+é o canal de controle, que escolhe experimento e aperta start/pause/reset — nada
+nele altera peso, limiar, entrada ou drive.
+
+### Estado
+
+| | |
+|---|---|
+| runtime | um só (`sim/drosobot_lab.py`): física, cérebro, telemetria e controle |
+| física | FlyGym 2.1.0 / MuJoCo 3.9 (principal) · FlyGym 1.2.1 / MuJoCo 3.2.7 (referência) |
+| neural | OpenCL na RX 6700 XT · CPU fp64 de referência · D3D12 validado, sem host nativo |
+| escopo | Male CNS inteiro ou circuito do Giant Fiber, trocável pelo seletor |
+| Unity | cena montada por código, compila e roda; mosca real, CNS 3D, gate, retina, profiler |
+
+Medido na RX 6700 XT, 1 s de mosca com o conectoma inteiro: **RTF 0,055×**,
+física 78,9% do relógio, neural 18,4%. O gargalo é a física, não o cérebro.
+
+Arquitetura, protocolo e procedência DATA/MODEL/ASSUMPTION em
+**[docs/DROSOBOT_LAB.md](docs/DROSOBOT_LAB.md)**. Coordenadas e montagem da
+mosca 3D em **[docs/UNITY_BODY_COORDINATES.md](docs/UNITY_BODY_COORDINATES.md)**.
+
+### O que isto NÃO é
+
+**Conectoma inteiro simulado não é cérebro funcional completo.** Só a via de
+looming e a motora têm semântica sensorial/motora modelada; o resto participa
+pela conectividade. As duas coisas aparecem separadas na tela, de propósito.
 
 ## Visualização 3D — a morfologia real dos neurônios usados
 
@@ -597,13 +618,31 @@ Percalços reais no caminho, documentados aqui pra não repetir:
 
 ## Setup
 
+Dois ambientes, de propósito. Nenhum substitui o outro.
+
 ```
 py -3.11 -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+
+py -3.14 -m venv .venv-flygym2
+.venv-flygym2\Scripts\pip install -e research\upstream\flygym pyopencl
 ```
 
-Testado: Python 3.11.9, Brian2 2.9.0, neuprint-python 0.6.3, numpy travado em `<2.1`
-(Brian2 2.9.0 quebra com numpy 2.4 — `ndarray.ptp` foi removido).
+| | `.venv` | `.venv-flygym2` |
+|---|---|---|
+| papel | **referência / regressão** | **desenvolvimento** |
+| Python | 3.11.9 | 3.14.4 |
+| FlyGym / MuJoCo | 1.2.1 / 3.2.7 | 2.1.0 / 3.9.0 |
+| Brian2 | 2.9.0 | — |
+
+O `.venv` tem o Brian2, que é a referência contra a qual o LIF próprio foi
+verificado, e o FlyGym 1.x que produziu os resultados deste README. **Não
+destruir.** O `.venv-flygym2` é onde o laboratório roda hoje; ele não tem
+Brian2, e o teste que compara parâmetros com o Brian2 falha lá por isso — esse
+roda no `.venv`.
+
+numpy fica travado em `<2.1` no `.venv`: Brian2 2.9.0 quebra com numpy 2.4
+(`ndarray.ptp` foi removido).
 
 ## Acesso ao neuPrint (dado real do conectoma)
 
@@ -628,18 +667,40 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 
 ## Estrutura
 
-- `connectome/` — scripts de fetch no neuPrint + CSV de conectividade e de
-  propriedades por neuronio (dado bruto, nao sobe pro git)
-- `sim/` — simulacoes Brian2. `connectome_model.py` concentra a biofisica e a
-  regra de sinal do neurotransmissor; os outros scripts montam circuito em cima dele.
-  `flygym_optomotor.py` e `flygym_escape.py` fecham o laco no corpo
-  biomecanico em MuJoCo, `flygym_live.py` mostra isso numa janela.
-  `fast_lif.py` e o integrador do laco ao vivo, verificado contra o Brian2.
-  `flygym_avoidance.py` testa se o circuito guia desvio (nao guia -- ver secao)
-- `hardware/` — firmware Arduino/ESP32 + diagrama Wokwi
-- `blender/` — cena 3D no Blender (malha do CNS + esqueletos reais); `_pylibs/`,
-  `skeletons/` e os `.obj` sao gerados/vendorizados, nao sobem pro git
-- `docs/images/` — imagens usadas neste README
+A fronteira que organiza tudo: **ciência em `model`/`engine`, execução em
+`compute`, corpo atrás do `PhysicsAdapter`.** Trocar de GPU ou de simulador não
+encosta na ciência.
+
+```
+sim/
+  drosobot_lab.py        o runtime: física + cérebro + telemetria + controle
+  profiler.py            custo por etapa, em ms de relógio por segundo simulado
+  compare_runtimes.py    a tabela 4-vias (FlyGym 1/2 x circuito/whole)
+
+  neural/                O CÉREBRO
+    model.py             parâmetros de Shiu et al., escala de ponto fixo, guard
+    engine.py            ordem do passo, semântica de atraso
+    connectome_loader.py CSR, bodyIds, subgrafo
+    kernels/*.cl         LIF, scatter sináptico, atraso, reduções (nossos)
+    compute/             IComputeBackend: cpu.py, opencl.py, d3d12.py
+
+  physics/               O CORPO
+    adapter.py           PhysicsAdapter, SensorFrame, MotorFrame
+    flygym1.py           FlyGym 1.2.1 / MuJoCo 3.2.7  (referência)
+    flygym2.py           FlyGym 2.1.0 / MuJoCo 3.9    (principal)
+    looming_world.py     o estímulo, compartilhado pelos dois adaptadores
+
+  telemetry/             protocolo, servidor, canal de controle
+  experiments/           circuitos do runner antigo (figuras deste README)
+
+unity/DrosobotLab/       o laboratório; cena montada por código
+tools/                   export_fly_mesh.py, compare_palettes.py, gpu_probe/
+tests/                   backend, equivalência GPU, telemetria, runtime
+docs/research/           as investigações, com os números
+```
+
+Não sobem pro git, e são gerados: os CSV do conectoma, os `.obj` da mosca e do
+CNS, os `_pylibs/` e `skeletons/` do Blender, os clones em `research/upstream/`.
 
 ## Roadmap / Status
 
@@ -669,6 +730,20 @@ COM real — a extensão VS Code do Wokwi não expõe porta COM do host, só ter
 - [ ] Comprar kit físico (favorito atual: Kuyshun ESP32-CAM 328P — tem HC-SR04 +
       arquitetura dual-MCU ESP32-CAM/ATmega328P já pronta, resolve o aperto de GPIO)
 - [ ] Portar firmware simulado pro hardware real, validar ponta a ponta
+- [x] Motor LIF proprio em CSR, verificado contra o Brian2 e contra a CPU em
+      fp64 (0 divergencia em 512 e em 1500 neuronios)
+- [x] Male CNS INTEIRO na GPU: 164.451 neuronios, 25.550.583 arestas, OpenCL na
+      RX 6700 XT, sem readback do cerebro por passo
+- [x] `IComputeBackend`: ciencia em `model`/`engine`, execucao em `compute`.
+      CPU de referencia, OpenCL operacional, D3D12/HLSL validado
+- [x] `PhysicsAdapter`: FlyGym 1.x e 2.x atras da mesma fronteira, o cerebro nao
+      conhece nenhum dos dois
+- [x] Runtime unico (`sim/drosobot_lab.py`) com catalogo, canal de controle e
+      telemetria; a Unity dirige sem tocar em parametro
+- [x] Mosca 3D do NeuroMechFly na Unity, validada contra o `xpos` do MuJoCo
+- [x] Tabela 4-vias com arenas equivalentes (FlyGym 1/2 x circuito/whole)
+- [ ] Vulkan compute: a interface esta pronta, a implementacao nao
+- [ ] Reduzir o custo da fisica, que e 79-86% do relogio
 
 ## Referencias
 
