@@ -1,0 +1,26 @@
+{
+  "gerado_em": "2026-09-20T01:07:36",
+  "scope": "whole_connectome_simulated",
+  "nota": "conectoma inteiro simulado. NAO e um modelo sensorimotor completo: so as populacoes de looming tem entrada sensorial modelada; o resto participa pelo que chega pela conectividade",
+  "conectoma": {
+    "neurons": 164451,
+    "edges": 25550583,
+    "synapses": 123967037,
+    "synapses_per_edge": null,
+    "carregado_em_s": 0.06
+  },
+  "device": "gfx1031 (20 CUs, 12.0 GiB)",
+  "backend": "drosobot-opencl",
+  "vram_mib": 201.4,
+  "upload_s": 1.03,
+  "dt_ms": 0.5,
+  "janela_ms": 10.0,
+  "ms_por_janela": 21.373,
+  "us_por_passo_neural": 1068.6,
+  "orcamento_us": 500,
+  "cabe_em_tempo_real": false,
+  "rtf_neural": 0.4679,
+  "sensoriais_estimulados": 311,
+  "neuronios_que_dispararam": 23235,
+  "spikes_totais": 434493
+}
