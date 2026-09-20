@@ -19,6 +19,17 @@
  *
  * Os coeficientes chegam prontos, calculados em fp64 no host (model.py).
  * Recalcula-los aqui em fp32 daria numeros diferentes dos da referencia.
+ *
+ * ## Spike forcado: a populacao de entrada e POISSON, nao LIF
+ *
+ * No modelo (e em sim/fast_lif.py) os sensores nao integram: disparam com
+ * probabilidade `taxa_hz * dt_s` e entregam o peso sinaptico cheio. Quem sorteia
+ * e o host -- converter taxa em probabilidade e decisao de MODELO e fica em
+ * Python; o kernel so recebe a mascara pronta.
+ *
+ * Isso importa: injetar CORRENTE continua no lugar do spike discreto e outro
+ * modelo, e mais fraco. Foi o que quebrou o primeiro laco fechado -- os
+ * LC4/LPLC2 nunca cruzavam o limiar e o Giant Fiber nunca disparava.
  */
 __kernel void lif_step(
     __global float *v,
@@ -26,7 +37,8 @@ __kernel void lif_step(
     __global int   *ref_ate,
     __global uchar *spike,
     __global int   *anel,           // D * N, ponto fixo (ver delay.cl)
-    __global const float *externo,  // entrada sensorial em mV, por neuronio
+    __global const float *externo,  // corrente externa em mV, por neuronio
+    __global const uchar *forcado,  // 1 = dispara neste passo (Poisson do host)
     const int    n,
     const int    passo,
     const int    cursor,
@@ -59,7 +71,9 @@ __kernel void lif_step(
     vi = livre ? (v_rest + u_novo) : v_reset;
 
     // select em vez de ramo: o wave nao diverge entre quem disparou e quem nao
-    bool disparou = livre && (vi > v_th);
+    // O spike forcado ignora o refratario de proposito: a fonte Poisson nao tem
+    // um, e dar refratario a ela mudaria a taxa efetiva do estimulo.
+    bool disparou = (livre && (vi > v_th)) || (forcado[i] != (uchar)0);
     vi = disparou ? v_reset : vi;
     refi = disparou ? (passo + ref_passos) : refi;
 

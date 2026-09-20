@@ -136,14 +136,18 @@ class OpenCLBackend:
         cont = np.zeros(n, dtype=np.int32)
         soma = np.zeros(self.n_grupos, dtype=np.int32)
         zero = np.zeros(n, dtype=np.float32)
+        zero_u8 = np.zeros(n, dtype=np.uint8)
 
         self.b_v, self.b_g, self.b_ref = buf(v), buf(g), buf(ref)
+        self.b_forcado = buf(zero_u8, mf.READ_ONLY)
+        self._forcado_zerado = True
         self.b_spk, self.b_anel = buf(spk), buf(anel)
         self.b_cont, self.b_soma = buf(cont), buf(soma)
         self.b_ext = buf(zero, mf.READ_ONLY)
         self._ext_zerado = True
         self.bytes_dinamicos = (v.nbytes + g.nbytes + ref.nbytes + spk.nbytes
-                                + anel.nbytes + cont.nbytes + zero.nbytes)
+                                + anel.nbytes + cont.nbytes + zero.nbytes
+                                + zero_u8.nbytes)
 
     @staticmethod
     def _gl(n: int) -> tuple[int]:
@@ -163,11 +167,24 @@ class OpenCLBackend:
                         np.ascontiguousarray(externo_mV, dtype=np.float32))
         self._ext_zerado = False
 
+    def escreve_forcados(self, forcados) -> None:
+        """Mascara de spike forcado deste passo (a fonte Poisson)."""
+        cl = self.cl
+        if forcados is None:
+            if not self._forcado_zerado:
+                cl.enqueue_copy(self.fila, self.b_forcado,
+                                np.zeros(self.c.n, dtype=np.uint8))
+                self._forcado_zerado = True
+            return
+        cl.enqueue_copy(self.fila, self.b_forcado,
+                        np.ascontiguousarray(forcados, dtype=np.uint8))
+        self._forcado_zerado = False
+
     def lif(self, passo: int, cursor: int) -> None:
         k = self.coef
         self.k_lif(self.fila, self._gl(self.c.n), None,
                    self.b_v, self.b_g, self.b_ref, self.b_spk, self.b_anel,
-                   self.b_ext,
+                   self.b_ext, self.b_forcado,
                    np.int32(self.c.n), np.int32(passo), np.int32(cursor),
                    np.int32(k.ref_passos),
                    np.float32(V_REST), np.float32(V_RESET), np.float32(V_TH),

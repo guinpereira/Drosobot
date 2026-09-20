@@ -84,6 +84,10 @@ class IComputeBackend(Protocol):
         """Entrada sensorial deste passo, em mV, por neuronio."""
         ...
 
+    def escreve_forcados(self, forcados: np.ndarray | None) -> None:
+        """Mascara de spike forcado: a populacao de entrada Poisson."""
+        ...
+
     def lif(self, passo: int, cursor: int) -> None:
         """Um passo do integrador exato. Le e limpa o slot `cursor` do anel."""
         ...

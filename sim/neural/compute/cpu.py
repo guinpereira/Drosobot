@@ -53,12 +53,17 @@ class CPUBackend:
         self.contagem = np.zeros(n, dtype=np.int64)
         self.soma_grupo = np.zeros(self.n_grupos, dtype=np.int64)
         self.externo = None
+        self.forcados = None
 
     # --------------------------------------------------------- primitivas
 
     def escreve_externo(self, externo_mV: np.ndarray | None) -> None:
         self.externo = (None if externo_mV is None
                         else np.asarray(externo_mV, dtype=np.float64))
+
+    def escreve_forcados(self, forcados) -> None:
+        self.forcados = (None if forcados is None
+                         else np.asarray(forcados, dtype=bool))
 
     def lif(self, passo: int, cursor: int) -> None:
         k = self.coef
@@ -74,6 +79,9 @@ class CPUBackend:
         livre = passo >= self.ref_ate
         self.v = np.where(livre, V_REST + u_novo, V_RESET)
         disparou = livre & (self.v > V_TH)
+        if self.forcados is not None:
+            # a fonte Poisson dispara independente do refratario, como em fast_lif
+            disparou = disparou | self.forcados
         self.v = np.where(disparou, V_RESET, self.v)
         self.ref_ate = np.where(disparou, passo + k.ref_passos, self.ref_ate)
         self.spike = disparou.astype(np.uint8)

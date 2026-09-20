@@ -94,8 +94,9 @@ class NeuralEngine:
 
     # -------------------------------------------------------------- passo
 
-    def passo(self, externo_mV: np.ndarray | None = None) -> None:
+    def passo(self, externo_mV=None, forcados=None) -> None:
         self.backend.escreve_externo(externo_mV)
+        self.backend.escreve_forcados(forcados)
         self._um_passo()
 
     def _um_passo(self) -> None:
@@ -106,6 +107,44 @@ class NeuralEngine:
             b.acumula()
         self.cursor = (self.cursor + 1) % self.coef.atraso_passos
         self._passo += 1
+
+    def roda_poisson(self, duracao_ms: float, taxas_hz, rng,
+                     indices=None) -> int:
+        """
+        Janela com a populacao de entrada disparando como POISSON.
+
+        E como o modelo define a entrada sensorial: probabilidade de disparo por
+        passo = taxa_hz * dt_s, e cada spike entrega o peso sinaptico cheio. A
+        conversao taxa -> probabilidade e decisao de MODELO, e por isso mora aqui
+        no host, nao no kernel.
+
+        Injetar corrente continua equivalente NAO e a mesma coisa: e mais fraco,
+        e foi o que impediu o primeiro laco fechado de disparar o Giant Fiber.
+        """
+        n = int(round(duracao_ms / self.dt))
+        self.backend.escreve_externo(None)
+
+        # `indices` diz QUEM pode disparar. Sem isso sorteariamos um numero
+        # aleatorio por neuronio por passo -- 164.451 x 20 = 3,3 milhoes de
+        # sorteios por janela de 10 ms, na CPU, pra 311 sensores. Era o que
+        # fazia o passo neural do CNS inteiro custar 2,8 ms em vez de ~1 ms.
+        if indices is None:
+            p = np.asarray(taxas_hz, dtype=np.float64) * (self.dt / 1000.0)
+            for _ in range(n):
+                self.backend.escreve_forcados(
+                    (rng.random(self.c.n) < p).astype(np.uint8))
+                self._um_passo()
+        else:
+            idx = np.asarray(indices, dtype=np.int64)
+            p = np.asarray(taxas_hz, dtype=np.float64)[idx] * (self.dt / 1000.0)
+            mascara = np.zeros(self.c.n, dtype=np.uint8)
+            k = len(idx)
+            for _ in range(n):
+                mascara[idx] = (rng.random(k) < p).astype(np.uint8)
+                self.backend.escreve_forcados(mascara)
+                self._um_passo()
+        self.backend.sincroniza()
+        return n
 
     def roda(self, duracao_ms: float,
              externo_mV: np.ndarray | None = None) -> int:
@@ -118,6 +157,7 @@ class NeuralEngine:
         """
         n = int(round(duracao_ms / self.dt))
         self.backend.escreve_externo(externo_mV)
+        self.backend.escreve_forcados(None)
         for _ in range(n):
             self._um_passo()
         self.backend.sincroniza()
