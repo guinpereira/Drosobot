@@ -47,9 +47,17 @@ linha foi copiada.** O que produzimos sao descricoes e medicoes.
 
 ## Obra derivada
 
+Todos derivam do **MuJoCo 3.9.0**, que e a versao do binario que roda os
+experimentos. A versao importa: o `mjc_PlaneConvex` mudou de algoritmo entre
+3.9 e 3.13, e portar da versao errada produz contato quase certo. Ver
+`VERSAO_MUJOCO_PORTADA` em `sim/gpu_physics/compilador.py`, que recusa um
+runtime divergente.
+
 | arquivo | deriva de | licenca |
 |---|---|---|
-| `sim/gpu_physics/kernels/cinematica.cl` | MuJoCo `src/engine/engine_core_smooth.c` (`mj_kinematics1`, `mj_kinematics2`) e `src/engine/engine_util_spatial.c` (`mju_mulQuat`, `mju_rotVecQuat`, `mju_quat2Mat`, `mju_axisAngle2Quat`, `mju_normalize4`) | Apache-2.0, (c) DeepMind Technologies Limited |
+| `sim/gpu_physics/kernels/cinematica.cl` | `engine_core_smooth.c` (`mj_kinematics1`, `mj_kinematics2`) e `engine_util_spatial.c` (`mju_mulQuat`, `mju_rotVecQuat`, `mju_quat2Mat`, `mju_axisAngle2Quat`, `mju_normalize4`) | Apache-2.0, (c) DeepMind Technologies Limited |
+| `sim/gpu_physics/kernels/dinamica.cl` | `engine_core_smooth.c` (`mj_comPos`, `mj_crb`, `mj_factorI`, `mj_solveLD`, `mj_comVel`, `mj_rne`), `engine_passive.c` (`mj_springdamper`), `engine_forward.c` (`mj_fwdActuation`, `mj_Euler`), `engine_util_spatial.c` (`mju_inertCom`, `mju_dofCom`, `mju_crossMotion`, `mju_crossForce`, `mju_mulInertVec`) | idem |
+| `sim/gpu_physics/kernels/colisao.cl` | `engine_collision_convex.c` (`mjc_PlaneConvex`, `addplanemesh`, `mjc_meshSupport`) | idem |
 
 Nao e inspiracao: e traducao de C para OpenCL C, **termo a termo**, preservando
 a ordem das operacoes de ponto flutuante e os atalhos para quaternio identidade

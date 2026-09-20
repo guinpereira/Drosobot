@@ -63,8 +63,21 @@ CONE_SUPORTADO = 0                            # pyramidal
 CONDIM_SUPORTADO = {3}                        # atrito deslizante, sem torcao
 
 
+# A versao do MuJoCo de onde os kernels foram portados. NAO e cosmetica: o
+# `mjc_PlaneConvex` mudou de algoritmo entre 3.9 e 3.13 -- de "vizinhos do
+# vertice de suporte no grafo de hull" para "face poligonal podada por area".
+# Um porte feito da versao errada bate o contato mais profundo bit a bit e erra
+# os contatos extras, que e um modo de falha quase invisivel: a mosca continua
+# de pe, com o numero de contatos errado.
+VERSAO_MUJOCO_PORTADA = "3.9.0"
+
+
 class RecursoNaoSuportado(RuntimeError):
     """O modelo usa algo que o backend GPU nao implementa. Falha cedo."""
+
+
+class VersaoMuJoCoDivergente(RuntimeError):
+    """O runtime nao e a versao de onde os kernels foram portados."""
 
 
 def _exige(cond: bool, msg: str) -> None:
@@ -119,6 +132,17 @@ def valida(m) -> dict:
            "forcas de fluido (viscosity/density) nao implementadas")
     _exige(not np.any(np.asarray(m.opt.wind) != 0), "vento nao implementado")
 
+    # Os kernels assumem mola e amortecedor LINEARES: `-x*stiffness` e
+    # `-v*damping`. O MuJoCo 3.9 permite um polinomio por cima disso
+    # (`mju_polyForce`), e se ele existir o assumido aqui produz forca errada
+    # em silencio -- que e o pior desfecho possivel.
+    for campo in ("jnt_stiffnesspoly", "dof_dampingpoly", "actuator_dampingpoly"):
+        v = getattr(m, campo, None)
+        if v is not None:
+            _exige(not np.any(np.asarray(v) != 0),
+                   f"{campo} nao nulo: mola/amortecedor polinomial nao "
+                   "implementado (os kernels assumem termo linear)")
+
     _exige({int(t) for t in m.actuator_trntype} <= TRN_SUPORTADAS,
            "transmissao de atuador fora de {joint, body}")
     _exige({int(t) for t in m.actuator_dyntype} <= DYN_SUPORTADAS,
@@ -136,6 +160,7 @@ def valida(m) -> dict:
         "integrador": "Euler",
         "solver": "Newton",
         "cone": "pyramidal",
+        "mujoco_portado": VERSAO_MUJOCO_PORTADA,
         "colisao_por_pares_explicitos": True,
         "geoms_com_mascara_nao_nula": mascaras,
         "nota_mascara": (
@@ -155,12 +180,16 @@ CAMPOS_DINAMICA = (
     "body_dofadr", "body_dofnum", "body_pos", "body_quat", "body_ipos",
     "body_iquat", "body_mass", "body_inertia", "body_treeid", "body_mocapid",
     "body_geomadr", "body_geomnum", "body_sameframe", "body_simple",
+    "body_subtreemass", "body_invweight0",
     # juntas
     "jnt_type", "jnt_bodyid", "jnt_qposadr", "jnt_dofadr", "jnt_axis",
     "jnt_pos", "jnt_stiffness", "jnt_range", "jnt_limited",
     # graus de liberdade
     "dof_bodyid", "dof_jntid", "dof_parentid", "dof_treeid", "dof_Madr",
-    "dof_simplenum", "dof_armature", "dof_damping",
+    "dof_simplenum", "dof_armature", "dof_damping", "dof_M0", "dof_invweight0",
+    # esparsidade da matriz de massa em CSR: uma linha por dof, com a cadeia
+    # dele ate a raiz. E o que `mj_factorI` percorre.
+    "M_rownnz", "M_rowadr", "M_colind",
     # geometria de colisao
     "geom_bodyid", "geom_type", "geom_pos", "geom_quat", "geom_size",
     "geom_dataid", "geom_rbound", "geom_condim", "geom_friction",
@@ -176,10 +205,15 @@ CAMPOS_DINAMICA = (
     "actuator_biasprm", "actuator_dynprm", "actuator_ctrlrange",
     "actuator_forcerange", "actuator_ctrllimited", "actuator_forcelimited",
     "actuator_gear", "actuator_cranklength", "actuator_acc0",
+    "actuator_length0", "actuator_lengthrange",
     # estado de referencia
     "qpos0", "qpos_spring",
+    # termos polinomiais de mola/amortecedor. Sao zero neste modelo, e o
+    # compilador confere isso em `valida()` antes de o kernel assumir.
+    "jnt_stiffnesspoly", "dof_dampingpoly",
     # malhas: vertices e faces, que sao o que a colisao usa
     "mesh_vertadr", "mesh_vertnum", "mesh_vert", "mesh_graphadr", "mesh_graph",
+    "mesh_rbound",
     "mesh_polyadr", "mesh_polynum", "mesh_polyvertadr", "mesh_polyvertnum",
     "mesh_polyvert", "mesh_polynormal", "mesh_polymapadr", "mesh_polymapnum",
     "mesh_polymap",
@@ -228,8 +262,31 @@ def _opcoes(m) -> dict:
             for nome in CAMPOS_OPCAO if hasattr(m.opt, nome)}
 
 
-def compila(m) -> ModeloGPU:
+def confere_versao(estrito: bool = True) -> str:
+    """
+    O runtime e a versao de onde os kernels foram portados?
+
+    Custou uma depuracao descobrir que nao era: o clone de pesquisa estava em
+    3.13.1 e o binario que roda os experimentos em 3.9.0. Os dois concordam na
+    dinamica suave e discordam na geracao de contatos.
+    """
+    import mujoco as mj
+
+    v = getattr(mj, "__version__", "?")
+    if estrito and v != VERSAO_MUJOCO_PORTADA:
+        raise VersaoMuJoCoDivergente(
+            f"mujoco {v} em execucao, kernels portados de "
+            f"{VERSAO_MUJOCO_PORTADA}. O `mjc_PlaneConvex` mudou de algoritmo "
+            "entre essas versoes; comparar a GPU com este runtime mediria a "
+            "diferenca entre versoes do MuJoCo, nao o porte. Atualize os "
+            "kernels a partir da fonte certa (e `VERSAO_MUJOCO_PORTADA`) ou "
+            "volte o runtime.")
+    return v
+
+
+def compila(m, estrito: bool = True) -> ModeloGPU:
     """`mjModel` -> `ModeloGPU`. Valida antes; levanta se o modelo sai do subset."""
+    confere_versao(estrito)
     subset = valida(m)
     arrays = {}
     for nome in CAMPOS_DINAMICA:

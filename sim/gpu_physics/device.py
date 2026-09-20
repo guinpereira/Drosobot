@@ -99,23 +99,30 @@ class Device:
 
     # -------------------------------------------------------------- programas
 
-    def programa(self, arquivo: str, fp64: bool, defines: tuple = ()):
+    def programa(self, arquivo, fp64: bool, defines: tuple = ()):
         """
         Compila (uma vez) `kernels/<arquivo>` no modo de precisao pedido.
+
+        `arquivo` pode ser uma tupla de arquivos, concatenados na ordem. O
+        OpenCL nao tem `#include` entre unidades de traducao, e duplicar as
+        primitivas de quaternio num segundo arquivo criaria duas copias da
+        mesma conta, livres para divergir.
 
         `defines` sao `-D NOME=valor`. Existem porque `__local` de tamanho fixo
         precisa das dimensoes do modelo em tempo de compilacao, e um `__local`
         dimensionado por argumento perde o endereco estatico -- que e o motivo
         de usar `__local` em primeiro lugar.
         """
-        chave = (arquivo, fp64, defines)
+        arquivos = (arquivo,) if isinstance(arquivo, str) else tuple(arquivo)
+        chave = (arquivos, fp64, defines)
         if chave in self._programas:
             return self._programas[chave]
         if fp64 and not self.tem_fp64:
             raise DeviceIndisponivel(
                 f"{self.dev.name.strip()} nao expoe cl_khr_fp64; use fp64=False "
                 "e leia a divergencia medida em docs/GPU_PHYSICS.md.")
-        fonte = (KERNELS / arquivo).read_text(encoding="utf-8")
+        fonte = chr(10).join((KERNELS / a).read_text(encoding="utf-8")
+                             for a in arquivos)
         opcoes = "-cl-std=CL1.2"
         if fp64:
             opcoes += " -D USA_FP64"
@@ -125,7 +132,7 @@ class Device:
         self._programas[chave] = prog
         return prog
 
-    def kernel(self, arquivo: str, nome: str, fp64: bool, defines: tuple = ()):
+    def kernel(self, arquivo, nome: str, fp64: bool, defines: tuple = ()):
         """
         Um objeto `cl.Kernel` por nome, reaproveitado.
 
@@ -133,10 +140,11 @@ class Device:
         chamada. Custa centenas de microssegundos, e foi assim que a primeira
         versao do benchmark de latencia mediu 250 us por despacho nulo.
         """
-        chave = (arquivo, fp64, nome, defines)
+        arquivos = (arquivo,) if isinstance(arquivo, str) else tuple(arquivo)
+        chave = (arquivos, fp64, nome, defines)
         if chave not in self._kernels:
             self._kernels[chave] = self.cl.Kernel(
-                self.programa(arquivo, fp64, defines), nome)
+                self.programa(arquivos, fp64, defines), nome)
         return self._kernels[chave]
 
     # ---------------------------------------------------------------- memoria

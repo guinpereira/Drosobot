@@ -3,7 +3,7 @@ O que o backend de fisica nao pode quebrar.
 
     .venv-flygym2\Scripts\python tests/test_gpu_physics.py
 
-Cinco propriedades, cinco motivos distintos. Nao ha um sexto teste medindo a
+Oito propriedades, oito motivos distintos. Nao ha um nono teste medindo a
 mesma coisa por outro angulo -- isso so faria a suite demorar mais e falhar
 junto.
 
@@ -51,6 +51,10 @@ HASH_CIENCIA_ESPERADO = "99cad7adc23d66e7"
 # arredondamento de ULP; `sin`/`cos` da GPU respondem pela maior parte.
 TOL_FP64 = 1e-12
 TOL_FP32 = 1e-5
+
+# A cadeia da dinamica suave acumula arredondamento por ~dez etapas; o limite e
+# relativo ao maior valor do campo, nao absoluto.
+TOL_DINAMICA = 1e-12
 
 
 def _modelo(arena="looming", estimulo=None, passos=0):
@@ -196,6 +200,129 @@ def test_pilar_barra_a_mosca():
             "o obstaculo esta visivel para a retina e inexistente para a "
             "fisica.")
         print(f"    {pares_com_pilar} pares com o pilar, {contatos} contatos em 3 s")
+    finally:
+        corpo.fecha()
+
+
+def test_versao_do_mujoco_e_a_portada():
+    import mujoco as mj
+
+    from gpu_physics.compilador import (VERSAO_MUJOCO_PORTADA,
+                                        VersaoMuJoCoDivergente, confere_versao)
+
+    assert confere_versao() == VERSAO_MUJOCO_PORTADA
+    try:
+        # a guarda existe para FALHAR; um teste que so confere o caminho feliz
+        # nao prova que ela dispara
+        import gpu_physics.compilador as comp
+        antigo = comp.VERSAO_MUJOCO_PORTADA
+        comp.VERSAO_MUJOCO_PORTADA = "0.0.0"
+        try:
+            comp.confere_versao()
+            raise AssertionError("a guarda de versao nao disparou")
+        except VersaoMuJoCoDivergente:
+            pass
+        finally:
+            comp.VERSAO_MUJOCO_PORTADA = antigo
+    finally:
+        pass
+    print(f"    runtime mujoco {mj.__version__} == portado "
+          f"{VERSAO_MUJOCO_PORTADA}, e a guarda dispara quando nao e")
+
+
+def _motor_e_referencia(arena="looming", passos=200, sem_adesao=True):
+    """Estado comum dos testes de dinamica: MuJoCo em `mj_forward`, GPU igual."""
+    import mujoco as mj
+
+    from gpu_physics.compilador import compila
+    from gpu_physics.dinamica import MotorFisicoGPU
+    from gpu_physics.device import Device
+
+    corpo = _modelo(arena=arena, passos=passos)
+    m, d = corpo.sim.mj_model, corpo.sim.mj_data
+    if sem_adesao:
+        # a adesao tira o momento dela dos CONTATOS; enquanto o backend nao
+        # monta a Jacobiana de restricao, comparar com ela ligada mediria uma
+        # etapa que ainda nao existe
+        for a in range(m.nu):
+            if int(m.actuator_trntype[a]) == 5:
+                d.ctrl[a] = 0.0
+    mj.mj_forward(m, d)
+    mod = compila(m)
+    g = MotorFisicoGPU(mod, dev=Device(), fp64=True)
+    g.escreve_estado(qpos=d.qpos, qvel=d.qvel, ctrl=d.ctrl,
+                     mocap_pos=d.mocap_pos, mocap_quat=d.mocap_quat)
+    g.forward_smooth()
+    return corpo, m, d, g
+
+
+def test_dinamica_suave_bate_com_o_mujoco():
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    corpo, m, d, g = _motor_e_referencia()
+    try:
+        cadeia = (
+            ("subtree_com", d.subtree_com), ("cinert", d.cinert),
+            ("cdof", d.cdof), ("crb", d.crb), ("M", d.M),
+            ("qLD", d.qLD), ("cvel", d.cvel), ("cdof_dot", d.cdof_dot),
+            ("qfrc_passive", d.qfrc_passive), ("qfrc_bias", d.qfrc_bias),
+            ("actuator_force", d.actuator_force),
+            ("qfrc_actuator", d.qfrc_actuator),
+            ("qfrc_smooth", d.qfrc_smooth), ("qacc_smooth", d.qacc_smooth),
+        )
+        pior, onde = 0.0, ""
+        for nome, ref in cadeia:
+            ref = np.asarray(ref, dtype=np.float64)
+            got = g.le(nome).reshape(ref.shape)
+            escala = max(1e-30, float(np.abs(ref).max()))
+            rel = float(np.abs(got - ref).max()) / escala
+            assert rel < TOL_DINAMICA, (
+                f"{nome} divergiu {rel:.2e} (limite {TOL_DINAMICA:.0e}). A "
+                "cadeia e sequencial: o primeiro campo a falhar e a causa, os "
+                "seguintes herdam.")
+            if rel > pior:
+                pior, onde = rel, nome
+        print(f"    14 campos, de subtree_com a qacc_smooth: pior "
+              f"{pior:.2e} em {onde}")
+    finally:
+        corpo.fecha()
+
+
+def test_contatos_batem_com_o_mujoco():
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    corpo, m, d, g = _motor_e_referencia()
+    try:
+        con = g.contatos()
+        assert int(d.ncon) > 0, (
+            "a mosca nao esta tocando o chao: o teste passaria com zero "
+            "contatos dos dois lados e nao provaria nada")
+        assert con["ncon"] == int(d.ncon), (
+            f"numero de contatos difere: GPU {con['ncon']}, MuJoCo {d.ncon}")
+        pior_d = pior_p = 0.0
+        for i in range(con["ncon"]):
+            gg = (int(con["geom"][i][0]), int(con["geom"][i][1]))
+            gm = (int(d.contact.geom1[i]), int(d.contact.geom2[i]))
+            assert gg == gm, (
+                f"contato {i}: geoms {gg} != {gm}. A ORDEM dos contatos e a "
+                "ordem das linhas de restricao; trocar duas nao e inocente.")
+            pior_d = max(pior_d, abs(float(con["dist"][i]) - float(d.contact.dist[i])))
+            pior_p = max(pior_p, float(np.abs(
+                con["pos"][i] - np.asarray(d.contact.pos[i])).max()))
+        assert pior_d < 1e-12 and pior_p < 1e-12, (
+            f"contatos divergiram: dist {pior_d:.2e}, pos {pior_p:.2e}")
+        print(f"    {con['ncon']} contatos, mesma ordem: "
+              f"dist {pior_d:.1e}, pos {pior_p:.1e}")
     finally:
         corpo.fecha()
 

@@ -7,6 +7,10 @@ Este documento é o estado real do trabalho: o que foi construído, o que foi
 medido, e — a parte mais importante — **o que a medição refuta e o que ela
 ainda permite**.
 
+Estado em uma linha: **a dinâmica sem restrição e a colisão plano × malha
+rodam na GPU e batem com o MuJoCo em precisão de máquina. A construção das
+restrições e o solver ainda não existem.**
+
 ---
 
 ## A pergunta
@@ -415,28 +419,71 @@ solver, que não existe.
 
 ## O que roda onde, hoje
 
-Sem eufemismo:
+Sem eufemismo.
 
-### Roda no Drosobot GPU Physics
+### Roda no Drosobot GPU Physics, validado contra o `mjData`
 
-* cinemática direta completa: quadros dos corpos, quadros inerciais, quadros dos
-  geoms, âncoras e eixos das juntas — validada contra o `mjData`, em duas
-  variantes (modelo em memória global, constantes em registrador)
+| etapa | campos conferidos | pior erro relativo |
+|---|---|---|
+| cinemática direta | `xpos`, `xquat`, `xmat`, `xipos`, `ximat`, `xanchor`, `xaxis`, `geom_xpos`, `geom_xmat` | 6,7e-16 (fp64) |
+| centro de massa e inércias | `subtree_com`, `cinert`, `cdof` | ~1e-16 |
+| matriz de massa e fatoração | `crb`, `M`, `qLD`, `qLDiagInv` | 2,7e-15 |
+| velocidades de corpo | `cvel`, `cdof_dot` | 3,3e-16 |
+| forças passivas | `qfrc_passive` (mola + amortecedor) | 1,5e-16 |
+| bias (RNE) | `qfrc_bias` | 5,9e-18 |
+| atuação de junta | `actuator_force`, `qfrc_actuator` | 0 (exato) |
+| **aceleração sem restrição** | **`qacc_smooth`** | **3,2e-15** |
+| **colisão plano × malha** | **`ncon`, ordem, `dist`, `pos`** | **4,5e-16** |
+| integração Euler | `qvel`, `qpos` (semi-implícito, amortecimento implícito) | — |
+
+São 14 campos numa cadeia sequencial mais a lista de contatos. O teste compara
+todos e reprova no primeiro: a cadeia é sequencial, então o primeiro campo a
+divergir é a causa e os seguintes herdam.
 
 ### Continua no MuJoCo CPU
 
-* inércia composta e matriz de massa
-* forças de Coriolis/gravidade (RNE)
-* colisão (broadphase e narrowphase)
-* construção e projeção das restrições
+* **construção das restrições** — `efc_J`, `efc_D`, `efc_aref`, `efc_R`
 * **o solver de restrição** — 39% do passo
-* atuação
-* integração
+* adesão (`mjTRN_BODY`): o momento dela sai das Jacobianas de contato, que
+  dependem das restrições
+* colisão **cilindro × malha** (GJK/EPA), usada só na arena de obstáculos
 * **todos os experimentos gravados**: `looming`, `obstáculos` e `optomotor`
   rodaram e continuam rodando 100% em `flygym2-mujoco`
 
-Nenhuma corrida da plataforma experimental usou GPU Physics. Não há como usar:
-o backend recusa montar enquanto for parcial.
+`physics.cria('drosobot-gpu')` continua recusando montar. Com a mosca no ar o
+que existe já é a física inteira; com ela no chão, falta a força que a impede
+de atravessar — e gravar `physics: drosobot-gpu` num metadata sem ela seria
+procedência falsa.
+
+### Um erro que vale registrar: portar da versão errada
+
+O primeiro porte da colisão saiu do clone em `research/upstream/`, que estava
+em **MuJoCo 3.13.1**. O binário que roda os experimentos é **3.9.0**.
+
+O `mjc_PlaneConvex` mudou de algoritmo entre as duas:
+
+```
+3.9.0    vizinhos do vertice de suporte no grafo de hull, ate 3 contatos,
+         descartando o que estiver a menos de 0,3*rbound do primeiro
+3.13.1   face poligonal mais anti-alinhada, podada ao quadrilatero de area
+         maxima (hull4f), ate 4 contatos
+```
+
+O sintoma foi enganoso: o contato **mais profundo batia bit a bit** em todos os
+pares, e só os contatos extras erravam — 11 contra 12, com as multiplicidades
+por par trocadas. Uma reimplementação em numpy do que eu tinha lido reproduziu
+exatamente o meu kernel, o que separou "porte errado" de "leitura errada" e
+apontou para fora do código.
+
+Duas coisas saíram disso, além do conserto:
+
+* `compilador.confere_versao()` **recusa** um runtime que não seja a versão de
+  onde os kernels foram portados, com o motivo na mensagem;
+* há teste para a guarda disparar, não só para o caminho feliz.
+
+A dinâmica suave não mudou entre 3.9 e 3.13, e é por isso que ela validou a
+3e-15 desde o primeiro porte — o que tornou o erro mais difícil de ver, não
+mais fácil.
 
 ---
 
