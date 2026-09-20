@@ -68,14 +68,17 @@ static void faz_quadro(real f[9]) {
 // gera linha de restricao. Faltou isso no primeiro porte, e a trajetoria batia
 // nos dois primeiros passos e divergia no terceiro, que e quando o primeiro
 // contato entrou nessa faixa.
-__kernel void contato_quadro(
-    __global const int* ncon, __global const real* con_normal,
-    __global const int* con_pair, __global const real* pair_margin,
-    __global const real* pair_gap, __global const real* con_dist,
-    __global real* con_frame, __global real* con_includemargin,
+static void contato_quadro_um(int i,
+    __global const int* ncon,
+    __global const real* con_normal,
+    __global const int* con_pair,
+    __global const real* pair_margin,
+    __global const real* pair_gap,
+    __global const real* con_dist,
+    __global real* con_frame,
+    __global real* con_includemargin,
     __global int* con_exclude)
 {
-    int i = get_global_id(0);
     if (i >= ncon[0]) return;
     real f[9];
     f[0] = con_normal[3*i]; f[1] = con_normal[3*i+1]; f[2] = con_normal[3*i+2];
@@ -87,6 +90,21 @@ __kernel void contato_quadro(
     con_includemargin[i] = im;
     con_exclude[i] = (con_dist[i] >= im) ? 1 : 0;
 }
+
+__kernel void contato_quadro(
+    __global const int* ncon,
+    __global const real* con_normal,
+    __global const int* con_pair,
+    __global const real* pair_margin,
+    __global const real* pair_gap,
+    __global const real* con_dist,
+    __global real* con_frame,
+    __global real* con_includemargin,
+    __global int* con_exclude)
+{
+    contato_quadro_um(get_global_id(0), ncon, con_normal, con_pair, pair_margin, pair_gap, con_dist, con_frame, con_includemargin, con_exclude);
+}
+
 
 // Endereco da primeira linha de cada contato incluido, e `nefc`.
 // Serial de proposito: sao poucas dezenas de contatos, e a ORDEM das linhas e
@@ -115,20 +133,29 @@ __kernel void contato_enderecos(
 // Uma thread por (contato, dof). Cada uma decide se o dof esta na cadeia do
 // corpo e, se estiver, escreve a coluna. Sem corrida: cada thread escreve numa
 // posicao propria.
-__kernel void contato_jacobiana(
+static void contato_jacobiana_um(int gid,
     __global const int* ncon,
-    __global const int* con_geom, __global const real* con_pos,
-    __global const real* con_frame, __global const real* con_dist,
-    __global const real* con_includemargin, __global const int* con_pair,
-    __global const real* pair_friction, __global const int* con_efcadr,
-    __global const int* geom_bodyid, __global const int* body_rootid,
-    __global const int* body_weldid, __global const int* body_dofadr,
-    __global const int* body_dofnum, __global const int* dof_parentid,
-    __global const real* subtree_com, __global const real* cdof,
-    __global real* efc_J, __global real* efc_pos, __global real* efc_margin,
+    __global const int* con_geom,
+    __global const real* con_pos,
+    __global const real* con_frame,
+    __global const real* con_dist,
+    __global const real* con_includemargin,
+    __global const int* con_pair,
+    __global const real* pair_friction,
+    __global const int* con_efcadr,
+    __global const int* geom_bodyid,
+    __global const int* body_rootid,
+    __global const int* body_weldid,
+    __global const int* body_dofadr,
+    __global const int* body_dofnum,
+    __global const int* dof_parentid,
+    __global const real* subtree_com,
+    __global const real* cdof,
+    __global real* efc_J,
+    __global real* efc_pos,
+    __global real* efc_margin,
     __global int* efc_id)
 {
-    int gid = get_global_id(0);
     int c = gid / NV;
     int i = gid - c * NV;
     if (c >= ncon[0]) return;
@@ -187,6 +214,33 @@ __kernel void contato_jacobiana(
     }
 }
 
+__kernel void contato_jacobiana(
+    __global const int* ncon,
+    __global const int* con_geom,
+    __global const real* con_pos,
+    __global const real* con_frame,
+    __global const real* con_dist,
+    __global const real* con_includemargin,
+    __global const int* con_pair,
+    __global const real* pair_friction,
+    __global const int* con_efcadr,
+    __global const int* geom_bodyid,
+    __global const int* body_rootid,
+    __global const int* body_weldid,
+    __global const int* body_dofadr,
+    __global const int* body_dofnum,
+    __global const int* dof_parentid,
+    __global const real* subtree_com,
+    __global const real* cdof,
+    __global real* efc_J,
+    __global real* efc_pos,
+    __global real* efc_margin,
+    __global int* efc_id)
+{
+    contato_jacobiana_um(get_global_id(0), ncon, con_geom, con_pos, con_frame, con_dist, con_includemargin, con_pair, pair_friction, con_efcadr, geom_bodyid, body_rootid, body_weldid, body_dofadr, body_dofnum, dof_parentid, subtree_com, cdof, efc_J, efc_pos, efc_margin, efc_id);
+}
+
+
 // ------------------------------------------------------------- impedancia
 
 // `getimpedance`: curva de impedancia de `solimp`, mais a derivada.
@@ -226,18 +280,25 @@ static void impedancia(const real solimp[NIMP], real pos, real margin,
 // `mj_diagApprox` + `mj_makeImpedance` para um contato inteiro (4 linhas).
 // Uma thread por CONTATO, porque as quatro linhas compartilham `imp`, o
 // ajuste piramidal de R e o `mu` do cone regularizado.
-__kernel void restricao_impedancia(
-    __global const int* ncon, const real impratio,
+static void restricao_impedancia_um(int c,
+    __global const int* ncon,
+    const real impratio,
     __global const int* con_efcadr,
-    __global const int* con_geom, __global const int* con_pair,
-    __global const real* con_dist, __global const real* con_includemargin,
-    __global const real* pair_friction, __global const real* pair_solref,
+    __global const int* con_geom,
+    __global const int* con_pair,
+    __global const real* con_dist,
+    __global const real* con_includemargin,
+    __global const real* pair_friction,
+    __global const real* pair_solref,
     __global const real* pair_solimp,
-    __global const int* geom_bodyid, __global const real* body_invweight0,
-    __global real* efc_diagApprox, __global real* efc_R, __global real* efc_D,
-    __global real* efc_KBIP, __global real* con_mu)
+    __global const int* geom_bodyid,
+    __global const real* body_invweight0,
+    __global real* efc_diagApprox,
+    __global real* efc_R,
+    __global real* efc_D,
+    __global real* efc_KBIP,
+    __global real* con_mu)
 {
-    int c = get_global_id(0);
     if (c >= ncon[0]) return;
     int base = con_efcadr[c];
     if (base < 0) return;
@@ -298,15 +359,41 @@ __kernel void restricao_impedancia(
     }
 }
 
+__kernel void restricao_impedancia(
+    __global const int* ncon,
+    const real impratio,
+    __global const int* con_efcadr,
+    __global const int* con_geom,
+    __global const int* con_pair,
+    __global const real* con_dist,
+    __global const real* con_includemargin,
+    __global const real* pair_friction,
+    __global const real* pair_solref,
+    __global const real* pair_solimp,
+    __global const int* geom_bodyid,
+    __global const real* body_invweight0,
+    __global real* efc_diagApprox,
+    __global real* efc_R,
+    __global real* efc_D,
+    __global real* efc_KBIP,
+    __global real* con_mu)
+{
+    restricao_impedancia_um(get_global_id(0), ncon, impratio, con_efcadr, con_geom, con_pair, con_dist, con_includemargin, pair_friction, pair_solref, pair_solimp, geom_bodyid, body_invweight0, efc_diagApprox, efc_R, efc_D, efc_KBIP, con_mu);
+}
+
+
 // `mj_referenceConstraint`: aref = -B*vel - K*I*(pos - margin).
 // `vel = J*qvel` sai antes, no kernel de produto.
-__kernel void restricao_aref(
-    __global const int* nefc, __global const real* efc_J,
-    __global const real* qvel, __global const real* efc_KBIP,
-    __global const real* efc_pos, __global const real* efc_margin,
-    __global real* efc_vel, __global real* efc_aref)
+static void restricao_aref_um(int i,
+    __global const int* nefc,
+    __global const real* efc_J,
+    __global const real* qvel,
+    __global const real* efc_KBIP,
+    __global const real* efc_pos,
+    __global const real* efc_margin,
+    __global real* efc_vel,
+    __global real* efc_aref)
 {
-    int i = get_global_id(0);
     if (i >= nefc[0]) return;
     real v = REAL_ZERO;
     __global const real* row = efc_J + (size_t)i*NV;
@@ -315,6 +402,20 @@ __kernel void restricao_aref(
     efc_aref[i] = -efc_KBIP[4*i+1]*v
                   - efc_KBIP[4*i]*efc_KBIP[4*i+2]*(efc_pos[i] - efc_margin[i]);
 }
+
+__kernel void restricao_aref(
+    __global const int* nefc,
+    __global const real* efc_J,
+    __global const real* qvel,
+    __global const real* efc_KBIP,
+    __global const real* efc_pos,
+    __global const real* efc_margin,
+    __global real* efc_vel,
+    __global real* efc_aref)
+{
+    restricao_aref_um(get_global_id(0), nefc, efc_J, qvel, efc_KBIP, efc_pos, efc_margin, efc_vel, efc_aref);
+}
+
 
 // ---------------------------------------------------------------- adesao
 //
@@ -330,14 +431,18 @@ __kernel void restricao_aref(
 // proprio, com a Jacobiana montada na hora. O compilador recusa o modelo se
 // algum `pair_gap` for nao nulo, entao esse caminho nao pode ocorrer aqui e
 // nao e implementado -- em vez de ser implementado errado e nunca exercitado.
-__kernel void adesao_momento(
-    const int nu, __global const int* ncon,
-    __global const int* actuator_trntype, __global const int* actuator_trnid,
-    __global const int* con_geom, __global const int* con_efcadr,
-    __global const int* geom_bodyid, __global const real* efc_J,
-    __global real* ades_momento, __global int* ades_conta)
+static void adesao_momento_um(int gid,
+    const int nu,
+    __global const int* ncon,
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
+    __global const int* con_geom,
+    __global const int* con_efcadr,
+    __global const int* geom_bodyid,
+    __global const real* efc_J,
+    __global real* ades_momento,
+    __global int* ades_conta)
 {
-    int gid = get_global_id(0);
     int a = gid / NV;
     int i = gid - a * NV;
     if (a >= nu) return;
@@ -364,14 +469,31 @@ __kernel void adesao_momento(
     if (i == 0) ades_conta[a] = conta;
 }
 
+__kernel void adesao_momento(
+    const int nu,
+    __global const int* ncon,
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
+    __global const int* con_geom,
+    __global const int* con_efcadr,
+    __global const int* geom_bodyid,
+    __global const real* efc_J,
+    __global real* ades_momento,
+    __global int* ades_conta)
+{
+    adesao_momento_um(get_global_id(0), nu, ncon, actuator_trntype, actuator_trnid, con_geom, con_efcadr, geom_bodyid, efc_J, ades_momento, ades_conta);
+}
+
+
 // Soma a contribuicao da adesao em `qfrc_actuator`. Uma thread por DOF varrendo
 // os atuadores: sem corrida e sem atomico.
-__kernel void adesao_projeta(
-    const int nu, __global const int* actuator_trntype,
-    __global const real* ades_momento, __global const real* actuator_force,
+static void adesao_projeta_um(int i,
+    const int nu,
+    __global const int* actuator_trntype,
+    __global const real* ades_momento,
+    __global const real* actuator_force,
     __global real* qfrc_actuator)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     real s = REAL_ZERO;
     for (int a = 0; a < nu; ++a) {
@@ -380,5 +502,16 @@ __kernel void adesao_projeta(
     }
     qfrc_actuator[i] += s;
 }
+
+__kernel void adesao_projeta(
+    const int nu,
+    __global const int* actuator_trntype,
+    __global const real* ades_momento,
+    __global const real* actuator_force,
+    __global real* qfrc_actuator)
+{
+    adesao_projeta_um(get_global_id(0), nu, actuator_trntype, ades_momento, actuator_force, qfrc_actuator);
+}
+
 
 #endif  // NV && NEFC_MAX && NCON_MAX

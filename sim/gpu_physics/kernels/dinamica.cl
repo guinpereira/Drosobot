@@ -90,16 +90,31 @@ static real dot6(__global const real* a, const real b[6]) {
 // Isto era tres `enqueue_copy` do host. Alem de contradizer "estado residente",
 // a copia do pyopencl e BLOQUEANTE por padrao: eram tres sincronizacoes por
 // passo dentro do laco quente.
-__kernel void zera_raizes(
-    const real gx, const real gy, const real gz,
-    __global real* cvel, __global real* cacc, __global real* cfrc_body)
+static void zera_raizes_um(int i,
+    const real gx,
+    const real gy,
+    const real gz,
+    __global real* cvel,
+    __global real* cacc,
+    __global real* cfrc_body)
 {
-    int i = get_global_id(0);
     if (i >= 6) return;
     cvel[i] = REAL_ZERO;
     cfrc_body[i] = REAL_ZERO;
     cacc[i] = (i == 3) ? -gx : ((i == 4) ? -gy : ((i == 5) ? -gz : REAL_ZERO));
 }
+
+__kernel void zera_raizes(
+    const real gx,
+    const real gy,
+    const real gz,
+    __global real* cvel,
+    __global real* cacc,
+    __global real* cfrc_body)
+{
+    zera_raizes_um(get_global_id(0), gx, gy, gz, cvel, cacc, cfrc_body);
+}
+
 
 // ----------------------------------------------------------------- comPos
 //
@@ -108,11 +123,11 @@ __kernel void zera_raizes(
 //   2. acumular no pai          serial sobre NIVEIS, para tras
 //   3. normalizar               totalmente paralelo
 
-__kernel void com_momento(
-    __global const real* xipos, __global const real* body_mass,
+static void com_momento_um(int i,
+    __global const real* xipos,
+    __global const real* body_mass,
     __global real* subtree_com)
 {
-    int i = get_global_id(0);
     if (i >= NBODY) return;
     real m = body_mass[i];
     subtree_com[3*i+0] = xipos[3*i+0]*m;
@@ -120,18 +135,31 @@ __kernel void com_momento(
     subtree_com[3*i+2] = xipos[3*i+2]*m;
 }
 
+__kernel void com_momento(
+    __global const real* xipos,
+    __global const real* body_mass,
+    __global real* subtree_com)
+{
+    com_momento_um(get_global_id(0), xipos, body_mass, subtree_com);
+}
+
+
 // Uma thread por PAI, varrendo os filhos dele. O original faz o contrario --
 // uma passada para tras sobre os corpos, cada um somando no pai -- e isso seria
 // uma corrida entre irmaos. No torax da mosca sao oito filhos.
-__kernel void com_acumula_nivel(
-    __global const int* pais, const int pais_adr, const int pais_num,
-    __global const int* filhos_adr, __global const int* filhos_num,
-    __global const int* filhos, __global const int* nivel_de,
-    const int nivel, __global real* subtree_com)
+static void com_acumula_nivel_um(int t,
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
+    __global real* subtree_com)
 {
-    int t = get_global_id(0);
-    if (t >= pais_num) return;
-    int p = pais[pais_adr + t];
+    if (t >= pais_num[nivel]) return;
+    int p = pais[pais_adr[nivel] + t];
     real acc[3] = {REAL_ZERO, REAL_ZERO, REAL_ZERO};
     int a = filhos_adr[p], n = filhos_num[p];
     for (int k = 0; k < n; ++k) {
@@ -146,11 +174,26 @@ __kernel void com_acumula_nivel(
     subtree_com[3*p+2] += acc[2];
 }
 
-__kernel void com_normaliza(
-    __global const real* body_subtreemass, __global const real* xipos,
+__kernel void com_acumula_nivel(
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
     __global real* subtree_com)
 {
-    int i = get_global_id(0);
+    com_acumula_nivel_um(get_global_id(0), pais, pais_adr, pais_num, filhos_adr, filhos_num, filhos, nivel_de, nivel, subtree_com);
+}
+
+
+static void com_normaliza_um(int i,
+    __global const real* body_subtreemass,
+    __global const real* xipos,
+    __global real* subtree_com)
+{
     if (i >= NBODY) return;
     real ms = body_subtreemass[i];
     if (ms < MINVAL) {
@@ -165,15 +208,26 @@ __kernel void com_normaliza(
     }
 }
 
+__kernel void com_normaliza(
+    __global const real* body_subtreemass,
+    __global const real* xipos,
+    __global real* subtree_com)
+{
+    com_normaliza_um(get_global_id(0), body_subtreemass, xipos, subtree_com);
+}
+
+
 // `mju_inertCom` por corpo e `mju_dofCom` por dof. Os dois sao totalmente
 // paralelos: dependem so do quadro cinematico e do subtree_com ja pronto.
-__kernel void com_inercia(
-    __global const int* body_rootid, __global const real* body_inertia,
-    __global const real* body_mass, __global const real* ximat,
-    __global const real* xipos, __global const real* subtree_com,
+static void com_inercia_um(int i,
+    __global const int* body_rootid,
+    __global const real* body_inertia,
+    __global const real* body_mass,
+    __global const real* ximat,
+    __global const real* xipos,
+    __global const real* subtree_com,
     __global real* cinert)
 {
-    int i = get_global_id(0);
     if (i >= NBODY) return;
     if (i == 0) {
         for (int k = 0; k < 10; ++k) cinert[k] = REAL_ZERO;
@@ -208,16 +262,32 @@ __kernel void com_inercia(
     res[9] = mass;
 }
 
+__kernel void com_inercia(
+    __global const int* body_rootid,
+    __global const real* body_inertia,
+    __global const real* body_mass,
+    __global const real* ximat,
+    __global const real* xipos,
+    __global const real* subtree_com,
+    __global real* cinert)
+{
+    com_inercia_um(get_global_id(0), body_rootid, body_inertia, body_mass, ximat, xipos, subtree_com, cinert);
+}
+
+
 // `cdof`: uma thread por JUNTA. Free tem 6 dofs, hinge tem 1.
-__kernel void com_cdof(
+static void com_cdof_um(int j,
     const int njnt,
-    __global const int* jnt_type, __global const int* jnt_dofadr,
-    __global const int* jnt_bodyid, __global const int* body_rootid,
-    __global const real* xmat, __global const real* xanchor,
-    __global const real* xaxis, __global const real* subtree_com,
+    __global const int* jnt_type,
+    __global const int* jnt_dofadr,
+    __global const int* jnt_bodyid,
+    __global const int* body_rootid,
+    __global const real* xmat,
+    __global const real* xanchor,
+    __global const real* xaxis,
+    __global const real* subtree_com,
     __global real* cdof)
 {
-    int j = get_global_id(0);
     if (j >= njnt) return;
     int i = jnt_bodyid[j];
     int da = 6*jnt_dofadr[j];
@@ -255,26 +325,56 @@ __kernel void com_cdof(
     }
 }
 
+__kernel void com_cdof(
+    const int njnt,
+    __global const int* jnt_type,
+    __global const int* jnt_dofadr,
+    __global const int* jnt_bodyid,
+    __global const int* body_rootid,
+    __global const real* xmat,
+    __global const real* xanchor,
+    __global const real* xaxis,
+    __global const real* subtree_com,
+    __global real* cdof)
+{
+    com_cdof_um(get_global_id(0), njnt, jnt_type, jnt_dofadr, jnt_bodyid, body_rootid, xmat, xanchor, xaxis, subtree_com, cdof);
+}
+
+
 // -------------------------------------------------------------------- CRB
 
-__kernel void crb_inicia(__global const real* cinert, __global real* crb) {
-    int i = get_global_id(0);
+static void crb_inicia_um(int i,
+    __global const real* cinert,
+    __global real* crb)
+{
     if (i >= NBODY) return;
     for (int k = 0; k < 10; ++k) crb[10*i+k] = cinert[10*i+k];
 }
 
+__kernel void crb_inicia(
+    __global const real* cinert,
+    __global real* crb)
+{
+    crb_inicia_um(get_global_id(0), cinert, crb);
+}
+
+
 // Mesma inversao do `com_acumula_nivel`: uma thread por pai.
 // O original pula o corpo 0 (`if (body_parentid[i] > 0)`), entao o mundo nao
 // acumula -- por isso `p != 0` aqui.
-__kernel void crb_acumula_nivel(
-    __global const int* pais, const int pais_adr, const int pais_num,
-    __global const int* filhos_adr, __global const int* filhos_num,
-    __global const int* filhos, __global const int* nivel_de,
-    const int nivel, __global real* crb)
+static void crb_acumula_nivel_um(int t,
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
+    __global real* crb)
 {
-    int t = get_global_id(0);
-    if (t >= pais_num) return;
-    int p = pais[pais_adr + t];
+    if (t >= pais_num[nivel]) return;
+    int p = pais[pais_adr[nivel] + t];
     if (p == 0) return;
     real acc[10];
     for (int k = 0; k < 10; ++k) acc[k] = REAL_ZERO;
@@ -287,16 +387,34 @@ __kernel void crb_acumula_nivel(
     for (int k = 0; k < 10; ++k) crb[10*p+k] += acc[k];
 }
 
+__kernel void crb_acumula_nivel(
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
+    __global real* crb)
+{
+    crb_acumula_nivel_um(get_global_id(0), pais, pais_adr, pais_num, filhos_adr, filhos_num, filhos, nivel_de, nivel, crb);
+}
+
+
 // Montagem de M em CSR. Uma thread por dof; cada uma percorre a cadeia dela
 // ate a raiz, que e exatamente o padrao de esparsidade da linha. Sem corrida:
 // cada thread escreve so na propria linha.
-__kernel void crb_monta_M(
-    __global const int* M_rownnz, __global const int* M_rowadr,
-    __global const int* dof_parentid, __global const int* dof_bodyid,
-    __global const real* dof_armature, __global const real* crb,
-    __global const real* cdof, __global real* M)
+static void crb_monta_M_um(int i,
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* dof_parentid,
+    __global const int* dof_bodyid,
+    __global const real* dof_armature,
+    __global const real* crb,
+    __global const real* cdof,
+    __global real* M)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     int adr = M_rowadr[i];
     int madr = adr + M_rownnz[i] - 1;
@@ -317,6 +435,20 @@ __kernel void crb_monta_M(
     }
 }
 
+__kernel void crb_monta_M(
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* dof_parentid,
+    __global const int* dof_bodyid,
+    __global const real* dof_armature,
+    __global const real* crb,
+    __global const real* cdof,
+    __global real* M)
+{
+    crb_monta_M_um(get_global_id(0), M_rownnz, M_rowadr, dof_parentid, dof_bodyid, dof_armature, crb, cdof, M);
+}
+
+
 // ------------------------------------------------------------- fatoracao
 //
 // `mj_factorI`: L'*D*L esparsa, laco PARA TRAS sobre as linhas. Cada linha `k`
@@ -328,12 +460,15 @@ __kernel void crb_monta_M(
 // Fica num work-group so, com barreira entre linhas. Nao e rapido; e correto,
 // e a alternativa -- inventar uma ordem de eliminacao propria -- mudaria o
 // arredondamento e tiraria a comparacao com a referencia do lugar.
-__kernel void factor_M(
-    __global const int* M_rownnz, __global const int* M_rowadr,
-    __global const int* M_colind, __global const real* M,
-    __global real* qLD, __global real* qLDiagInv)
+static void factor_M_um(int t, int W,
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* M_colind,
+    __global const real* M,
+    __global real* qLD,
+    __global real* qLDiagInv)
 {
-    int t = get_local_id(0), W = get_local_size(0);
+    
     for (int i = t; i < NC; i += W) qLD[i] = M[i];
     barrier(CLK_GLOBAL_MEM_FENCE);
 
@@ -364,14 +499,29 @@ __kernel void factor_M(
     }
 }
 
+__kernel void factor_M(
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* M_colind,
+    __global const real* M,
+    __global real* qLD,
+    __global real* qLDiagInv)
+{
+    factor_M_um(get_local_id(0), get_local_size(0), M_rownnz, M_rowadr, M_colind, M, qLD, qLDiagInv);
+}
+
+
 // `mj_solveLD` para um vetor: x = M^-1 y. Serial nas duas direcoes pelo mesmo
 // motivo da fatoracao.
-__kernel void solve_M(
-    __global const int* M_rownnz, __global const int* M_rowadr,
-    __global const int* M_colind, __global const real* qLD,
-    __global const real* qLDiagInv, __global const real* y, __global real* x)
+static void solve_M_um(int t, int W,
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* M_colind,
+    __global const real* qLD,
+    __global const real* qLDiagInv,
+    __global const real* y,
+    __global real* x)
 {
-    int t = get_local_id(0);
     if (t != 0) return;
     for (int i = 0; i < NV; ++i) x[i] = y[i];
     // x <- L^-T x   (para tras)
@@ -391,21 +541,41 @@ __kernel void solve_M(
     }
 }
 
+__kernel void solve_M(
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const int* M_colind,
+    __global const real* qLD,
+    __global const real* qLDiagInv,
+    __global const real* y,
+    __global real* x)
+{
+    solve_M_um(get_local_id(0), get_local_size(0), M_rownnz, M_rowadr, M_colind, qLD, qLDiagInv, y, x);
+}
+
+
 // ----------------------------------------------------------------- comVel
 //
 // Serial sobre niveis: `cvel` do filho depende do `cvel` do pai. Dentro do
 // nivel, os corpos sao independentes.
-__kernel void com_vel_nivel(
-    __global const int* nivel_corpos, const int nivel_adr, const int nivel_num,
-    __global const int* body_parentid, __global const int* body_dofadr,
-    __global const int* body_dofnum, __global const int* body_jntadr,
-    __global const int* jnt_type, __global const int* dof_jntid,
-    __global const real* cdof, __global const real* qvel,
-    __global real* cvel, __global real* cdof_dot)
+static void com_vel_nivel_um(int t,
+    __global const int* nivel_corpos,
+    __global const int* nivel_adr,
+    __global const int* nivel_num,
+    const int nivel,
+    __global const int* body_parentid,
+    __global const int* body_dofadr,
+    __global const int* body_dofnum,
+    __global const int* body_jntadr,
+    __global const int* jnt_type,
+    __global const int* dof_jntid,
+    __global const real* cdof,
+    __global const real* qvel,
+    __global real* cvel,
+    __global real* cdof_dot)
 {
-    int t = get_global_id(0);
-    if (t >= nivel_num) return;
-    int i = nivel_corpos[nivel_adr + t];
+    if (t >= nivel_num[nivel]) return;
+    int i = nivel_corpos[nivel_adr[nivel] + t];
     real v[6];
     int p = body_parentid[i];
     for (int k = 0; k < 6; ++k) v[k] = cvel[6*p+k];
@@ -446,6 +616,26 @@ __kernel void com_vel_nivel(
     for (int k = 0; k < 6; ++k) cvel[6*i+k] = v[k];
 }
 
+__kernel void com_vel_nivel(
+    __global const int* nivel_corpos,
+    __global const int* nivel_adr,
+    __global const int* nivel_num,
+    const int nivel,
+    __global const int* body_parentid,
+    __global const int* body_dofadr,
+    __global const int* body_dofnum,
+    __global const int* body_jntadr,
+    __global const int* jnt_type,
+    __global const int* dof_jntid,
+    __global const real* cdof,
+    __global const real* qvel,
+    __global real* cvel,
+    __global real* cdof_dot)
+{
+    com_vel_nivel_um(get_global_id(0), nivel_corpos, nivel_adr, nivel_num, nivel, body_parentid, body_dofadr, body_dofnum, body_jntadr, jnt_type, dof_jntid, cdof, qvel, cvel, cdof_dot);
+}
+
+
 // ---------------------------------------------------------------- passivo
 //
 // Mola e amortecedor LINEARES. O compilador recusa o modelo se algum termo
@@ -453,23 +643,34 @@ __kernel void com_vel_nivel(
 // Separado em dois despachos porque `barrier()` so sincroniza DENTRO de um
 // work-group: entre work-groups nao ha barreira em OpenCL, e o amortecedor
 // precisa ter escrito antes de a mola somar por cima.
-__kernel void passivo_amortecedor(
-    __global const real* qvel, __global const real* dof_damping,
+static void passivo_amortecedor_um(int i,
+    __global const real* qvel,
+    __global const real* dof_damping,
     __global real* qfrc_passive)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     qfrc_passive[i] = -qvel[i] * dof_damping[i];
 }
 
-__kernel void passivo_mola(
-    const int njnt,
-    __global const int* jnt_type, __global const int* jnt_qposadr,
-    __global const int* jnt_dofadr, __global const real* jnt_stiffness,
-    __global const real* qpos, __global const real* qpos_spring,
+__kernel void passivo_amortecedor(
+    __global const real* qvel,
+    __global const real* dof_damping,
     __global real* qfrc_passive)
 {
-    int j = get_global_id(0);
+    passivo_amortecedor_um(get_global_id(0), qvel, dof_damping, qfrc_passive);
+}
+
+
+static void passivo_mola_um(int j,
+    const int njnt,
+    __global const int* jnt_type,
+    __global const int* jnt_qposadr,
+    __global const int* jnt_dofadr,
+    __global const real* jnt_stiffness,
+    __global const real* qpos,
+    __global const real* qpos_spring,
+    __global real* qfrc_passive)
+{
     if (j >= njnt) return;
     real k = jnt_stiffness[j];
     if (k == REAL_ZERO) return;
@@ -482,23 +683,43 @@ __kernel void passivo_mola(
     qfrc_passive[dadr] += -x * k;
 }
 
+__kernel void passivo_mola(
+    const int njnt,
+    __global const int* jnt_type,
+    __global const int* jnt_qposadr,
+    __global const int* jnt_dofadr,
+    __global const real* jnt_stiffness,
+    __global const real* qpos,
+    __global const real* qpos_spring,
+    __global real* qfrc_passive)
+{
+    passivo_mola_um(get_global_id(0), njnt, jnt_type, jnt_qposadr, jnt_dofadr, jnt_stiffness, qpos, qpos_spring, qfrc_passive);
+}
+
+
 // -------------------------------------------------------------------- RNE
 //
 // Tres etapas: para frente acumulando aceleracao, para tras acumulando forca,
 // e a projecao nos dofs. `flg_acc = 0`: e o termo de bias (Coriolis, centrifuga
 // e gravidade), com `qacc` fora da conta.
 
-__kernel void rne_frente_nivel(
-    __global const int* nivel_corpos, const int nivel_adr, const int nivel_num,
-    __global const int* body_parentid, __global const int* body_dofadr,
+static void rne_frente_nivel_um(int t,
+    __global const int* nivel_corpos,
+    __global const int* nivel_adr,
+    __global const int* nivel_num,
+    const int nivel,
+    __global const int* body_parentid,
+    __global const int* body_dofadr,
     __global const int* body_dofnum,
-    __global const real* cdof_dot, __global const real* qvel,
-    __global const real* cinert, __global const real* cvel,
-    __global real* cacc, __global real* cfrc_body)
+    __global const real* cdof_dot,
+    __global const real* qvel,
+    __global const real* cinert,
+    __global const real* cvel,
+    __global real* cacc,
+    __global real* cfrc_body)
 {
-    int t = get_global_id(0);
-    if (t >= nivel_num) return;
-    int i = nivel_corpos[nivel_adr + t];
+    if (t >= nivel_num[nivel]) return;
+    int i = nivel_corpos[nivel_adr[nivel] + t];
     int bda = body_dofadr[i], dofnum = body_dofnum[i];
     int p = body_parentid[i];
 
@@ -520,17 +741,40 @@ __kernel void rne_frente_nivel(
     for (int k = 0; k < 6; ++k) cfrc_body[6*i+k] = f[k] + tmp1[k];
 }
 
+__kernel void rne_frente_nivel(
+    __global const int* nivel_corpos,
+    __global const int* nivel_adr,
+    __global const int* nivel_num,
+    const int nivel,
+    __global const int* body_parentid,
+    __global const int* body_dofadr,
+    __global const int* body_dofnum,
+    __global const real* cdof_dot,
+    __global const real* qvel,
+    __global const real* cinert,
+    __global const real* cvel,
+    __global real* cacc,
+    __global real* cfrc_body)
+{
+    rne_frente_nivel_um(get_global_id(0), nivel_corpos, nivel_adr, nivel_num, nivel, body_parentid, body_dofadr, body_dofnum, cdof_dot, qvel, cinert, cvel, cacc, cfrc_body);
+}
+
+
 // Para tras, uma thread por pai. O original pula a escrita no mundo
 // (`if (j)`), e aqui isso vira `p != 0`.
-__kernel void rne_tras_nivel(
-    __global const int* pais, const int pais_adr, const int pais_num,
-    __global const int* filhos_adr, __global const int* filhos_num,
-    __global const int* filhos, __global const int* nivel_de,
-    const int nivel, __global real* cfrc_body)
+static void rne_tras_nivel_um(int t,
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
+    __global real* cfrc_body)
 {
-    int t = get_global_id(0);
-    if (t >= pais_num) return;
-    int p = pais[pais_adr + t];
+    if (t >= pais_num[nivel]) return;
+    int p = pais[pais_adr[nivel] + t];
     if (p == 0) return;
     real acc[6];
     for (int k = 0; k < 6; ++k) acc[k] = REAL_ZERO;
@@ -543,16 +787,42 @@ __kernel void rne_tras_nivel(
     for (int k = 0; k < 6; ++k) cfrc_body[6*p+k] += acc[k];
 }
 
-__kernel void rne_projeta(
-    __global const int* dof_bodyid, __global const real* cdof,
-    __global const real* cfrc_body, __global real* qfrc_bias)
+__kernel void rne_tras_nivel(
+    __global const int* pais,
+    __global const int* pais_adr,
+    __global const int* pais_num,
+    __global const int* filhos_adr,
+    __global const int* filhos_num,
+    __global const int* filhos,
+    __global const int* nivel_de,
+    const int nivel,
+    __global real* cfrc_body)
 {
-    int i = get_global_id(0);
+    rne_tras_nivel_um(get_global_id(0), pais, pais_adr, pais_num, filhos_adr, filhos_num, filhos, nivel_de, nivel, cfrc_body);
+}
+
+
+static void rne_projeta_um(int i,
+    __global const int* dof_bodyid,
+    __global const real* cdof,
+    __global const real* cfrc_body,
+    __global real* qfrc_bias)
+{
     if (i >= NV) return;
     real f[6];
     for (int k = 0; k < 6; ++k) f[k] = cfrc_body[6*dof_bodyid[i]+k];
     qfrc_bias[i] = dot6(cdof + 6*i, f);
 }
+
+__kernel void rne_projeta(
+    __global const int* dof_bodyid,
+    __global const real* cdof,
+    __global const real* cfrc_body,
+    __global real* qfrc_bias)
+{
+    rne_projeta_um(get_global_id(0), dof_bodyid, cdof, cfrc_body, qfrc_bias);
+}
+
 
 // --------------------------------------------------------------- atuacao
 //
@@ -561,22 +831,28 @@ __kernel void rne_projeta(
 // Jacobiana a montar. A adesao (`trntype=body`) NAO entra aqui: ela age nos
 // contatos, e contato ainda nao existe neste arquivo.
 
-__kernel void atuacao(
+static void atuacao_um(int a,
     const int nu,
-    __global const int* actuator_trntype, __global const int* actuator_trnid,
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
     __global const int* actuator_biastype,
-    __global const real* actuator_gainprm, __global const real* actuator_biasprm,
-    __global const real* actuator_gear, __global const real* actuator_ctrlrange,
+    __global const real* actuator_gainprm,
+    __global const real* actuator_biasprm,
+    __global const real* actuator_gear,
+    __global const real* actuator_ctrlrange,
     __global const int* actuator_ctrllimited,
     __global const real* actuator_forcerange,
     __global const int* actuator_forcelimited,
-    __global const int* jnt_qposadr, __global const int* jnt_dofadr,
-    __global const real* qpos, __global const real* qvel,
+    __global const int* jnt_qposadr,
+    __global const int* jnt_dofadr,
+    __global const real* qpos,
+    __global const real* qvel,
     __global const real* ctrl,
-    __global real* actuator_length, __global real* actuator_velocity,
-    __global real* actuator_force, __global real* qfrc_actuator)
+    __global real* actuator_length,
+    __global real* actuator_velocity,
+    __global real* actuator_force,
+    __global real* qfrc_actuator)
 {
-    int a = get_global_id(0);
     if (a >= nu) return;
     real len, vel;
     if (actuator_trntype[a] == TRN_BODY) {
@@ -614,16 +890,44 @@ __kernel void atuacao(
     actuator_force[a] = f;
 }
 
+__kernel void atuacao(
+    const int nu,
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
+    __global const int* actuator_biastype,
+    __global const real* actuator_gainprm,
+    __global const real* actuator_biasprm,
+    __global const real* actuator_gear,
+    __global const real* actuator_ctrlrange,
+    __global const int* actuator_ctrllimited,
+    __global const real* actuator_forcerange,
+    __global const int* actuator_forcelimited,
+    __global const int* jnt_qposadr,
+    __global const int* jnt_dofadr,
+    __global const real* qpos,
+    __global const real* qvel,
+    __global const real* ctrl,
+    __global real* actuator_length,
+    __global real* actuator_velocity,
+    __global real* actuator_force,
+    __global real* qfrc_actuator)
+{
+    atuacao_um(get_global_id(0), nu, actuator_trntype, actuator_trnid, actuator_biastype, actuator_gainprm, actuator_biasprm, actuator_gear, actuator_ctrlrange, actuator_ctrllimited, actuator_forcerange, actuator_forcelimited, jnt_qposadr, jnt_dofadr, qpos, qvel, ctrl, actuator_length, actuator_velocity, actuator_force, qfrc_actuator);
+}
+
+
 // A projecao e separada porque dois atuadores poderiam, em principio, tocar o
 // mesmo dof. Uma thread por DOF varrendo os atuadores evita a corrida sem
 // precisar de atomico.
-__kernel void atuacao_projeta(
+static void atuacao_projeta_um(int i,
     const int nu,
-    __global const int* actuator_trntype, __global const int* actuator_trnid,
-    __global const real* actuator_gear, __global const int* jnt_dofadr,
-    __global const real* actuator_force, __global real* qfrc_actuator)
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
+    __global const real* actuator_gear,
+    __global const int* jnt_dofadr,
+    __global const real* actuator_force,
+    __global real* qfrc_actuator)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     real s = REAL_ZERO;
     for (int a = 0; a < nu; ++a) {
@@ -634,18 +938,43 @@ __kernel void atuacao_projeta(
     qfrc_actuator[i] = s;
 }
 
+__kernel void atuacao_projeta(
+    const int nu,
+    __global const int* actuator_trntype,
+    __global const int* actuator_trnid,
+    __global const real* actuator_gear,
+    __global const int* jnt_dofadr,
+    __global const real* actuator_force,
+    __global real* qfrc_actuator)
+{
+    atuacao_projeta_um(get_global_id(0), nu, actuator_trntype, actuator_trnid, actuator_gear, jnt_dofadr, actuator_force, qfrc_actuator);
+}
+
+
 // ------------------------------------------------------ dinamica sem contato
 
-__kernel void soma_smooth(
-    __global const real* qfrc_passive, __global const real* qfrc_bias,
-    __global const real* qfrc_actuator, __global const real* qfrc_applied,
+static void soma_smooth_um(int i,
+    __global const real* qfrc_passive,
+    __global const real* qfrc_bias,
+    __global const real* qfrc_actuator,
+    __global const real* qfrc_applied,
     __global real* qfrc_smooth)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     qfrc_smooth[i] = qfrc_passive[i] - qfrc_bias[i]
                    + qfrc_actuator[i] + qfrc_applied[i];
 }
+
+__kernel void soma_smooth(
+    __global const real* qfrc_passive,
+    __global const real* qfrc_bias,
+    __global const real* qfrc_actuator,
+    __global const real* qfrc_applied,
+    __global real* qfrc_smooth)
+{
+    soma_smooth_um(get_global_id(0), qfrc_passive, qfrc_bias, qfrc_actuator, qfrc_applied, qfrc_smooth);
+}
+
 
 // ------------------------------------------------------------ integracao
 //
@@ -654,50 +983,93 @@ __kernel void soma_smooth(
 // amortecimento explicitamente. O termo explicito ja entrou em `qfrc_passive`,
 // e o original o subtrai de volta antes de resolver.
 
-__kernel void euler_copia_M(__global const real* M, __global real* qH) {
-    int i = get_global_id(0);
+static void euler_copia_M_um(int i,
+    __global const real* M,
+    __global real* qH)
+{
     if (i < NC) qH[i] = M[i];
 }
 
-__kernel void euler_diag_MhD(
-    const real dt,
-    __global const int* M_rownnz, __global const int* M_rowadr,
-    __global const real* dof_damping, __global real* qH)
+__kernel void euler_copia_M(
+    __global const real* M,
+    __global real* qH)
 {
-    int i = get_global_id(0);
+    euler_copia_M_um(get_global_id(0), M, qH);
+}
+
+
+static void euler_diag_MhD_um(int i,
+    const real dt,
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const real* dof_damping,
+    __global real* qH)
+{
     if (i >= NV) return;
     qH[M_rowadr[i] + M_rownnz[i] - 1] += dt * dof_damping[i];
 }
 
+__kernel void euler_diag_MhD(
+    const real dt,
+    __global const int* M_rownnz,
+    __global const int* M_rowadr,
+    __global const real* dof_damping,
+    __global real* qH)
+{
+    euler_diag_MhD_um(get_global_id(0), dt, M_rownnz, M_rowadr, dof_damping, qH);
+}
+
+
 // `qfrc_smooth + qfrc_constraint`, e so. O amortecimento explicito JA esta em
 // `qfrc_smooth` (veio de `qfrc_passive`); o lado implicito e a diagonal de
 // `qH`. Somar o amortecimento de novo aqui contaria a mesma forca duas vezes.
-__kernel void euler_rhs(
-    __global const real* qfrc_smooth, __global const real* qfrc_constraint,
+static void euler_rhs_um(int i,
+    __global const real* qfrc_smooth,
+    __global const real* qfrc_constraint,
     __global real* rhs)
 {
-    int i = get_global_id(0);
     if (i >= NV) return;
     rhs[i] = qfrc_smooth[i] + qfrc_constraint[i];
 }
 
-__kernel void euler_qvel(
-    const real dt, __global const real* qacc, __global real* qvel)
+__kernel void euler_rhs(
+    __global const real* qfrc_smooth,
+    __global const real* qfrc_constraint,
+    __global real* rhs)
 {
-    int i = get_global_id(0);
+    euler_rhs_um(get_global_id(0), qfrc_smooth, qfrc_constraint, rhs);
+}
+
+
+static void euler_qvel_um(int i,
+    const real dt,
+    __global const real* qacc,
+    __global real* qvel)
+{
     if (i < NV) qvel[i] += dt * qacc[i];
 }
+
+__kernel void euler_qvel(
+    const real dt,
+    __global const real* qacc,
+    __global real* qvel)
+{
+    euler_qvel_um(get_global_id(0), dt, qacc, qvel);
+}
+
 
 // `mj_integratePos`, com a velocidade JA atualizada -- Euler semi-implicito,
 // como no `mj_advance`. Hinge e slide somam direto; free integra a translacao
 // e compoe o quaternio com a rotacao do passo.
-__kernel void euler_qpos(
-    const real dt, const int njnt,
-    __global const int* jnt_type, __global const int* jnt_qposadr,
+static void euler_qpos_um(int i,
+    const real dt,
+    const int njnt,
+    __global const int* jnt_type,
+    __global const int* jnt_qposadr,
     __global const int* jnt_dofadr,
-    __global const real* qvel, __global real* qpos)
+    __global const real* qvel,
+    __global real* qpos)
 {
-    int i = get_global_id(0);
     if (i >= njnt) return;
     int jt = jnt_type[i];
     int padr = jnt_qposadr[i], dadr = jnt_dofadr[i];
@@ -721,5 +1093,18 @@ __kernel void euler_qpos(
         qpos[padr] += dt * qvel[dadr];
     }
 }
+
+__kernel void euler_qpos(
+    const real dt,
+    const int njnt,
+    __global const int* jnt_type,
+    __global const int* jnt_qposadr,
+    __global const int* jnt_dofadr,
+    __global const real* qvel,
+    __global real* qpos)
+{
+    euler_qpos_um(get_global_id(0), dt, njnt, jnt_type, jnt_qposadr, jnt_dofadr, qvel, qpos);
+}
+
 
 #endif  // NBODY && NV && NQ

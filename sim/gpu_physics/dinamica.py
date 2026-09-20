@@ -38,7 +38,7 @@ from . import estrutura
 from .device import Device
 
 ARQUIVOS = ("cinematica.cl", "dinamica.cl", "colisao.cl",
-            "restricao.cl", "solver.cl")
+            "restricao.cl", "solver.cl", "fundido.cl")
 
 # Arrays do modelo, por tipo de destino no device.
 INTEIROS = (
@@ -209,7 +209,7 @@ class MotorFisicoGPU:
             ("MAX_CON_POR_PAR", MAX_CON_POR_PAR),
             ("NCON_MAX", self.ncon_max), ("NEFC_MAX", self.nefc_max),
         )
-        self.k = {nome: d.kernel(ARQUIVOS, nome, self.fp64, self._defines)
+        self.k = {nome: d.kernel_proprio(ARQUIVOS, nome, self.fp64, self._defines)
                   for nome in (
                       "fk_registradores", "fk_lds",
                       "zera_raizes",
@@ -227,8 +227,13 @@ class MotorFisicoGPU:
                       "contato_quadro", "contato_jacobiana",
                       "restricao_impedancia", "restricao_aref",
                       "contato_enderecos", "adesao_momento", "adesao_projeta",
-                      "M_densa", "M_simetriza", "solver_newton")}
+                      "M_densa", "M_simetriza", "solver_newton",
+                      "com_pos_fundido", "massa_fundida", "com_vel_fundido",
+                      "bias_fundido", "forcas_fundidas", "restricoes_fundidas",
+                      "smooth_fundido", "euler_fundido")}
         self.usa_registradores = self.grupo >= max(self.nbody, self.ngeom)
+        # Argumentos ja ligados, por kernel. Ver `_chave`.
+        self._args_ligados: dict[str, tuple] = {}
         self.dt = self.real(mod.opcoes["timestep"])
         self.tolerancia = float(mod.opcoes["tolerance"])
         # `meaninertia` normaliza o criterio de parada do solver, como no
@@ -289,6 +294,11 @@ class MotorFisicoGPU:
         self.pais_adr = np.asarray(padr, dtype=np.int32)
         self.pais_num = np.asarray(pnum, dtype=np.int32)
         self.b["pais"] = d.sobe(np.asarray(pchapa or [0], dtype=np.int32))
+        # Os enderecos por nivel sobem como BUFFER: o kernel fundido percorre
+        # os niveis por dentro, e passa-los como escalar obrigaria a religar
+        # argumento a cada nivel -- que e exatamente o custo que a fusao remove.
+        self.b["pais_adr"] = d.sobe(self.pais_adr)
+        self.b["pais_num"] = d.sobe(self.pais_num)
         self.b["filhos_adr"] = d.sobe(np.asarray(arv.filhos_adr, dtype=np.int32))
         self.b["filhos_num"] = d.sobe(np.asarray(arv.filhos_num, dtype=np.int32))
         self.b["filhos"] = d.sobe(
@@ -325,8 +335,29 @@ class MotorFisicoGPU:
 
     # ------------------------------------------------------------- estagios
 
+    @staticmethod
+    def _chave(args: tuple):
+        """
+        Identidade dos argumentos, para saber se `set_args` pode ser pulado.
+
+        Buffer entra por identidade (`id`), escalar por valor. Medido nesta
+        placa: `set_args` com 21 argumentos custa 21 us e o enqueue custa
+        1,4 us -- 94% do custo por despacho era religar argumentos que nunca
+        mudam entre passos.
+        """
+        return tuple(id(a) if hasattr(a, "get_host_array") or type(a).__name__
+                     == "Buffer" else (type(a).__name__, a.item()
+                                       if hasattr(a, "item") else a)
+                     for a in args)
+
     def _roda(self, nome: str, n: int, args: tuple, grupo=None) -> None:
-        self.dev.roda(self.k[nome], n, grupo, args)
+        k = self.k[nome]
+        if args:
+            chave = self._chave(args)
+            if self._args_ligados.get(nome) != chave:
+                k.set_args(*args)
+                self._args_ligados[nome] = chave
+        self.dev.roda(k, n, grupo)
 
     def cinematica(self) -> None:
         b = self.b
@@ -351,7 +382,7 @@ class MotorFisicoGPU:
             if not n:
                 continue
             self._roda("com_acumula_nivel", n,
-                       (b["pais"], np.int32(self.pais_adr[d]), np.int32(n),
+                       (b["pais"], b["pais_adr"], b["pais_num"],
                         b["filhos_adr"], b["filhos_num"], b["filhos"],
                         b["nivel_de"], np.int32(d), b["subtree_com"]))
         self._roda("com_normaliza", self.nbody,
@@ -372,7 +403,7 @@ class MotorFisicoGPU:
             if not n:
                 continue
             self._roda("crb_acumula_nivel", n,
-                       (b["pais"], np.int32(self.pais_adr[d]), np.int32(n),
+                       (b["pais"], b["pais_adr"], b["pais_num"],
                         b["filhos_adr"], b["filhos_num"], b["filhos"],
                         b["nivel_de"], np.int32(d), b["crb"]))
         self._roda("crb_monta_M", self.nv,
@@ -390,8 +421,8 @@ class MotorFisicoGPU:
             if not n:
                 continue
             self._roda("com_vel_nivel", n,
-                       (b["nivel_corpos"], np.int32(self.nivel_adr[d]),
-                        np.int32(n), b["body_parentid"], b["body_dofadr"],
+                       (b["nivel_corpos"], b["nivel_adr"], b["nivel_num"],
+                        np.int32(d), b["body_parentid"], b["body_dofadr"],
                         b["body_dofnum"], b["body_jntadr"], b["jnt_type"],
                         b["dof_jntid"], b["cdof"], b["qvel"], b["cvel"],
                         b["cdof_dot"]))
@@ -536,8 +567,8 @@ class MotorFisicoGPU:
             if not n:
                 continue
             self._roda("rne_frente_nivel", n,
-                       (b["nivel_corpos"], np.int32(self.nivel_adr[d]),
-                        np.int32(n), b["body_parentid"], b["body_dofadr"],
+                       (b["nivel_corpos"], b["nivel_adr"], b["nivel_num"],
+                        np.int32(d), b["body_parentid"], b["body_dofadr"],
                         b["body_dofnum"], b["cdof_dot"], b["qvel"], b["cinert"],
                         b["cvel"], b["cacc"], b["cfrc_body"]))
         for d in range(self.profundidade - 1, 0, -1):
@@ -545,7 +576,7 @@ class MotorFisicoGPU:
             if not n:
                 continue
             self._roda("rne_tras_nivel", n,
-                       (b["pais"], np.int32(self.pais_adr[d]), np.int32(n),
+                       (b["pais"], b["pais_adr"], b["pais_num"],
                         b["filhos_adr"], b["filhos_num"], b["filhos"],
                         b["nivel_de"], np.int32(d), b["cfrc_body"]))
         self._roda("rne_projeta", self.nv,
@@ -609,6 +640,138 @@ class MotorFisicoGPU:
                     b["jnt_qposadr"], b["jnt_dofadr"], b["qvel"], b["qpos"]))
 
     # ----------------------------------------------------------------- laco
+
+    # --------------------------------------------------------- fundido
+    #
+    # As mesmas etapas, em poucos despachos. Os kernels daqui chamam as MESMAS
+    # funcoes `..._um` dos kernels por estagio (ver `kernels/fundido.cl`), entao
+    # os dois caminhos nao podem divergir na conta -- so no numero de despachos.
+
+    def _f(self, nome: str, args: tuple) -> None:
+        """Despacho fundido: sempre um work-group, sempre `self.grupo`."""
+        self._roda(nome, self.grupo, args, self.grupo)
+
+    def com_pos_f(self) -> None:
+        b = self.b
+        self._f("com_pos_fundido",
+                (np.int32(self.profundidade), np.int32(self.njnt),
+                 b["pais"], b["pais_adr"], b["pais_num"], b["filhos_adr"],
+                 b["filhos_num"], b["filhos"], b["nivel_de"],
+                 b["xipos"], b["body_mass"], b["body_subtreemass"],
+                 b["body_rootid"], b["body_inertia"], b["ximat"],
+                 b["jnt_type"], b["jnt_dofadr"], b["jnt_bodyid"], b["xmat"],
+                 b["xanchor"], b["xaxis"],
+                 b["subtree_com"], b["cinert"], b["cdof"]))
+
+    def massa_f(self) -> None:
+        b = self.b
+        self._f("massa_fundida",
+                (np.int32(self.profundidade),
+                 b["pais"], b["pais_adr"], b["pais_num"], b["filhos_adr"],
+                 b["filhos_num"], b["filhos"], b["nivel_de"],
+                 b["M_rownnz"], b["M_rowadr"], b["M_colind"],
+                 b["dof_parentid"], b["dof_bodyid"], b["dof_armature"],
+                 b["cinert"], b["cdof"], b["crb"], b["M"], b["qLD"],
+                 b["qLDiagInv"]))
+
+    def com_vel_f(self) -> None:
+        b = self.b
+        self._f("com_vel_fundido",
+                (np.int32(self.profundidade), b["nivel_corpos"],
+                 b["nivel_adr"], b["nivel_num"], b["body_parentid"],
+                 b["body_dofadr"], b["body_dofnum"], b["body_jntadr"],
+                 b["jnt_type"], b["dof_jntid"], b["cdof"], b["qvel"],
+                 b["cvel"], b["cdof_dot"]))
+
+    def bias_f(self) -> None:
+        b = self.b
+        self._f("bias_fundido",
+                (np.int32(self.profundidade), b["nivel_corpos"],
+                 b["nivel_adr"], b["nivel_num"], b["pais"], b["pais_adr"],
+                 b["pais_num"], b["filhos_adr"], b["filhos_num"], b["filhos"],
+                 b["nivel_de"], b["body_parentid"], b["body_dofadr"],
+                 b["body_dofnum"], b["dof_bodyid"], b["cdof_dot"], b["qvel"],
+                 b["cinert"], b["cvel"], b["cdof"], b["cacc"], b["cfrc_body"],
+                 b["qfrc_bias"]))
+
+    def forcas_f(self) -> None:
+        b = self.b
+        self._f("forcas_fundidas",
+                (np.int32(self.njnt), np.int32(self.nu),
+                 b["qvel"], b["dof_damping"], b["jnt_type"], b["jnt_qposadr"],
+                 b["jnt_dofadr"], b["jnt_stiffness"], b["qpos"],
+                 b["qpos_spring"], b["actuator_trntype"], b["actuator_trnid"],
+                 b["actuator_biastype"], b["actuator_gainprm"],
+                 b["actuator_biasprm"], b["actuator_gear"],
+                 b["actuator_ctrlrange"], b["actuator_ctrllimited"],
+                 b["actuator_forcerange"], b["actuator_forcelimited"],
+                 b["ctrl"], b["ncon"], b["con_geom"], b["con_efcadr"],
+                 b["geom_bodyid"], b["efc_J"], b["qfrc_applied"],
+                 b["qfrc_bias"], b["qfrc_passive"], b["actuator_length"],
+                 b["actuator_velocity"], b["actuator_force"],
+                 b["qfrc_actuator"], b["ades_momento"], b["ades_conta"],
+                 b["qfrc_smooth"]))
+
+    def restricoes_f(self) -> None:
+        b = self.b
+        if not self.npair:
+            return
+        self._f("restricoes_fundidas",
+                (np.int32(self.ncon_max),
+                 self.real(self.mod.opcoes["impratio"]),
+                 b["ncon"], b["con_normal"], b["con_pair"], b["pair_margin"],
+                 b["pair_gap"], b["con_dist"], b["con_geom"], b["con_pos"],
+                 b["pair_friction"], b["pair_solref"], b["pair_solimp"],
+                 b["geom_bodyid"], b["body_rootid"], b["body_weldid"],
+                 b["body_dofadr"], b["body_dofnum"], b["dof_parentid"],
+                 b["body_invweight0"], b["subtree_com"], b["cdof"], b["qvel"],
+                 b["con_frame"], b["con_includemargin"], b["con_exclude"],
+                 b["con_efcadr"], b["nefc"], b["efc_J"], b["efc_pos"],
+                 b["efc_margin"], b["efc_id"], b["efc_diagApprox"], b["efc_R"],
+                 b["efc_D"], b["efc_KBIP"], b["con_mu"], b["efc_vel"],
+                 b["efc_aref"]))
+
+    def smooth_f(self) -> None:
+        b = self.b
+        self._f("smooth_fundido",
+                (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["qLD"],
+                 b["qLDiagInv"], b["qfrc_smooth"], b["qacc_smooth"]))
+
+    def euler_f(self) -> None:
+        b = self.b
+        self._f("euler_fundido",
+                (self.dt, np.int32(self.njnt), b["M_rownnz"], b["M_rowadr"],
+                 b["M_colind"], b["M"], b["dof_damping"], b["qfrc_smooth"],
+                 b["qfrc_constraint"], b["jnt_type"], b["jnt_qposadr"],
+                 b["jnt_dofadr"], b["qH_in"], b["qH"], b["qHDiagInv"],
+                 b["rhs"], b["qacc_euler"], b["qvel"], b["qpos"]))
+
+    def passo_fundido(self, esperar: bool = True) -> None:
+        """
+        O passo completo em 13 despachos, contra 80 do caminho por estagio.
+
+        Mesma fisica: os kernels fundidos chamam as mesmas funcoes `..._um`.
+        O caminho por estagio continua existindo (`passo`), e e para ele que se
+        volta quando algo diverge -- com um despacho por nivel da para parar em
+        qualquer etapa e comparar com o `mjData`.
+        """
+        self._zera_raizes()
+        self.cinematica()
+        self.com_pos_f()
+        self.massa_f()
+        self.com_vel_f()
+        self.colisao()
+        self.restricoes_f()
+        # `bias_f` ANTES de `forcas_f`: o kernel de forcas termina somando
+        # `qfrc_smooth`, que le `qfrc_bias`. A ordem e a mesma do caminho por
+        # estagio, onde `smooth` vem depois de `bias`.
+        self.bias_f()
+        self.forcas_f()
+        self.smooth_f()
+        self.solver()
+        self.euler_f()
+        if esperar:
+            self.dev.espera()
 
     def forward_smooth(self, esperar: bool = True) -> None:
         """Tudo que o `mj_forward` faz ANTES do solver de restricao."""

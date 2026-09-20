@@ -132,6 +132,21 @@ class Device:
         self._programas[chave] = prog
         return prog
 
+    def kernel_proprio(self, arquivo, nome: str, fp64: bool,
+                       defines: tuple = ()):
+        """
+        Um `cl.Kernel` NOVO, do programa ja compilado.
+
+        O programa e caro e fica no cache; o objeto de kernel e barato e NAO
+        pode ser compartilhado por dois motores. Os argumentos ligados vivem
+        dentro dele: quem liga por ultimo ganha. Com cache de argumentos por
+        motor, o outro acha que ja ligou e despacha com os buffers alheios --
+        o sintoma foi a cinematica de dois motores no mesmo device divergindo
+        no segundo passo com o mesmo `qpos`.
+        """
+        arquivos = (arquivo,) if isinstance(arquivo, str) else tuple(arquivo)
+        return self.cl.Kernel(self.programa(arquivos, fp64, defines), nome)
+
     def kernel(self, arquivo, nome: str, fp64: bool, defines: tuple = ()):
         """
         Um objeto `cl.Kernel` por nome, reaproveitado.

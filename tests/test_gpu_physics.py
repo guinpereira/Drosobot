@@ -3,7 +3,7 @@ O que o backend de fisica nao pode quebrar.
 
     .venv-flygym2\Scripts\python tests/test_gpu_physics.py
 
-Doze propriedades, doze motivos distintos. Nao ha um decimo terceiro teste
+Treze propriedades, treze motivos distintos. Nao ha um decimo quarto teste
 medindo a mesma coisa por outro angulo -- isso so faria a suite demorar mais e
 falhar junto.
 
@@ -477,6 +477,54 @@ def test_passo_completo_e_dois_seguidos():
                 f"passo {k}: dqpos {eq:.2e}, dqvel {ev:.2e}")
             print(f"    passo {k}: dqpos {eq:.1e}  dqvel {ev:.1e}  "
                   f"ncon {ncon_g}")
+    finally:
+        corpo.fecha()
+
+
+def test_fundido_igual_ao_por_estagio():
+    """
+    Igualdade exata, ao longo de varios passos.
+
+    Varios, nao um: barreira faltando costuma passar no primeiro passo e
+    aparecer quando o estado deixa de ser o inicial. Dois motores, cada um com
+    os proprios objetos de kernel -- compartilha-los faz um despachar com os
+    buffers do outro, e foi assim que este teste nasceu.
+    """
+    try:
+        from gpu_physics.device import Device
+        dev = Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    from gpu_physics.compilador import compila
+    from gpu_physics.dinamica import MotorFisicoGPU
+
+    corpo = _modelo(passos=200)
+    try:
+        m, d = corpo.sim.mj_model, corpo.sim.mj_data
+        mod = compila(m)
+        a = MotorFisicoGPU(mod, dev=dev, fp64=True)
+        b = MotorFisicoGPU(mod, dev=dev, fp64=True)
+        for g in (a, b):
+            g.escreve_estado(qpos=d.qpos, qvel=d.qvel, ctrl=d.ctrl,
+                             mocap_pos=d.mocap_pos, mocap_quat=d.mocap_quat)
+        campos = ("qpos", "qvel", "qacc", "M", "qLD", "cdof", "cinert",
+                  "subtree_com", "cvel", "cdof_dot", "qfrc_bias",
+                  "qfrc_passive", "qfrc_actuator", "qfrc_smooth", "efc_J",
+                  "efc_aref", "efc_D", "qfrc_constraint")
+        for k in range(1, 11):
+            a.passo()
+            b.passo_fundido()
+            for c in campos:
+                dif = float(np.abs(a.le(c) - b.le(c)).max())
+                assert dif == 0.0, (
+                    f"passo {k}: {c} difere em {dif:.3e} entre o caminho por "
+                    "estagio e o fundido. Os dois chamam a mesma funcao, entao "
+                    "isto e barreira faltando ou ordem trocada, nao "
+                    "arredondamento.")
+            assert int(a.le_int("ncon")[0]) == int(b.le_int("ncon")[0])
+        print(f"    10 passos, {len(campos)} campos: identicos bit a bit")
     finally:
         corpo.fecha()
 
