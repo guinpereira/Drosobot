@@ -1,0 +1,11 @@
+# Clones upstream NAO entram no nosso repositorio.
+#
+# Sao centenas de MB de codigo de terceiros com historia propria, e empurrar
+# isso pro nosso GitHub misturaria a procedencia: quem olha o repo nao saberia
+# mais o que e Drosobot e o que e MuJoCo. O que fica versionado e o que produzimos
+# a partir deles -- research/UPSTREAM_LOCK.md fixa o commit exato de cada um, e
+# docs/research/*.md guarda a analise.
+#
+# Pra reproduzir: research/clone_upstream.sh
+*
+!.gitignore

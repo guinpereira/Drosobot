@@ -1,0 +1,115 @@
+// Passo LIF na GPU -- a MESMA matematica de sim/fast_lif.py.
+//
+// Este kernel nao e um "LIF parecido". Ele resolve o integrador exato que o
+// Drosobot ja usa e que foi validado contra o Brian2:
+//
+//     u      = v - V_REST
+//     u_novo = u * dec_v + g * acopla
+//     g      = g * dec_g + entrada
+//     livre  = passo >= ref_ate
+//     v      = livre ? V_REST + u_novo : V_RESET
+//     disparou = livre && v > V_TH
+//     se disparou: v = V_RESET, ref_ate = passo + ref_passos
+//
+// A ordem das operacoes e deliberadamente identica a de fast_lif.Camada.passo().
+// Qualquer reordenacao "equivalente" em ponto flutuante muda o ultimo bit, e o
+// teste de equivalencia compara contra a referencia -- entao nao reordenamos.
+//
+// Os coeficientes (dec_v, dec_g, acopla) sao calculados no HOST a partir dos
+// parametros de Shiu et al., como em fast_lif, e passados prontos. Recalcula-los
+// aqui em fp32 daria numeros ligeiramente diferentes dos de fp64 do NumPy.
+//
+// PORTABILIDADE: HLSL SM 5.0, sem intrinseca de fabricante, sem tamanho de wave
+// escrito na mao. Roda igual em AMD e NVIDIA, e em Linux a Unity traduz pra
+// SPIR-V. O tamanho do grupo (64) casa com a wavefront da RDNA2 medida nesta
+// placa e e multiplo do warp de 32 da NVIDIA.
+
+#pragma kernel LifStep
+#pragma kernel LifStepConta
+
+// estado dinamico, um elemento por neuronio (SoA, nao AoS: leitura coalescida)
+RWStructuredBuffer<float> _V;          // potencial de membrana, mV
+RWStructuredBuffer<float> _G;          // conductancia sinaptica, mV
+RWStructuredBuffer<int>   _RefAte;     // passo ate o qual esta refratario
+RWStructuredBuffer<uint>  _Spike;      // 1 se disparou neste passo
+RWStructuredBuffer<uint>  _Contagem;   // acumulado por neuronio na janela
+
+// entrada deste passo (ja em mV), um elemento por neuronio
+StructuredBuffer<float> _Entrada;
+
+cbuffer Params
+{
+    float _VRest;
+    float _VReset;
+    float _VTh;
+    float _DecV;        // exp(-dt/tau_m)
+    float _DecG;        // exp(-dt/tau_s)
+    float _Acopla;      // (dec_g - dec_v) / (tau_m * a)
+    int   _Passo;       // passo atual
+    int   _RefPassos;   // duracao do refratario, em passos inteiros
+    uint  _N;           // numero de neuronios
+    uint  _Pad0, _Pad1, _Pad2;
+};
+
+// 64 = wavefront da RDNA2 nesta placa (subgroupSize medido via Vulkan) e
+// multiplo de 32 (NVIDIA). Nao ha suposicao de tamanho de wave no corpo.
+#define GRUPO 64
+
+[numthreads(GRUPO, 1, 1)]
+void LifStep(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+
+    float v = _V[i];
+    float g = _G[i];
+    int refAte = _RefAte[i];
+
+    float u = v - _VRest;
+    float uNovo = u * _DecV + g * _Acopla;
+    g = g * _DecG + _Entrada[i];
+
+    bool livre = (_Passo >= refAte);
+    v = livre ? (_VRest + uNovo) : _VReset;
+
+    // sem ramo: o warp nao diverge entre quem disparou e quem nao disparou
+    bool disparou = livre && (v > _VTh);
+    v = disparou ? _VReset : v;
+    refAte = disparou ? (_Passo + _RefPassos) : refAte;
+
+    _V[i] = v;
+    _G[i] = g;
+    _RefAte[i] = refAte;
+    _Spike[i] = disparou ? 1u : 0u;
+}
+
+// Variante que tambem acumula a contagem da janela, que e o que a telemetria
+// publica. Separada de proposito: o caminho quente nao paga pela instrumentacao
+// quando ninguem esta olhando -- mesmo principio de fast_lif.roda().
+[numthreads(GRUPO, 1, 1)]
+void LifStepConta(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+
+    float v = _V[i];
+    float g = _G[i];
+    int refAte = _RefAte[i];
+
+    float u = v - _VRest;
+    float uNovo = u * _DecV + g * _Acopla;
+    g = g * _DecG + _Entrada[i];
+
+    bool livre = (_Passo >= refAte);
+    v = livre ? (_VRest + uNovo) : _VReset;
+
+    bool disparou = livre && (v > _VTh);
+    v = disparou ? _VReset : v;
+    refAte = disparou ? (_Passo + _RefPassos) : refAte;
+
+    _V[i] = v;
+    _G[i] = g;
+    _RefAte[i] = refAte;
+    _Spike[i] = disparou ? 1u : 0u;
+    if (disparou) _Contagem[i] = _Contagem[i] + 1u;
+}

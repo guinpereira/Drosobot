@@ -1,0 +1,69 @@
+{
+  "probed_at": "2026-09-19T21:52:55",
+  "system": {
+    "hostname": "VOID",
+    "os": "Windows",
+    "os_release": "10",
+    "os_version": "10.0.26200",
+    "machine": "AMD64",
+    "python": "3.11.9",
+    "cpu": "AMD Ryzen 7 5700X 8-Core Processor",
+    "cpu_cores": 8,
+    "cpu_threads": 16
+  },
+  "gpus": [
+    {
+      "name": "AMD Radeon RX 6700 XT",
+      "driver": "32.0.21045.5002",
+      "processor": "AMD Radeon Graphics Processor (0x73DF)"
+    }
+  ],
+  "vulkan": {
+    "available": true,
+    "device_name": "AMD Radeon RX 6700 XT",
+    "driver_name": "AMD proprietary driver",
+    "api_version": "1.4.315 (4211003)",
+    "subgroup_size": 64,
+    "max_shared_memory_bytes": 32768,
+    "max_workgroup_invocations": 1024,
+    "shader_float64": true,
+    "extensions": {
+      "VK_EXT_shader_atomic_float": true,
+      "VK_EXT_shader_atomic_float2": true,
+      "VK_KHR_shader_atomic_int64": true,
+      "VK_KHR_cooperative_matrix": true,
+      "VK_KHR_buffer_device_address": true,
+      "VK_KHR_16bit_storage": true,
+      "VK_KHR_shader_float16_int8": true,
+      "VK_EXT_subgroup_size_control": true,
+      "VK_KHR_timeline_semaphore": true,
+      "VK_KHR_shader_subgroup_extended_types": true
+    }
+  },
+  "hip": {
+    "available": false,
+    "gfx_target": null,
+    "note": "HIP SDK nao instalado. Para esta GPU isso nao e acidente: ver docs/research/HIP_WINDOWS_API_AUDIT.md -- gfx1031 (RX 6700 XT) nao consta na matriz de suporte do HIP SDK para Windows."
+  },
+  "opencl": {
+    "available": true,
+    "icd_present": true,
+    "amd_runtime_present": false
+  },
+  "cuda": {
+    "available": false
+  },
+  "python_packages": {
+    "numpy": "2.0.2",
+    "numba": "0.60.0",
+    "torch": null,
+    "jax": null,
+    "cupy": null,
+    "pyopencl": null,
+    "warp": null,
+    "mujoco": "3.2.7",
+    "mujoco_warp": null,
+    "flygym": "instalado",
+    "brian2": "2.9.0"
+  }
+}

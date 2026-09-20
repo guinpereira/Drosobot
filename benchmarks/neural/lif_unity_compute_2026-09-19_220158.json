@@ -1,0 +1,14 @@
+{
+  "probed_at": "2026-09-19T22:01:58",
+  "backend": "unity_computeshader",
+  "api": "Direct3D12",
+  "device": "AMD Radeon RX 6700 XT",
+  "vram_mb": 12243,
+  "steps": 2000,
+  "results": [
+    {"n": 1000, "us_per_step": 6.678, "updates_per_s": 149739827, "readback_ms": 1.513, "state_mb": 0.02, "spikes_last_step": 0},
+    {"n": 10000, "us_per_step": 8.518, "updates_per_s": 1173963830, "readback_ms": 0.391, "state_mb": 0.23, "spikes_last_step": 0},
+    {"n": 50000, "us_per_step": 11.133, "updates_per_s": 4491091919, "readback_ms": 0.195, "state_mb": 1.14, "spikes_last_step": 0},
+    {"n": 166691, "us_per_step": 17.658, "updates_per_s": 9440184397, "readback_ms": 0.957, "state_mb": 3.82, "spikes_last_step": 0}
+  ]
+}

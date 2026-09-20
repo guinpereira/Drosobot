@@ -1,0 +1,57 @@
+{
+  "probed_at": "2026-09-19T22:12:17",
+  "backend": "numpy_cpu",
+  "cpu": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
+  "numpy": "2.0.2",
+  "steps": 2000,
+  "results": [
+    {
+      "dtype": "fp64",
+      "n": 1000,
+      "us_per_step": 19.115,
+      "updates_per_s": 52316168
+    },
+    {
+      "dtype": "fp64",
+      "n": 10000,
+      "us_per_step": 70.59,
+      "updates_per_s": 141662623
+    },
+    {
+      "dtype": "fp64",
+      "n": 50000,
+      "us_per_step": 425.711,
+      "updates_per_s": 117450667
+    },
+    {
+      "dtype": "fp64",
+      "n": 166691,
+      "us_per_step": 4076.531,
+      "updates_per_s": 40890408
+    },
+    {
+      "dtype": "fp32",
+      "n": 1000,
+      "us_per_step": 29.477,
+      "updates_per_s": 33924928
+    },
+    {
+      "dtype": "fp32",
+      "n": 10000,
+      "us_per_step": 57.537,
+      "updates_per_s": 173802414
+    },
+    {
+      "dtype": "fp32",
+      "n": 50000,
+      "us_per_step": 220.777,
+      "updates_per_s": 226473379
+    },
+    {
+      "dtype": "fp32",
+      "n": 166691,
+      "us_per_step": 1030.402,
+      "updates_per_s": 161772784
+    }
+  ]
+}
