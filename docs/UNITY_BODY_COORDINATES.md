@@ -192,11 +192,17 @@ Saída em `docs/images/fly_bindpose_{perspectiva,lateral,topo,frente}.png`. A
 referência de comparação é o render do próprio MuJoCo pelo `mujoco.Renderer`, do
 mesmo modelo compilado.
 
-O OBJ leva normais por vértice, calculadas na exportação por média das faces
-ponderada pela área. Sem elas a Unity deduz normais com um ângulo de suavização
-fixo e, como as malhas do NeuroMechFly são decimadas (~2.000 faces por peça), o
-resultado ficava facetado. A normal vem da **geometria**, não é aparência
-inventada — é a mesma superfície que a física usa, só sombreada direito.
+O OBJ leva normais por **canto**, com limite de vinco de 55°
+(`VINCO_GRAUS` em `tools/export_fly_mesh.py`): o canto de uma face só soma as
+faces vizinhas cuja normal está dentro do limite.
+
+Isso importa porque as malhas são decimadas — no tórax a mediana do ângulo entre
+faces vizinhas é 36° e 46% das arestas passam de 40°. Média cega sobre tudo
+derrete quina de verdade (a borda da asa, o encaixe das juntas); não suavizar
+nada deixa a peça inteira facetada.
+
+A normal vem da **geometria** e nenhum vértice é tocado: a silhueta é idêntica,
+só muda a normal usada no sombreamento.
 
 ### Cor é outra coisa
 

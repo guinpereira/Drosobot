@@ -42,16 +42,27 @@ SAIDA = RAIZ / "unity" / "DrosobotLab" / "Assets" / "Resources" / "Fly"
 sys.path.insert(0, str(RAIZ / "sim"))
 
 
+VINCO_GRAUS = 55.0
+"""Acima deste angulo entre faces vizinhas, a aresta NAO e suavizada.
+
+As malhas do NeuroMechFly sao decimadas -- no torax a mediana do angulo entre
+faces vizinhas e 36 graus e 46% das arestas passam de 40. Media cega sobre
+tudo derrete quina de verdade (a borda da asa, o encaixe das juntas); nao
+suavizar nada deixa a peca inteira facetada. O limite separa os dois casos sem
+tocar em vertice nenhum: a SILHUETA e identica, so muda a normal usada no
+sombreamento.
+"""
+
+
 def escreve_obj(caminho: Path, vertices: np.ndarray, faces: np.ndarray,
                 nome: str) -> None:
-    """OBJ com vertices, normais e faces. Sem UV -- nao ha textura.
+    """OBJ com vertices, normais por CANTO e faces. Sem UV -- nao ha textura.
 
-    As NORMAIS sao calculadas aqui, por media ponderada pela area dos
-    triangulos que tocam cada vertice. Sem elas a Unity deduz normais com um
-    angulo de suavizacao fixo, e como as malhas do NeuroMechFly sao decimadas
-    (~2000 faces por peca) o resultado fica facetado. A normal e derivada da
-    GEOMETRIA -- nao e aparencia inventada, e a mesma superficie que a fisica
-    usa, so que sombreada direito.
+    As NORMAIS sao calculadas aqui, com limite de vinco (ver VINCO_GRAUS): o
+    canto de uma face so soma as faces vizinhas cuja normal esta dentro do
+    limite. Assim a superficie fica lisa onde e lisa e a quina continua quina.
+    A normal e derivada da GEOMETRIA -- nao e aparencia inventada, e a mesma
+    superficie que a fisica usa, so que sombreada direito.
 
     Os VERTICES saem ja em eixos da Unity (Y pra cima), trocando Y e Z como
     `MujocoFrame.Pos` faz. Sem isso a malha fica em eixos do MuJoCo pendurada
@@ -69,26 +80,51 @@ def escreve_obj(caminho: Path, vertices: np.ndarray, faces: np.ndarray,
     fu = faces[:, [0, 2, 1]]
 
     # normal de cada face, com modulo proporcional a area (o produto vetorial
-    # ja da 2x a area), somada nos vertices: a ponderacao por area evita que
-    # um triangulo minusculo puxe a normal tanto quanto um grande
+    # ja da 2x a area): a ponderacao por area evita que um triangulo minusculo
+    # puxe a normal tanto quanto um grande
     a, b, c = vu[fu[:, 0]], vu[fu[:, 1]], vu[fu[:, 2]]
-    nf = np.cross(b - a, c - a)
-    nv = np.zeros_like(vu)
-    for k in range(3):
-        np.add.at(nv, fu[:, k], nf)
-    comp = np.linalg.norm(nv, axis=1, keepdims=True)
-    nv = np.divide(nv, comp, out=np.zeros_like(nv), where=comp > 1e-12)
+    nf_area = np.cross(b - a, c - a)
+    comp = np.linalg.norm(nf_area, axis=1, keepdims=True)
+    nf = np.divide(nf_area, comp, out=np.zeros_like(nf_area), where=comp > 1e-12)
+
+    # faces que tocam cada vertice
+    incidentes = [[] for _ in range(len(vu))]
+    for k, tri in enumerate(fu):
+        for iv in tri:
+            incidentes[iv].append(k)
+
+    cos_limite = np.cos(np.radians(VINCO_GRAUS))
+    normais, indice = [], {}
+    cantos = np.zeros((len(fu), 3), dtype=np.int64)
+    for k, tri in enumerate(fu):
+        for canto, iv in enumerate(tri):
+            soma = np.zeros(3)
+            for g in incidentes[iv]:
+                # o limite de vinco entra aqui: a face vizinha so participa da
+                # media se estiver do mesmo lado da quina
+                if g == k or nf[g].dot(nf[k]) >= cos_limite:
+                    soma += nf_area[g]
+            n = np.linalg.norm(soma)
+            n = soma / n if n > 1e-12 else nf[k]
+            # dedupe: em regiao lisa os cantos compartilham a mesma normal, e
+            # sem isto o arquivo triplica de tamanho a toa
+            chave = (round(float(n[0]), 4), round(float(n[1]), 4),
+                     round(float(n[2]), 4))
+            if chave not in indice:
+                indice[chave] = len(normais)
+                normais.append(chave)
+            cantos[k, canto] = indice[chave]
 
     linhas = [f"# {nome} -- NeuroMechFly, exportado do modelo compilado",
               f"# {len(vertices)} vertices, {len(faces)} faces",
               "# vertices em eixos da Unity (Y pra cima); winding invertido",
-              "# normais por media ponderada pela area, calculadas na exportacao",
+              f"# normais por canto, limite de vinco {VINCO_GRAUS:.0f} graus",
               f"o {nome}"]
     linhas += [f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}" for v in vu]
-    linhas += [f"vn {n[0]:.6f} {n[1]:.6f} {n[2]:.6f}" for n in nv]
-    # OBJ indexa a partir de 1; normal por vertice, entao v//vn com o mesmo indice
-    linhas += [f"f {f[0]+1}//{f[0]+1} {f[1]+1}//{f[1]+1} {f[2]+1}//{f[2]+1}"
-               for f in fu]
+    linhas += [f"vn {n[0]:.4f} {n[1]:.4f} {n[2]:.4f}" for n in normais]
+    # OBJ indexa a partir de 1
+    linhas += [f"f {f[0]+1}//{c[0]+1} {f[1]+1}//{c[1]+1} {f[2]+1}//{c[2]+1}"
+               for f, c in zip(fu, cantos)]
     caminho.write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
