@@ -1102,14 +1102,16 @@ namespace Drosobot.Lab
         /// </summary>
         public void Aponta(Preset p)
         {
+            // A camera fica em `target + Euler(pitch,yaw,0) * (0,0,-d)`, entao
+            // yaw 0 poe a camera em -Z e olhando pra +Z. Na Unity, depois da
+            // conversao, +X e a frente da mosca e +Z e o lado dela -- por isso
+            // "lateral" e yaw 0 e nao 90. Ver docs/UNITY_BODY_COORDINATES.md.
             switch (p)
             {
-                // A mosca anda no +X do MuJoCo, que vira +X na Unity; o Y da
-                // Unity e a altura. Ver docs/UNITY_BODY_COORDINATES.md.
-                case Preset.Lateral: yaw = 90f; pitch = 0f; break;
-                case Preset.Topo: yaw = 90f; pitch = 89f; break;
-                case Preset.Frente: yaw = 180f; pitch = 0f; break;
-                default: yaw = 35f; pitch = 20f; break;   // perspectiva
+                case Preset.Lateral: yaw = 0f; pitch = 0f; break;
+                case Preset.Topo: yaw = 0f; pitch = 89f; break;
+                case Preset.Frente: yaw = -90f; pitch = 0f; break;
+                default: yaw = -40f; pitch = 22f; break;   // 3/4 pela frente
             }
             preset = p;
         }

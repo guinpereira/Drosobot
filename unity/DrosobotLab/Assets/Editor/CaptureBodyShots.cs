@@ -54,16 +54,36 @@ namespace Drosobot.EditorTools
             cam.fieldOfView = 40f;
             cam.nearClipPlane = 0.05f;
 
+            // Diagnostico: o que o importador de OBJ da Unity fez com os
+            // vertices. Comparar com os limites que o MuJoCo tem pra mesma
+            // malha diz se houve troca de eixo ou negacao na importacao.
+            foreach (var nome in new[] { "fly_lf_tarsus3", "fly_lf_tibia", "fly_c_thorax" })
+            {
+                Mesh malha = null;
+                foreach (var o in Resources.LoadAll("Fly/" + nome))
+                {
+                    if (o is Mesh mm) { malha = mm; break; }
+                    if (o is GameObject go)
+                    {
+                        var mf = go.GetComponentInChildren<MeshFilter>();
+                        if (mf != null) { malha = mf.sharedMesh; break; }
+                    }
+                }
+                if (malha != null)
+                    Debug.Log($"[capture] malha {nome} centro {malha.bounds.center:F4} " +
+                              $"tamanho {malha.bounds.size:F4}");
+            }
+
             var b = mosca.Extensao();
             Debug.Log($"[capture] centro {b.center}  extensao {b.size}  " +
                       $"{mosca.segmentosMontados} segmentos");
 
             // Mesmos angulos dos presets do Lab (OrbitCamera.Aponta), pra que a
             // imagem de referencia e o que se ve na tela sejam a mesma coisa.
-            Tira(cam, mosca, b, 35f, 20f, "fly_bindpose_perspectiva");
-            Tira(cam, mosca, b, 90f, 0f, "fly_bindpose_lateral");
-            Tira(cam, mosca, b, 90f, 89f, "fly_bindpose_topo");
-            Tira(cam, mosca, b, 180f, 0f, "fly_bindpose_frente");
+            Tira(cam, mosca, b, -40f, 22f, "fly_bindpose_perspectiva");
+            Tira(cam, mosca, b, 0f, 0f, "fly_bindpose_lateral");
+            Tira(cam, mosca, b, 0f, 89f, "fly_bindpose_topo");
+            Tira(cam, mosca, b, -90f, 0f, "fly_bindpose_frente");
 
             Object.DestroyImmediate(camGo);
             Object.DestroyImmediate(luzGo);

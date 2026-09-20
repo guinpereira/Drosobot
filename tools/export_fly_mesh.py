@@ -44,13 +44,26 @@ sys.path.insert(0, str(RAIZ / "sim"))
 
 def escreve_obj(caminho: Path, vertices: np.ndarray, faces: np.ndarray,
                 nome: str) -> None:
-    """OBJ minimo: so vertices e faces. Sem normal, sem UV -- nao precisamos."""
+    """OBJ minimo: so vertices e faces. Sem normal, sem UV -- nao precisamos.
+
+    Os VERTICES saem ja em eixos da Unity (Y pra cima), trocando Y e Z como
+    `MujocoFrame.Pos` faz. Sem isso a malha fica em eixos do MuJoCo pendurada
+    num transform ja convertido: cada peca aparece girada 90 graus sobre a
+    propria origem. Num torax quase isotropico ninguem ve; num tarso alongado
+    parece que a perna desmontou.
+
+    A troca de eixo e uma reflexao, entao inverte a orientacao dos triangulos.
+    A ordem dos indices e invertida junto pra que as normais continuem
+    apontando pra fora -- senao o backface culling mostra o interior da malha e
+    o corpo aparece esburacado.
+    """
     linhas = [f"# {nome} -- NeuroMechFly, exportado do modelo compilado",
               f"# {len(vertices)} vertices, {len(faces)} faces",
+              "# vertices em eixos da Unity (Y pra cima); winding invertido",
               f"o {nome}"]
-    linhas += [f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}" for v in vertices]
+    linhas += [f"v {v[0]:.6f} {v[2]:.6f} {v[1]:.6f}" for v in vertices]
     # OBJ indexa a partir de 1
-    linhas += [f"f {f[0]+1} {f[1]+1} {f[2]+1}" for f in faces]
+    linhas += [f"f {f[0]+1} {f[2]+1} {f[1]+1}" for f in faces]
     caminho.write_text("\n".join(linhas) + "\n", encoding="utf-8")
 
 
@@ -62,6 +75,7 @@ def main():
     corpo = cria("flygym2", arena="flat", com_visao=False)
     corpo.reset(seed=0)
     m = corpo.sim.mj_model
+    d = corpo.sim.mj_data
 
     SAIDA.mkdir(parents=True, exist_ok=True)
     for antigo in SAIDA.glob("*.obj"):
@@ -113,6 +127,26 @@ def main():
             "quat_wxyz": [float(x) for x in m.body_quat[b]],
         })
 
+    # ---- pose de repouso, em MUNDO ----
+    #
+    # `body_pos`/`body_quat` acima sao a arvore cinematica com as JUNTAS EM
+    # ZERO, e isso NAO e a pose de repouso do modelo: as 73 qpos do padrao sao
+    # todas nao-nulas (postura de pe). Compor a arvore ignorando as juntas erra
+    # ate 1,77 mm numa mosca de 2,7 mm -- as pernas descem coladas na linha
+    # media em vez de abrirem, e a mosca aparece desmontada.
+    #
+    # Entao exportamos o que o MuJoCo de fato tem depois de mj_forward: xpos e
+    # xquat, em MUNDO. E a MESMA grandeza que a telemetria manda por quadro, o
+    # que faz a pose de repouso e a pose viva percorrerem o mesmo caminho de
+    # codigo na Unity.
+    mj.mj_forward(m, d)
+    repouso = {
+        "segments": [c["name"] for c in corpos[1:]],
+        "pos": [[float(x) for x in d.xpos[c["index"]]] for c in corpos[1:]],
+        "quat_wxyz": [[float(x) for x in d.xquat[c["index"]]] for c in corpos[1:]],
+        "nota": "xpos/xquat em MUNDO apos mj_forward na qpos padrao do modelo",
+    }
+
     meta = {
         "fonte": "NeuroMechFly / FlyGym 2.1.0, do modelo compilado",
         "licenca": "Apache-2.0 (NeLy-EPFL) -- ver THIRD_PARTY_NOTICES.md",
@@ -127,6 +161,7 @@ def main():
         "meshes": malhas,
         "geoms": geoms,
         "bodies": corpos,
+        "pose_repouso": repouso,
     }
     (SAIDA / "fly_body.json").write_text(json.dumps(meta, indent=1),
                                          encoding="utf-8")

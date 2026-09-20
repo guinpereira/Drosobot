@@ -22,8 +22,8 @@ que produziu o bug do deslocamento duplicado descrito no fim.
 
 Nenhuma escala é aplicada. O modelo do NeuroMechFly já está em milímetros e o
 Lab adota 1 unidade Unity = 1 mm, então os números que aparecem no inspetor da
-Unity são diretamente comparáveis aos do MuJoCo. Tórax a 2,1 significa 2,1 mm de
-altura nos dois.
+Unity são diretamente comparáveis aos do MuJoCo. Tórax a 1,083 significa
+1,083 mm de altura nos dois.
 
 ## Posição
 
@@ -51,11 +51,11 @@ Isso passa despercebido no tórax, que fica quase alinhado, e aparece nas pernas
 que têm rotações grandes: as tíbias apontam pro lado errado e a mosca parece
 "desmontada" em vez de "invertida".
 
-### Por que dá pra compor a bind pose já no espaço da Unity
+### Por que dá pra converter antes de compor
 
-`FlyBody.CalculaBindPose` acumula a cadeia de corpos depois de converter cada
-transform local, em vez de acumular em MuJoCo e converter no fim. As duas coisas
-dão o mesmo resultado porque a conversão `M` é uma conjugação:
+A hierarquia da Unity compõe transforms já convertidos (pai em mundo, filho no
+offset local) em vez de compor em MuJoCo e converter no fim. As duas ordens dão
+o mesmo resultado porque a conversão `M` é uma conjugação:
 
 ```
 M(R1·R2)M⁻¹ = (M R1 M⁻¹)(M R2 M⁻¹)
@@ -65,6 +65,33 @@ M(p + R·q)  = M p + (M R M⁻¹)(M q)
 Ou seja, converter-depois-compor e compor-depois-converter coincidem. Foi
 escolhido converter primeiro pra que `MujocoFrame` continue sendo o único lugar
 com conhecimento dos eixos.
+
+Isso vale pra rotação e para a posição, e é o que permite exportar os vértices
+já convertidos (seção abaixo): `M(p + R·q)` com `q` sendo o vértice dá
+`M p + (M R M⁻¹)·M q`, que é exatamente pai-convertido vezes vértice-convertido.
+
+Cuidado: a igualdade **não** dispensa converter alguma das partes. Foi o que
+aconteceu com os vértices — converter duas das três (posição e rotação) e
+deixar a terceira crua não é composição, é mistura de espaços.
+
+## Os vértices das malhas também são convertidos
+
+`tools/export_fly_mesh.py` grava os OBJ **já em eixos da Unity**: cada vértice
+sai como `(x, z, y)`, e a ordem dos índices de cada face é invertida junto,
+porque a troca de eixo é uma reflexão e inverteria as normais.
+
+Isso não era feito, e foi o bug mais difícil de ver da rodada. As posições e as
+rotações eram convertidas; os vértices não. Cada malha ficava pendurada num
+transform já convertido mas com a geometria em eixos do MuJoCo — ou seja, girada
+90° sobre a própria origem. Num tórax quase isotrópico ninguém nota. Num tarso,
+que tem 0,11 mm e é alongado, a peça sai inteira de onde deveria estar e a perna
+aparece desmontada no ar.
+
+Como foi diagnosticado, já que os números não pegaram: os tamanhos da malha
+importada pela Unity foram comparados com os do MuJoCo. `fly/lf_tibia` dava
+`(0,0852, 0,1114, 0,5520)` nos dois — **idênticos**, quando o correto seria
+`(0,0852, 0,5520, 0,1114)` com Y e Z trocados. Igualdade era a prova de que a
+conversão não tinha acontecido.
 
 ## Transforms estáticos das malhas
 
@@ -111,32 +138,69 @@ justamente o que permitiu o bug.
 
 ## Bind pose
 
-O modo **Bind Pose** monta a mosca a partir do campo `bodies` do
-`fly_body.json`: o transform local de cada corpo em relação ao pai, acumulado da
-raiz pra baixo. É a pose de repouso do **modelo**, com todas as juntas em zero.
+O modo **Bind Pose** usa o campo `pose_repouso` do `fly_body.json`: os `xpos` e
+`xquat` que o MuJoCo tem depois de `mj_forward` na `qpos` padrão do modelo, em
+**mundo**. É a mesma grandeza que a telemetria manda por quadro, então a pose de
+repouso e a pose viva percorrem exatamente o mesmo caminho de código.
 
-**Não é a postura de andar e não é telemetria.** Números medidos dela:
+**Não é composto da hierarquia de corpos.** Já foi, e estava errado: `body_pos`
+e `body_quat` são a árvore cinemática com as **juntas em zero**, e as 73 `qpos`
+do padrão do NeuroMechFly são todas não-nulas (postura de pé). Compor a árvore
+ignorando as juntas erra até **1,77 mm** numa mosca de 2,7 mm — as pernas descem
+coladas na linha média em vez de abrirem.
+
+Números da pose exportada (mm, eixos do MuJoCo):
 
 ```
-tórax z = 2,100 mm          cabeça (olho) z = 2,118 mm
-                coxa      fêmur     tíbia    tarso5    y tarso5
-  lf            1,870     1,505     0,800    -0,282      0,167
-  lm            1,618     1,437     0,653    -0,621      0,124
-  lh            1,603     1,404     0,568    -0,814      0,087
-  rf/rm/rh      espelhados exatamente (|y_L + y_R| = 0,0000 nos três pares)
+             coxa z   fêmur z  tíbia z  tarso5 z  tarso5 y  tarso5 x
+  lf          0,863    0,539    0,810     0,065     0,997     1,339
+  lm          0,634    0,458    0,981     0,062     1,469     0,320
+  lh          0,632    0,460    1,058     0,085     1,048    -1,474
+  rf/rm/rh    espelhados; |y_L + y_R| ≤ 0,0002
+
+  tórax z = 1,083        seis tarsos em z = 0,071 ± 0,010
+  tórax 1,012 mm acima do plano dos tarsos
 ```
 
-O que isso confirma: a cadeia desce monotonicamente (coxa > fêmur > tíbia >
-tarso) nas seis pernas, a simetria esquerda/direita é exata, e o tórax fica
-2,67 mm acima do plano médio dos tarsos. Nessa pose as pernas ficam recolhidas
-perto da linha média (|y| < 0,2 mm) porque as juntas estão em zero — é o
-esperado pro repouso do modelo, não um defeito de montagem.
+O que isso confirma: os seis tarsos estão **no chão** (desvio de 10 µm entre
+eles), o corpo está suspenso 1 mm acima, e as pernas abrem ~1,17 mm de cada
+lado, com o tripé na geometria certa — dianteiras à frente (x = +1,34),
+medianas ao lado (x = +0,32), traseiras atrás (x = −1,47).
 
 Serve como **referência fixa**: se a mosca parece errada durante a corrida mas
 certa em Bind Pose, o problema está na telemetria ou na interpolação, não na
-montagem nem na conversão de eixos.
+montagem, nas malhas nem na conversão de eixos.
+
+### Validação visual
+
+Só números não bastaram nesta rodada. A composição errada da árvore passava em
+todas as verificações numéricas que eu tinha — a cadeia coxa > fêmur > tíbia >
+tarso continuava descendo, e a simetria esquerda/direita era exata — e mesmo
+assim o render mostrava a mosca desmontada. As duas falhas (árvore sem juntas e
+vértices não convertidos) só apareceram na imagem.
+
+`Assets/Editor/CaptureBodyShots.cs` renderiza as quatro vistas em edit mode, sem
+Play e sem telemetria:
+
+```
+Unity.exe -batchmode -quit -projectPath unity\DrosobotLab ^
+  -executeMethod Drosobot.EditorTools.CaptureBodyShots.Capturar ^
+  -logFile unity\capture.log
+```
+
+Saída em `docs/images/fly_bindpose_{perspectiva,lateral,topo,frente}.png`. A
+referência de comparação é o render do próprio MuJoCo pelo `mujoco.Renderer`, do
+mesmo modelo compilado.
+
+O facetado que aparece nas imagens é esperado: o OBJ leva só vértices e faces,
+sem normais, então a Unity calcula normais planas por face.
 
 ## Eixos desenhados no modo Eixos
+
+As vistas do painel CORPO seguem daí. A câmera fica em
+`target + Euler(pitch, yaw, 0) · (0, 0, −d)`, então `yaw = 0` a põe em −Z
+olhando para +Z. Como +X é a frente da mosca e +Z é o lado dela, **lateral é
+`yaw = 0`, não 90**; frente é `yaw = −90`; topo é `pitch = 89`.
 
 Vermelho/verde/ciano = X/Y/Z **da Unity**, já convertidos. Não são os eixos do
 MuJoCo. Comparar a seta verde ("pra cima" na Unity) com o +Z do MuJoCo é

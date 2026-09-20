@@ -132,7 +132,7 @@ namespace Drosobot.Lab
                 filho.transform.localRotation = MujocoFrame.Quat(Quatro(g["quat_wxyz"]));
             }
 
-            CalculaBindPose(doc["bodies"] as JArray);
+            LeBindPose(doc["pose_repouso"] as JObject);
             AplicaBindPose();   // nasce em repouso; a telemetria assume depois
 
             segmentosMontados = _porNome.Count;
@@ -143,39 +143,35 @@ namespace Drosobot.Lab
 
         // ------------------------------------------------------- bind pose
         //
-        // O exportador guarda, pra cada body, o transform LOCAL em relacao ao
-        // pai -- a pose de repouso do modelo compilado. Acumulando a cadeia da
-        // raiz pra baixo sai a pose de repouso em MUNDO, que e o que o modo
-        // Bind Pose mostra: a mosca inteira, parada, sem telemetria nenhuma.
+        // Vem PRONTA do exportador, em MUNDO: sao os xpos/xquat que o MuJoCo
+        // tem depois de mj_forward na qpos padrao do modelo.
         //
-        // A composicao pode ser feita ja no espaco da Unity porque a troca de
-        // eixo e uma conjugacao: M(R1*R2)M-1 = (M R1 M-1)(M R2 M-1).
-        private void CalculaBindPose(JArray bodies)
+        // Ja foi calculada aqui, compondo `body_pos`/`body_quat` da arvore de
+        // corpos, e estava ERRADA: essa arvore e a cinematica com as juntas em
+        // ZERO, e as 73 qpos do modelo sao todas nao-nulas (postura de pe).
+        // Compor ignorando as juntas erra ate 1,77 mm numa mosca de 2,7 mm --
+        // as pernas descem coladas na linha media, e a mosca aparece
+        // desmontada. Isso apareceu no render, nao nos numeros: a cadeia
+        // coxa > femur > tibia > tarso continuava descendo e simetrica, entao
+        // as verificacoes numericas passavam.
+        //
+        // Sendo MUNDO, e a mesma grandeza que a telemetria manda: a pose de
+        // repouso e a pose viva percorrem o mesmo caminho de codigo.
+        private void LeBindPose(JObject repouso)
         {
-            if (bodies == null) return;
-            int n = bodies.Count;
-            var pos = new Vector3[n];
-            var rot = new Quaternion[n];
+            if (repouso == null) return;
+            var segs = repouso["segments"] as JArray;
+            var pos = repouso["pos"] as JArray;
+            var quat = repouso["quat_wxyz"] as JArray;
+            if (segs == null || pos == null || quat == null) return;
+
+            int n = Mathf.Min(segs.Count, Mathf.Min(pos.Count, quat.Count));
             for (int i = 0; i < n; i++)
             {
-                var b = bodies[i];
-                int pai = (int)b["parent"];
-                var lp = MujocoFrame.Pos(Tres(b["pos"]));
-                var lr = MujocoFrame.Quat(Quatro(b["quat_wxyz"]));
-                if (i == 0 || pai == i || pai >= i)   // world, ou raiz da arvore
-                {
-                    pos[i] = lp; rot[i] = lr;
-                }
-                else
-                {
-                    rot[i] = rot[pai] * lr;
-                    pos[i] = pos[pai] + rot[pai] * lp;
-                }
-                if (_porNome.TryGetValue(Normaliza((string)b["name"]), out var seg))
-                {
-                    seg.bindPos = pos[i] * escala;
-                    seg.bindRot = rot[i];
-                }
+                if (!_porNome.TryGetValue(Normaliza((string)segs[i]), out var seg))
+                    continue;
+                seg.bindPos = MujocoFrame.Pos(Tres(pos[i])) * escala;
+                seg.bindRot = MujocoFrame.Quat(Quatro(quat[i]));
             }
         }
 
