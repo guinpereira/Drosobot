@@ -32,6 +32,7 @@ from .compute.opencl import dispositivos  # noqa: F401
 from .engine import NeuralEngine  # noqa: F401
 from .model import (  # noqa: F401
     Coeficientes, Conectoma, Estado, DT_MS, ESCALA, T_DELAY, T_REF,
+    pico_convergente_mV, verifica_escala,
     TAU_M, TAU_S, V_RESET, V_REST, V_TH, W_SYN_MV,
 )
 

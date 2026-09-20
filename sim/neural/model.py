@@ -58,6 +58,53 @@ W_SYN_MV = 0.275
 # neuronios. 16384 derruba isso 16x e ainda deixa folga de 4x contra overflow.
 ESCALA = 16384.0
 
+# int32 e o que os atomicos da GPU somam. O teto e este, nao o do Python.
+INT32_MAX = 2_147_483_647
+
+
+def pico_convergente_mV(c) -> float:
+    """
+    Maior soma de |peso| que pode chegar num alvo num unico passo.
+
+    E o pior caso REAL do conectoma carregado, nao o numero da tabela acima: se
+    um dia o dataset mudar -- mais arestas, pesos maiores, outro filtro -- a
+    conta que justifica a escala muda junto, e ninguem vai lembrar de refazer a
+    tabela. Medir custa uma passada de bincount sobre as arestas.
+
+    Pior caso de verdade seria todos os pre-sinapticos de um alvo disparando no
+    mesmo passo. Nao acontece na pratica, e exatamente por isso serve de teto.
+    """
+    import numpy as np
+
+    if len(c.targets) == 0:
+        return 0.0
+    soma = np.bincount(c.targets.astype(np.int64),
+                       weights=np.abs(c.weights.astype(np.float64)),
+                       minlength=c.n)
+    return float(soma.max())
+
+
+def verifica_escala(c, escala: float = ESCALA) -> dict:
+    """
+    Confere a escala de ponto fixo contra o conectoma que ESTA carregado.
+
+    Levanta se estourar. Nao e paranoia: overflow de int32 num atomico nao da
+    erro, da a volta -- uma inibicao enorme vira excitacao enorme, e o
+    resultado sai plausivel e errado. E o tipo de bug que so aparece como
+    "comportamento estranho" meses depois.
+    """
+    pico = pico_convergente_mV(c)
+    usado = pico * escala
+    folga = INT32_MAX / usado if usado > 0 else float("inf")
+    if usado >= INT32_MAX:
+        raise OverflowError(
+            f"escala {escala:.0f} estoura int32 neste conectoma: pico "
+            f"convergente {pico:.1f} mV x {escala:.0f} = {usado:.3e} >= "
+            f"{INT32_MAX:.3e}. Baixar a escala perde precisao no limiar; "
+            "trocar o acumulador por int64 custa banda. Decidir, nao ignorar.")
+    return {"pico_convergente_mV": pico, "escala": escala,
+            "pico_em_fixo": usado, "folga_x": folga}
+
 
 @dataclass
 class Coeficientes:

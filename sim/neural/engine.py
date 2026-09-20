@@ -40,7 +40,7 @@ import numpy as np
 
 from .compute.base import BackendIndisponivel
 from .compute.cpu import CPUBackend
-from .model import DT_MS, Coeficientes, Conectoma, Estado
+from .model import DT_MS, Coeficientes, Conectoma, Estado, verifica_escala
 
 
 def _constroi_backend(nome: str, preferir_gpu: bool = True):
@@ -86,6 +86,9 @@ class NeuralEngine:
         self.dt = dt_ms
         self.grupos = grupos
         self.nomes_grupos = nomes_grupos or []
+        # Antes de subir nada pra GPU: a escala de ponto fixo tem que caber
+        # no int32 DESTE conectoma. Levanta se nao couber.
+        self.escala = verifica_escala(conectoma)
         self.backend = _constroi_backend(backend, preferir_gpu)
         self.backend.prepara(conectoma, self.coef, grupos)
         self.cursor = 0

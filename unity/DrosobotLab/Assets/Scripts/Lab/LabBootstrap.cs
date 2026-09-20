@@ -460,7 +460,15 @@ namespace Drosobot.Lab
                         _gfTopInib.Clear();
                         if (gg["top_inib"] is JArray ti)
                             foreach (var e in ti)
-                                _gfTopInib.Add($"{(long)e["body_id"]}  {(float)e["mV"]:F1} mV");
+                            {
+                                // O runtime manda o TIPO quando conhece o
+                                // bodyId (GNG300, SAD073...). Quando nao
+                                // conhece, o proprio bodyId e o rotulo -- o
+                                // numero do gate e o mesmo nos dois casos.
+                                string rot = e["type"] != null
+                                    ? (string)e["type"] : ((long)e["body_id"]).ToString();
+                                _gfTopInib.Add($"{rot,-10} {(float)e["mV"],7:F1} mV");
+                            }
                     }
                     break;
 
@@ -907,9 +915,14 @@ namespace Drosobot.Lab
 
             string Le(string k) => _runtime.TryGetValue(k, out var v) ? v : "-";
             _pRuntime.Texto($"OS       {Le("os")}", _mono);
+            if (_runtime.ContainsKey("cpu"))
+                _pRuntime.Texto($"CPU      {Le("cpu")}", _mono);
             _pRuntime.Texto($"Physics  {Le("physics_backend")}", _mono);
+            if (_runtime.ContainsKey("collision_pairs"))
+                _pRuntime.Texto($"         {Le("collision_pairs")} pares de colisao "
+                                + $"({Le("collision_set")})", _mono);
             _pRuntime.Texto($"Neural   {Le("neural_backend")}", _mono);
-            _pRuntime.Texto($"Device   {Le("neural_device")}", _mono);
+            _pRuntime.Texto($"GPU      {Le("neural_device")}", _mono);
 
             // SIMULADO e MODELADO sao coisas diferentes e ficam separados de
             // proposito: o conectoma inteiro participar da dinamica nao quer
@@ -927,7 +940,16 @@ namespace Drosobot.Lab
             if (_runtime.ContainsKey("neurons_simulated"))
             {
                 _pRuntime.Espacador();
-                _pRuntime.Texto($"Neurons  {Le("neurons_simulated")}", _mono);
+                _pRuntime.Texto($"Neurons  {Le("neurons_simulated")}  simulados", _mono,
+                                ProvenanceUtil.Color(Provenance.Data));
+                // Simulado e visualizado sao numeros DIFERENTES. Quantas
+                // morfologias existem e propriedade do asset carregado aqui,
+                // nao do runtime -- por isso o numero vem do BrainActivity e
+                // nao da telemetria. Somar os dois nao significa nada.
+                if (_brain != null && _brain.mappedNeurons > 0)
+                    _pRuntime.Texto($"         {_brain.mappedNeurons}  com morfologia "
+                                    + "individual na tela", _mono,
+                                    ProvenanceUtil.Color(Provenance.Model));
                 _pRuntime.Texto($"Edges    {Le("edges_simulated")}", _mono);
                 _pRuntime.Texto($"VRAM     {Le("vram_mib")} MiB", _mono);
             }
