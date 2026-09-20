@@ -23,6 +23,15 @@ Para retomar:
 | 9 | Commits + push | **feito** |
 | 10 | Relatório final | **feito** |
 
+## Rodada seguinte (20/09, tarde): Unity ao vivo + gargalo físico
+
+| | estado |
+|---|---|
+| sessão Unity validada visualmente, com correções | **feito** — 4 sessões, 5 defeitos corrigidos |
+| contagem do CNS consolidada | **feito** — `docs/CONNECTOME_COUNTS.md` |
+| gargalo físico medido e decomposto | **feito** — `docs/research/PHYSICS_OVERHEAD.md` |
+| otimização segura aplicada | **feito** — RTF 0,055× → 0,113×, bit a bit idêntico |
+
 ## O que ficou pendente, e por quê
 
 - **Vulkan.** Decisão registrada em `docs/research/VULKAN_STRATEGY.md`: não
