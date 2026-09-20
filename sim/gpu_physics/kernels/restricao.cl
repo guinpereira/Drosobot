@@ -514,4 +514,57 @@ __kernel void adesao_projeta(
 }
 
 
+// ------------------------------------------------- forca por segmento
+//
+// `mj_contactForce` + `mju_decodePyramid` + a reducao que o controlador de
+// marcha faz em `get_bodysegment_contact_forces`.
+//
+// Existe na GPU para que o controlador NAO precise ler de volta o estado de
+// restricao inteiro por passo. Ele quer 30 segmentos x 3 componentes: 90
+// numeros, contra `efc_force` + `efc_J` + a tabela de contatos.
+//
+// Uma thread por SEGMENTO, varrendo os contatos. Ao contrario de uma thread
+// por contato, nao ha corrida: cada segmento acumula so no proprio lugar. Sao
+// poucas dezenas de contatos, entao a varredura e barata.
+__kernel void forcas_segmentos(
+    const int nseg, __global const int* ncon,
+    __global const int* con_geom, __global const int* con_efcadr,
+    __global const int* con_pair, __global const real* pair_friction,
+    __global const real* con_frame, __global const real* efc_force,
+    __global const int* geom_saida, __global const int* geom_chao,
+    const int so_chao, __global real* forcas)
+{
+    int s = get_global_id(0);
+    if (s >= nseg) return;
+    real acc[3] = {REAL_ZERO, REAL_ZERO, REAL_ZERO};
+    for (int c = 0; c < ncon[0]; ++c) {
+        int base = con_efcadr[c];
+        if (base < 0) continue;                  // contato excluido
+        int g1 = con_geom[2*c], g2 = con_geom[2*c+1];
+        int s1 = geom_saida[g1], s2 = geom_saida[g2];
+        if (s1 != s && s2 != s) continue;
+        if (so_chao) {
+            int ok = (s1 >= 0 && geom_chao[g2]) || (s2 >= 0 && geom_chao[g1]);
+            if (!ok) continue;
+        }
+        // `mju_decodePyramid` com dim = 3: normal e a soma das quatro, e cada
+        // tangente e a diferenca do par vezes o atrito daquela direcao
+        int p = con_pair[c];
+        real f0 = efc_force[base], f1 = efc_force[base+1];
+        real f2 = efc_force[base+2], f3 = efc_force[base+3];
+        real w[3];
+        w[0] = f0 + f1 + f2 + f3;
+        w[1] = (f0 - f1) * pair_friction[5*p];
+        w[2] = (f2 - f3) * pair_friction[5*p+1];
+        // quadro^T * w: do quadro do contato para o mundo
+        __global const real* F = con_frame + 9*c;
+        real fw[3];
+        for (int k = 0; k < 3; ++k)
+            fw[k] = F[k]*w[0] + F[3+k]*w[1] + F[6+k]*w[2];
+        real sinal = (s2 == s) ? REAL_ONE : -REAL_ONE;
+        for (int k = 0; k < 3; ++k) acc[k] += sinal * fw[k];
+    }
+    for (int k = 0; k < 3; ++k) forcas[3*s+k] = acc[k];
+}
+
 #endif  // NV && NEFC_MAX && NCON_MAX

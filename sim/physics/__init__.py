@@ -29,6 +29,9 @@ def cria(nome: str, **kw):
     if alvo == "flygym1":
         from .flygym1 import FlyGym1Adapter
         return FlyGym1Adapter(**kw)
+    if alvo == "drosobot-gpu":
+        from .drosobot_gpu import DrosobotGPUAdapter
+        return DrosobotGPUAdapter(**kw)
     from .flygym2 import FlyGym2Adapter
     return FlyGym2Adapter(**kw)
 

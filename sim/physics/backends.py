@@ -51,19 +51,25 @@ BACKENDS = {
         "referencia": True,
     },
     "drosobot-gpu": {
-        "adaptador": "flygym2",
+        # Monta como o FlyGym 2.x -- e tem que montar, ou a comparacao mediria
+        # dois corpos -- mas o adaptador e proprio: quem integra e ele.
+        "adaptador": "drosobot-gpu",
         "familia": "drosobot-gpu",
         "descricao": ("Drosobot GPU Physics: modelo montado pelo FlyGym 2.x, "
                       "dinamica resolvida por kernels proprios em OpenCL"),
         "referencia": False,
-        # Estagios que hoje rodam de fato na GPU. O resto continua no MuJoCo, e
-        # `cria()` RECUSA montar este backend enquanto for assim -- um nome de
-        # backend no metadata com o MuJoCo integrando por tras seria
-        # exatamente o tipo de dependencia mascarada que este projeto nao pode
-        # ter.
-        "estagios_na_gpu": ("cinematica",),
-        "estagios_no_mujoco": ("inercia", "colisao", "restricoes", "solver",
-                               "atuacao", "integracao"),
+        # O passo inteiro roda nos kernels proprios. O MuJoCo le o MJCF,
+        # compila o mjModel e renderiza a retina -- nenhuma delas e etapa
+        # dinamica.
+        "estagios_na_gpu": ("cinematica", "inercia", "massa", "colisao",
+                            "restricoes", "solver", "atuacao", "adesao",
+                            "integracao"),
+        "estagios_no_mujoco": (),
+        # A recusa deixou de ser do BACKEND e passou a ser do MODELO: o
+        # compilador confere o subconjunto no `reset` e levanta com o nome do
+        # recurso que falta. Assim `flat` e `looming` rodam antes de
+        # cilindro x malha existir, e a arena de obstaculos falha alto.
+        "recusa_por_modelo": True,
     },
 }
 
@@ -99,7 +105,14 @@ def canonico(nome: str) -> str:
 
 
 def adaptador_de(nome: str) -> str:
-    """Qual adaptador monta o modelo para este backend."""
+    """
+    Qual adaptador monta o modelo para este backend.
+
+    A recusa por backend existia enquanto o passo era parcial. Agora ela e por
+    MODELO: quem confere e `gpu_physics.compilador.valida`, no `reset`, e a
+    mensagem nomeia o recurso que falta. Um backend que recusa tudo impediria
+    `flat` e `looming` de rodar so porque `obstaculos` ainda nao roda.
+    """
     n = canonico(nome)
     b = BACKENDS[n]
     faltando = b.get("estagios_no_mujoco")
@@ -110,7 +123,7 @@ def adaptador_de(nome: str) -> str:
             f"{', '.join(faltando)}. Rodar a bateria com este nome gravaria "
             "uma procedencia falsa. Use physics='flygym2-mujoco' e veja "
             "docs/GPU_PHYSICS.md para o estado medido de cada estagio.")
-    return b["adaptador"]
+    return n if n == "drosobot-gpu" else b["adaptador"]
 
 
 def descreve(nome: str) -> dict:
