@@ -1,19 +1,35 @@
-// Cor da mosca na tela.
+// Cor e material da mosca na tela.
 //
-// ## Isto e ASSUMPTION, nao dado
+// ## De onde vem a cor, e o que e nosso
 //
-// O modelo do NeuroMechFly nao traz cor: os 69 geoms tem `rgba` (0,5 0,5 0,5 1)
-// -- cinza uniforme. Tudo que este arquivo faz e aparencia inventada por nos
-// pra que a mosca pareca uma mosca.
+// O modelo que a FISICA roda nao tem cor: os 69 geoms do NeuroMechFly saem do
+// compilador com `rgba` (0,5 0,5 0,5 1) e `matid = -1`. Verificado, nao
+// suposto -- `nmat = 1` no modelo inteiro, e esse material e o `grid` do chao
+// da arena.
 //
-// Por isso existem DOIS esquemas e o Lab diz qual esta ligado. `Modelo` mostra
-// o cinza que o modelo de fato carrega; `Realista` mostra o nosso. Nenhuma cor
-// aqui codifica grandeza nenhuma -- nao ha contato, ativacao nem forca sendo
-// pintada. Se um dia houver, tem que ser em outro canal visual e rotulado como
-// tal, senao vira grafico disfarcado de foto.
+// Os VALORES usados aqui nao sao inventados por nos: sao a paleta do modelo
+// `flybody` que vem no mesmo pacote de assets do FlyGym
+// (`flygym/assets/model/flybody/fruitfly.xml`, Vaxenburg et al.), que e um
+// modelo de Drosophila autorado com material por regiao.
+//
+// A ATRIBUICAO e nossa. O `fruitfly.xml` divide o corpo em outros geoms
+// (`thorax_black`, `head_red`, `wing_left_membrane`...), 28 com material, e nao
+// da pra casar um a um com os nossos 69 segmentos. Entao mapeamos por anatomia,
+// e isso e ASSUMPTION -- fica dito no painel CORPO.
+//
+// Nenhuma cor aqui codifica grandeza. Nao ha contato, ativacao nem forca sendo
+// pintada no corpo. Se um dia houver, tem que ser em outro canal visual e
+// rotulado como tal, senao vira grafico disfarcado de foto.
 //
 // A geometria continua sendo a do modelo compilado que a fisica roda. So o que
 // reflete luz e escolha nossa.
+//
+// ## O que NAO da pra fazer com este modelo
+//
+// Nervuras de asa. No `fruitfly.xml` elas sao um geom separado
+// (`wing_left_brown`) por cima da membrana. No modelo do NeuroMechFly a asa e
+// UMA malha so, sem nervura na geometria e sem UV. Desenhar nervura aqui seria
+// inventar anatomia numa imagem que as pessoas vao ler como o modelo. Fica sem.
 
 using UnityEngine;
 
@@ -21,31 +37,39 @@ namespace Drosobot.Lab
 {
     public enum Aparencia
     {
-        /// <summary>O cinza que o modelo carrega de verdade.</summary>
-        Modelo,
-        /// <summary>Cores inventadas por nos. Sem significado quantitativo.</summary>
+        /// <summary>
+        /// O cinza 0,5 que o modelo carrega de verdade. Serve de neutro pra
+        /// depuracao: sem cor competindo, forma e pose ficam mais legiveis.
+        /// </summary>
+        Clay,
+        /// <summary>Paleta do flybody, atribuida por anatomia.</summary>
         Realista,
     }
 
     public static class FlyAppearance
     {
-        // Cores de referencia: Drosophila melanogaster selvagem. Cuticula
-        // marrom-ambar, olhos vermelhos, asas quase transparentes com leve
-        // iridescencia. Escolhidas a olho, nao medidas.
-        private static readonly Color Cuticula = new Color(0.34f, 0.22f, 0.11f);
-        private static readonly Color Torax = new Color(0.42f, 0.29f, 0.16f);
-        private static readonly Color Abdomen = new Color(0.26f, 0.17f, 0.09f);
-        private static readonly Color Olho = new Color(0.62f, 0.09f, 0.06f);
-        private static readonly Color Asa = new Color(0.80f, 0.84f, 0.88f, 0.22f);
-        private static readonly Color Haltere = new Color(0.72f, 0.62f, 0.30f);
-        private static readonly Color Perna = new Color(0.45f, 0.33f, 0.18f);
-        private static readonly Color Tarso = new Color(0.30f, 0.22f, 0.12f);
+        // ------------------------------------------------- paleta do flybody
+        //
+        // Copiada de flygym/assets/model/flybody/fruitfly.xml. Os nomes sao os
+        // de la, de proposito, pra dar pra conferir linha a linha.
+        private static readonly Color Body = Rgb(0.674f, 0.350f, 0.143f);
+        private static readonly Color Lower = Rgb(0.799f, 0.610f, 0.386f);
+        private static readonly Color Brown = Rgb(0.202f, 0.0782f, 0.0262f);
+        private static readonly Color Bristle = Rgb(0.06f, 0.04f, 0.03f);
+        private static readonly Color Membrana = new Color(0.539f, 0.686f, 0.800f, 0.30f);
         private static readonly Color Neutro = new Color(0.5f, 0.5f, 0.5f);
+
+        // O `red` do flybody e (0,8 0,028 0,0015): saturado demais, fica neon
+        // no fundo escuro do Lab. Escurecido pra vinho, 45% na direcao do
+        // `brown` da mesma paleta. Este ajuste e nosso.
+        private static readonly Color Olho =
+            Color.Lerp(Rgb(0.800f, 0.0279f, 0.00154f), Rgb(0.202f, 0.0782f, 0.0262f), 0.45f);
+
+        private static Color Rgb(float r, float g, float b) => new Color(r, g, b, 1f);
 
         /// <summary>
         /// Em que categoria visual cai um segmento. Publico pra que quem pinta
-        /// possa reusar UM material por categoria em vez de um por segmento:
-        /// sao 68 segmentos e oito categorias.
+        /// reuse UM material por categoria em vez de um por segmento.
         /// </summary>
         public static string Categoria(string segmento)
         {
@@ -53,12 +77,26 @@ namespace Drosobot.Lab
             if (s.Contains("eye")) return "olho";
             if (s.Contains("wing")) return "asa";
             if (s.Contains("haltere")) return "haltere";
-            if (s.Contains("tarsus") || s.Contains("arista")) return "tarso";
+            // arista, cerdas e antenas: finas, escuras e foscas
+            if (s.Contains("arista") || s.Contains("pedicel") || s.Contains("funiculus"))
+                return "cerda";
+            if (s.Contains("tarsus")) return "tarso";
             if (s.Contains("coxa") || s.Contains("femur") || s.Contains("tibia"))
                 return "perna";
-            if (s.Contains("abdomen")) return "abdomen";
+            // o abdomen tem banda: cada segmento e um corpo separado no modelo,
+            // entao a faixa sai da GEOMETRIA, nao de textura pintada
+            if (s.Contains("abdomen")) return "abdomen" + Segmento(s);
             if (s.Contains("thorax")) return "torax";
             return "cuticula";
+        }
+
+        // c_abdomen12 -> 2, c_abdomen3 -> 3 ... o ultimo digito basta e e o
+        // indice antero-posterior do terguito
+        private static string Segmento(string s)
+        {
+            for (int i = s.Length - 1; i >= 0; i--)
+                if (char.IsDigit(s[i])) return s[i].ToString();
+            return "2";
         }
 
         /// <summary>Material pra um segmento, pelo nome dele.</summary>
@@ -66,60 +104,76 @@ namespace Drosobot.Lab
         {
             var sh = Shader.Find("Standard") ?? Shader.Find("Diffuse");
             var m = new Material(sh);
+            m.SetFloat("_Metallic", 0f);      // cuticula nao e metal em lugar nenhum
 
-            if (modo == Aparencia.Modelo)
+            if (modo == Aparencia.Clay)
             {
-                m.color = Neutro;
-                m.SetFloat("_Glossiness", 0.1f);
+                Ajusta(m, Neutro, 0.12f);
                 return m;
             }
 
-            string s = Categoria(segmento);
-            if (s == "olho")
+            string cat = Categoria(segmento);
+
+            if (cat == "olho")
             {
-                // olho composto: liso e brilhante, e o que mais denuncia uma
-                // mosca de verdade numa imagem
-                m.color = Olho;
-                m.SetFloat("_Glossiness", 0.75f);
-                m.SetFloat("_Metallic", 0.10f);
+                // olho composto: liso, um pouco mais brilhante que a cuticula.
+                // E o que mais denuncia uma mosca de verdade numa imagem.
+                Ajusta(m, Olho, 0.55f);
             }
-            else if (s == "asa")
+            else if (cat == "asa")
             {
-                m.color = Asa;
-                m.SetFloat("_Glossiness", 0.85f);
+                // membrana: quase transparente e com brilho especular alto, que
+                // e o que da a leitura de "fina" sem nervura nenhuma
+                Ajusta(m, Membrana, 0.80f);
                 Transparente(m);
             }
-            else if (s == "haltere")
+            else if (cat == "haltere")
             {
-                m.color = Haltere;
-                m.SetFloat("_Glossiness", 0.35f);
+                Ajusta(m, Lower, 0.35f);
             }
-            else if (s == "tarso")
+            else if (cat == "cerda")
             {
-                m.color = Tarso;
-                m.SetFloat("_Glossiness", 0.25f);
+                Ajusta(m, Bristle, 0.10f);   // fosca de proposito
             }
-            else if (s == "perna")
+            else if (cat == "tarso")
             {
-                m.color = Perna;
-                m.SetFloat("_Glossiness", 0.32f);
+                // extremidade mais escura: e assim na mosca e ajuda a leitura
+                // de onde a perna termina contra o chao escuro
+                Ajusta(m, Color.Lerp(Body, Brown, 0.55f), 0.30f);
             }
-            else if (s == "abdomen")
+            else if (cat == "perna")
             {
-                m.color = Abdomen;
-                m.SetFloat("_Glossiness", 0.28f);
+                Ajusta(m, Color.Lerp(Body, Brown, 0.25f), 0.28f);
             }
-            else if (s == "torax")
+            else if (cat.StartsWith("abdomen"))
             {
-                m.color = Torax;
-                m.SetFloat("_Glossiness", 0.38f);
+                // Banda do abdomen. Cada terguito escurece em direcao ao
+                // posterior, do `lower` ao `brown` da paleta. Os limites das
+                // faixas sao as juntas reais entre os corpos do modelo.
+                int i = cat.Length > 7 ? cat[7] - '0' : 2;
+                float t = Mathf.InverseLerp(2f, 6f, i);
+                Ajusta(m, Color.Lerp(Lower, Color.Lerp(Body, Brown, 0.5f), t), 0.30f);
+            }
+            else if (cat == "torax")
+            {
+                // torax um tom mais quente que o resto
+                Ajusta(m, Color.Lerp(Body, Lower, 0.25f), 0.38f);
             }
             else
             {
-                m.color = Cuticula;      // cabeca, rostro, antenas, o resto
-                m.SetFloat("_Glossiness", 0.30f);
+                Ajusta(m, Body, 0.30f);      // cabeca, rostro, o resto
             }
             return m;
+        }
+
+        private static void Ajusta(Material m, Color cor, float lisura)
+        {
+            m.color = cor;
+            // `_Glossiness` no Standard do Built-in, `_Smoothness` no URP: os
+            // dois sao setados porque o projeto ja rodou nos dois pipelines e
+            // setar a propriedade que nao existe e inofensivo.
+            m.SetFloat("_Glossiness", lisura);
+            m.SetFloat("_Smoothness", lisura);
         }
 
         // Transparencia no Standard do Built-in nao sai so mudando _Mode:
@@ -135,6 +189,40 @@ namespace Drosobot.Lab
             m.EnableKeyword("_ALPHABLEND_ON");
             m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        }
+
+        /// <summary>
+        /// Tres luzes pra ler um corpo pequeno e escuro contra fundo escuro:
+        /// principal quente, preenchimento frio e fraco pra sombra nao fechar,
+        /// e contraluz que separa a silhueta do fundo. Direcionais -- nao ha
+        /// custo por pixel de sombra, o corpo nem projeta sombra.
+        /// </summary>
+        public static void Ilumina(Transform pai)
+        {
+            // Intensidades baixas de proposito. Com key 1,15 + fill 0,42 +
+            // rim 0,70 e ambiente trilight a cuticula estourava: a mosca lia
+            // como pessego claro em vez do ambar da paleta. A soma aqui fica
+            // perto de 1,2 pra que a cor na tela seja a cor do material.
+            Luz(pai, "Key", new Color(1.00f, 0.96f, 0.90f), 0.80f, 38f, 40f);
+            Luz(pai, "Fill", new Color(0.62f, 0.72f, 0.90f), 0.22f, 12f, -120f);
+            Luz(pai, "Rim", new Color(0.80f, 0.88f, 1.00f), 0.45f, -8f, 190f);
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.13f, 0.14f, 0.17f);
+            RenderSettings.ambientEquatorColor = new Color(0.09f, 0.09f, 0.10f);
+            RenderSettings.ambientGroundColor = new Color(0.05f, 0.04f, 0.04f);
+        }
+
+        private static void Luz(Transform pai, string nome, Color cor,
+                                float intensidade, float pitch, float yaw)
+        {
+            var go = new GameObject(nome);
+            if (pai != null) go.transform.SetParent(pai, false);
+            var l = go.AddComponent<Light>();
+            l.type = LightType.Directional;
+            l.color = cor;
+            l.intensity = intensidade;
+            l.shadows = LightShadows.None;
+            go.transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
         }
     }
 }

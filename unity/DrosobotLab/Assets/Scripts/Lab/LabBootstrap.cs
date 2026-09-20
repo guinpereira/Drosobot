@@ -170,12 +170,10 @@ namespace Drosobot.Lab
             // duas vezes -- uma na caixa e outra por cima da arena
             _camBrain.cullingMask &= ~(1 << CAMADA_CNS);
 
-            var luzGo = new GameObject("KeyLight");
-            var luz = luzGo.AddComponent<Light>();
-            luz.type = LightType.Directional;
-            luz.intensity = 0.55f;
-            luz.color = new Color(0.85f, 0.88f, 1f);
-            luzGo.transform.rotation = Quaternion.Euler(45f, 35f, 0f);
+            // Tres luzes: a mosca tem 3 mm, e escura e fica num fundo escuro.
+            // Com uma luz so ela virava silhueta. Ver FlyAppearance.Ilumina.
+            var luzGo = new GameObject("Luzes");
+            FlyAppearance.Ilumina(luzGo.transform);
 
             // A mosca de verdade: malhas do NeuroMechFly exportadas do modelo
             // COMPILADO que a fisica roda (tools/export_fly_mesh.py). Se elas
@@ -806,16 +804,16 @@ namespace Drosobot.Lab
                     GUI.color = (int)_mosca.aparencia == i
                         ? new Color(0.45f, 0.80f, 1.00f)
                         : new Color(0.78f, 0.80f, 0.84f);
-                    if (GUI.Button(b, i == 0 ? "Cor do modelo" : "Cor realista"))
+                    if (GUI.Button(b, i == 0 ? "Clay" : "Realista"))
                         _mosca.aparencia = (Aparencia)i;
                     GUI.color = antes;
                 }
             });
-            _pCorpo.Texto(_mosca.aparencia == Aparencia.Modelo
+            _pCorpo.Texto(_mosca.aparencia == Aparencia.Clay
                     ? "  cinza 0,5 -- a unica cor que o modelo carrega"
-                    : "  cor inventada por nos; nao codifica grandeza nenhuma",
+                    : "  paleta do flybody; atribuicao por anatomia e nossa",
                 _mono,
-                ProvenanceUtil.Color(_mosca.aparencia == Aparencia.Modelo
+                ProvenanceUtil.Color(_mosca.aparencia == Aparencia.Clay
                                      ? Provenance.Data : Provenance.Assumption));
             _pCorpo.Texto($"{_mosca.segmentosMontados} segmentos   " +
                           $"{_mosca.segmentosRecebidos} na pose", _mono);

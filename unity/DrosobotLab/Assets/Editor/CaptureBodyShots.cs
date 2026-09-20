@@ -39,13 +39,9 @@ namespace Drosobot.EditorTools
                 return;
             }
 
-            var luzGo = new GameObject("Key");
-            var luz = luzGo.AddComponent<Light>();
-            luz.type = LightType.Directional;
-            luz.intensity = 1.1f;
-            luzGo.transform.rotation = Quaternion.Euler(38f, 40f, 0f);
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.30f, 0.32f, 0.36f);
+            // mesma iluminacao do Lab, pra que a referencia e a tela batam
+            var luzGo = new GameObject("Luzes");
+            FlyAppearance.Ilumina(luzGo.transform);
 
             var camGo = new GameObject("CaptureCam");
             var cam = camGo.AddComponent<Camera>();
@@ -80,6 +76,15 @@ namespace Drosobot.EditorTools
 
             // Mesmos angulos dos presets do Lab (OrbitCamera.Aponta), pra que a
             // imagem de referencia e o que se ve na tela sejam a mesma coisa.
+            // Os DOIS esquemas de cor: o clay serve de referencia neutra e e o
+            // "antes" na comparacao.
+            mosca.aparencia = Aparencia.Clay;
+            mosca.AplicaAparencia();
+            Tira(cam, mosca, b, -40f, 22f, "fly_clay_perspectiva");
+            Tira(cam, mosca, b, 0f, 0f, "fly_clay_lateral");
+
+            mosca.aparencia = Aparencia.Realista;
+            mosca.AplicaAparencia();
             Tira(cam, mosca, b, -40f, 22f, "fly_bindpose_perspectiva");
             Tira(cam, mosca, b, 0f, 0f, "fly_bindpose_lateral");
             Tira(cam, mosca, b, 0f, 89f, "fly_bindpose_topo");

@@ -200,12 +200,27 @@ inventada — é a mesma superfície que a física usa, só sombreada direito.
 
 ### Cor é outra coisa
 
-O modelo **não traz cor**: os 69 geoms têm `rgba` (0,5 0,5 0,5 1), cinza
-uniforme. O esquema realista das imagens (cutícula âmbar, olhos vermelhos, asas
-translúcidas) é invenção nossa, mora em `FlyAppearance.cs` e está marcado como
-ASSUMPTION no painel CORPO, que também tem o botão pra voltar ao cinza do
-modelo. Nenhuma dessas cores codifica grandeza: não há contato, ativação nem
-força sendo pintada no corpo.
+O modelo que a física roda **não traz cor**: os 69 geoms têm `rgba`
+(0,5 0,5 0,5 1) e `matid = -1` — o modelo inteiro tem `nmat = 1`, e esse
+material é o `grid` do chão da arena.
+
+Os valores usados em `FlyAppearance.cs` não são inventados: são a paleta do
+modelo `flybody` que vem no mesmo pacote de assets do FlyGym
+(`flygym/assets/model/flybody/fruitfly.xml`), autorada com material por região —
+`body`, `lower`, `brown`, `membrane`, `red`, `bristle-brown`.
+
+A **atribuição** é nossa e é ASSUMPTION: o `fruitfly.xml` divide o corpo em
+outros geoms (28 com material) e não casa um a um com os nossos 68 segmentos,
+então o mapeamento é por anatomia. O painel CORPO diz qual esquema está ligado e
+com que procedência, e tem `[Clay]` pra voltar ao cinza do modelo.
+
+Nenhuma dessas cores codifica grandeza: não há contato, ativação nem força sendo
+pintada no corpo.
+
+Nervuras de asa não foram feitas. No `fruitfly.xml` elas são um geom separado
+por cima da membrana; no modelo do NeuroMechFly a asa é uma malha só, sem
+nervura na geometria e sem UV. Desenhá-las seria inventar anatomia numa imagem
+que as pessoas vão ler como sendo o modelo.
 
 ## Eixos desenhados no modo Eixos
 

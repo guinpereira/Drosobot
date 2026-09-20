@@ -60,7 +60,7 @@ namespace Drosobot.Lab
         [Tooltip("Comprimento dos eixos locais no modo Eixos, em mm.")]
         public float tamanhoEixo = 0.35f;
         [Tooltip("Esquema de cor. O modelo NAO traz cor -- os 69 geoms sao " +
-                 "cinza 0,5. `Realista` e invencao nossa; ver FlyAppearance.cs.")]
+                 "cinza 0,5. Ver FlyAppearance.cs.")]
         public Aparencia aparencia = Aparencia.Realista;
 
         private class Seg
