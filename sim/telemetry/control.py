@@ -43,6 +43,9 @@ COMANDOS = ("list", "select", "start", "pause", "resume", "reset", "stop", "quit
 class ServidorControle:
     """Recebe comandos e os enfileira. Quem consome e o laco da simulacao."""
 
+    # quem roda sem interface precisa saber que nao adianta esperar comando
+    ativo = True
+
     def __init__(self, host: str = "127.0.0.1", porta: int = 8766):
         self.host = host
         self.porta = porta
@@ -160,6 +163,8 @@ class ServidorControle:
 
 class SemControle:
     """Objeto nulo, pra rodar sem interface."""
+
+    ativo = False
 
     def proximo(self):
         return None

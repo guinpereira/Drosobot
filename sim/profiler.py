@@ -56,6 +56,7 @@ class Profiler:
         self.unidade: dict[str, str] = {}
         self.sim_ms = 0.0
         self._t0 = time.perf_counter()
+        self._pausa_em: float | None = None
 
     @contextmanager
     def __call__(self, etapa: str, unidade: str = "chamada"):
@@ -76,6 +77,24 @@ class Profiler:
 
     def avanca_sim(self, ms: float) -> None:
         self.sim_ms += ms
+
+    def pausa(self) -> None:
+        """Marca o inicio de um intervalo em que nada sera simulado."""
+        if self._pausa_em is None:
+            self._pausa_em = time.perf_counter()
+
+    def retoma(self) -> None:
+        """
+        Empurra o t0 pela duracao da pausa.
+
+        Sem isto, pausar pela interface por trinta segundos faz o RTF despencar
+        e parece que a simulacao ficou lenta -- quando na verdade ela estava
+        parada a pedido. O tempo parado nao e tempo de calculo e nao pode
+        entrar no denominador.
+        """
+        if self._pausa_em is not None:
+            self._t0 += time.perf_counter() - self._pausa_em
+            self._pausa_em = None
 
     # ------------------------------------------------------------ numeros
 

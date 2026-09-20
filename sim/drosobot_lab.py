@@ -1,10 +1,12 @@
 """
 Drosobot Lab: um comando, o laboratorio inteiro.
 
-    python sim/drosobot_lab.py --physics flygym2 --neural opencl --cns whole \\
-                               --experiment looming --telemetry
-    python sim/drosobot_lab.py --physics flygym1 --cns circuit --telemetry
-    python sim/drosobot_lab.py --info
+    .venv-flygym2\\Scripts\\python sim\\drosobot_lab.py ^
+        --physics flygym2 --neural opencl --cns whole ^
+        --experiment looming --telemetry --duracao 600
+
+    python sim/drosobot_lab.py --info          # so imprime o que seria montado
+    python sim/drosobot_lab.py --lista         # catalogo de experimentos
 
     PhysicsAdapter          <- autoridade da fisica (FlyGym 1 ou 2 / MuJoCo)
         SensorFrame
@@ -18,10 +20,20 @@ Drosobot Lab: um comando, o laboratorio inteiro.
         (repete)
 
         e em paralelo: telemetria -> Unity Drosobot Lab
+                       controle   <- Unity Drosobot Lab
 
 Este arquivo NAO conhece a API do FlyGym. Toda a fisica passa por
 `sim/physics/`, e todo o cerebro por `sim/neural/`. Trocar de simulador ou de
 backend de GPU nao mexe aqui.
+
+## Quem manda em que
+
+    MuJoCo / FlyGym    fisica. Posicao, contato, retina saem do SensorFrame.
+    conectoma          comportamento. O drive motor sai de spike, sempre.
+    controle (Unity)   qual experimento, com que semente, e quando comeca.
+
+A terceira linha nao encosta nas outras duas: nao existe comando que altere
+peso, limiar, entrada ou drive. Ver `sim/telemetry/control.py`.
 
 ## ESCOPO -- a distincao que nunca pode sumir
 
@@ -43,12 +55,14 @@ voltar -- no conectoma inteiro os inibitorios tem fonte de verdade.
 
 v, g, refratario e o anel ficam na GPU. A CPU le, por janela: a saida motora, os
 papeis declarados, o balanco no Giant Fiber e a atividade agregada por
-populacao.
+populacao. O conectoma inteiro nunca volta pra CPU.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import platform
 import sys
 import time
 from pathlib import Path
@@ -62,6 +76,7 @@ sys.path.insert(0, str(AQUI))
 from profiler import Profiler  # noqa: E402
 
 PAPEIS_JSON = RAIZ / "connectome" / "gf_roles.json"
+PROPRIEDADES_CSV = RAIZ / "connectome" / "neuron_properties.csv"
 
 # transducao retina -> taxa: escolha NOSSA (ASSUMPTION), nao esta no conectoma
 DARK_THRESHOLD = 0.4
@@ -73,10 +88,40 @@ DT = 1e-4
 BASE_DRIVE, ESCAPE_DRIVE, ESCAPE_MS = 1.0, -0.5, 120.0
 # pose vai na cadencia da VISUALIZACAO, nao na da fisica
 POSE_HZ = 30
+# a retina sao 1442 floats: a mensagem mais cara, entao vai a cada N janelas
+RETINA_A_CADA = 5
 # Aviso de limitacao do modelo. O LIF de Shiu et al. nao tem potencial de
 # reversao inibitorio, entao inibicao convergente forte leva v a valores nao
 # fisiologicos. NAO ha clamp: o valor vai como veio, e o aviso e so registro.
 V_AVISO_MV = -150.0
+
+# Catalogo do que ESTE runtime sabe rodar. E o que vai pro seletor da Unity.
+# Nao ha entrada aqui sem implementacao atras -- prometer experimento que nao
+# roda e pior que nao oferecer.
+CATALOGO = [
+    {
+        "id": "looming_whole",
+        "name": "Looming -- Male CNS inteiro",
+        "description": ("Esfera se aproximando. LC4/LPLC2 recebem Poisson pela "
+                        "retina, o conectoma inteiro propaga, o TTMn decide a "
+                        "fuga. 164.451 neuronios na GPU."),
+        "arena": "looming", "cns": "whole",
+    },
+    {
+        "id": "looming_circuit",
+        "name": "Looming -- circuito do Giant Fiber",
+        "description": ("Mesmo estimulo, so o circuito do GF: 1.261 neuronios. "
+                        "E a comparacao que mostra o gate inibitorio."),
+        "arena": "looming", "cns": "circuit",
+    },
+    {
+        "id": "flat_whole",
+        "name": "Marcha livre -- Male CNS inteiro",
+        "description": ("Chao plano, sem estimulo. Linha de base: o que a rede "
+                        "faz sem nada chegando pela retina."),
+        "arena": "flat", "cns": "whole",
+    },
+]
 
 
 def monta_cerebro(escopo: str, backend: str):
@@ -108,6 +153,29 @@ def monta_cerebro(escopo: str, backend: str):
     return eng, papeis, nomes
 
 
+def nomes_por_body_id() -> dict[int, str]:
+    """
+    bodyId -> tipo (`DNp01`, `GNG300`, `SAD073`...).
+
+    So pra ROTULAR o que ja foi medido. O gate e calculado dos pesos e dos
+    spikes; este mapa nunca entra na conta -- se o CSV faltar, o numero
+    continua o mesmo e o rotulo vira o proprio bodyId.
+    """
+    if not PROPRIEDADES_CSV.exists():
+        return {}
+    mapa = {}
+    with PROPRIEDADES_CSV.open(encoding="utf-8", newline="") as f:
+        for linha in csv.DictReader(f):
+            tipo = (linha.get("type") or linha.get("instance") or "").strip()
+            if not tipo:
+                continue
+            try:
+                mapa[int(linha["bodyId"])] = tipo
+            except (KeyError, ValueError):
+                continue
+    return mapa
+
+
 def entradas_do_gf(c, idx_gf):
     """
     Quem entra no Giant Fiber, com peso e sinal.
@@ -132,13 +200,14 @@ def entradas_do_gf(c, idx_gf):
             np.concatenate(peso).astype(np.float32))
 
 
-def mede_gate(eng, idx_gf, gf_pre, gf_peso):
+def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None):
     """
     Balanco de entrada no Giant Fiber neste passo.
 
     Dado real, medido do estado da GPU -- nao animacao decorativa. E o que
-    permite VER o gate acontecer: no circuito o liquido fica positivo e o GF
-    dispara; no conectoma inteiro a inibicao dobra e o liquido troca de sinal.
+    permite VER o gate acontecer: no circuito o liquido fica proximo de zero e
+    o GF dispara; no conectoma inteiro a inibicao multiplica e o liquido troca
+    de sinal.
     """
     if not len(idx_gf):
         return {"exc_mV": 0.0, "inib_mV": 0.0, "liquido_mV": 0.0,
@@ -155,278 +224,577 @@ def mede_gate(eng, idx_gf, gf_pre, gf_peso):
             inib = float(contrib[contrib < 0].sum())
             neg = np.flatnonzero(disp & (gf_peso < 0))
             if len(neg):
-                ordem = neg[np.argsort(gf_peso[neg])][:5]
-                top = [{"body_id": int(eng.c.body_ids[gf_pre[k]]),
-                        "mV": round(float(gf_peso[k]), 2)} for k in ordem]
+                for k in neg[np.argsort(gf_peso[neg])][:5]:
+                    bid = int(eng.c.body_ids[gf_pre[k]])
+                    top.append({"body_id": bid,
+                                "type": (nomes or {}).get(bid, str(bid)),
+                                "mV": round(float(gf_peso[k]), 2)})
     return {"exc_mV": round(exc, 2), "inib_mV": round(inib, 2),
             "liquido_mV": round(exc + inib, 2),
             "v_min_mV": round(float(est_gf.v_mV.min()), 2),
             "spikes_gf": int(est_gf.spike.sum()), "top_inib": top}
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Drosobot Lab")
-    ap.add_argument("--physics", choices=["flygym1", "flygym2"], default="flygym1",
-                    help="flygym2 e o caminho principal; flygym1 e a referencia")
-    ap.add_argument("--neural", default="auto", help="auto | opencl | cpu | d3d12")
-    ap.add_argument("--cns", choices=["whole", "circuit"], default="whole")
-    ap.add_argument("--experiment", choices=["looming", "flat"], default="looming")
-    ap.add_argument("--colisao", choices=["legs", "tarsi", "none"], default="legs",
-                    help="legs = padrao cientifico validado; tarsi = otimizacao "
-                         "por cenario (REPROVOU em curva, ver COLLISION_PAIR_AUDIT)")
-    ap.add_argument("--duracao", type=float, default=2.0)
-    ap.add_argument("--telemetry", action="store_true")
-    ap.add_argument("--porta", type=int, default=8765)
-    ap.add_argument("--info", action="store_true")
-    args = ap.parse_args()
+def dispositivo() -> dict:
+    """
+    Quem esta rodando isto. Vai pra telemetria e pro painel.
 
-    from physics import MotorFrame, cria
-    from telemetry import protocol
-    from telemetry.server import abrir as abrir_telemetria
+    A GPU nao e perguntada aqui: quem sabe o dispositivo de compute e o
+    backend, e ele ja reporta em `engine.resumo()`. Duplicar a deteccao daria
+    duas respostas possiveis pra mesma pergunta.
+    """
+    return {
+        "os": f"{platform.system()} {platform.release()}",
+        "cpu": platform.processor() or platform.machine(),
+        "python": platform.python_version(),
+    }
 
-    print("== Drosobot Lab ==")
-    t0 = time.perf_counter()
-    eng, papeis, nomes_grupos = monta_cerebro(args.cns, args.neural)
-    r = eng.resumo()
-    print(f"  cerebro   {r['neurons_simulated']:,} neuronios, "
-          f"{r['edges_simulated']:,} arestas")
-    print(f"            {r['backend']} em {r['device']}   "
-          f"VRAM {r.get('vram_mib', 0):.1f} MiB   ({time.perf_counter()-t0:.1f} s)")
-    for nome, idx in papeis.items():
-        print(f"            {nome:10s} {len(idx):5d}")
 
-    t0 = time.perf_counter()
-    corpo = cria(args.physics, arena=args.experiment,
-                 self_collisions=args.colisao, timestep=DT, com_visao=True)
-    frame = corpo.reset(seed=0)
-    rc = corpo.resumo()
-    print(f"  corpo     {rc['physics_backend']}, arena={args.experiment}, "
-          f"{rc['collision_pairs']} pares, nv={rc['nv']}   "
-          f"({time.perf_counter()-t0:.1f} s)")
-    print()
-    print(f"  ESCOPO    {'WHOLE CONNECTOME SIMULATED' if args.cns == 'whole' else 'circuito do Giant Fiber'}")
-    print("            NAO e um cerebro funcional completo: so a via de looming")
-    print("            e a motora tem semantica modelada.")
+class Laboratorio:
+    """
+    Estado do laboratorio: idle -> loading -> running <-> paused -> finished.
 
-    idx_gf = papeis.get("DNp01", np.zeros(0, np.int32))
-    gf_pre, gf_peso = entradas_do_gf(eng.c, idx_gf)
-    print(f"  gate      {len(gf_pre)} arestas entram no GF "
-          f"({int((gf_peso > 0).sum())} exc, {int((gf_peso < 0).sum())} inib)")
-    if args.info:
-        corpo.fecha()
-        return
+    O cerebro e montado uma vez POR ESCOPO: ler os CSR do Male CNS e subir
+    25,5M arestas pra GPU leva segundos, e refazer isso a cada troca de
+    experimento tornaria o seletor inutil. Trocar de experimento dentro do
+    mesmo escopo so reseta o estado dinamico. O CORPO e remontado sempre que a
+    arena muda, porque arena diferente e modelo diferente.
+    """
 
-    tel = abrir_telemetria(porta=args.porta, ativo=args.telemetry)
-    _abertura(tel, protocol, eng, corpo, papeis, nomes_grupos, args, gf_peso)
+    def __init__(self, args, tel, ctl, protocol):
+        self.args = args
+        self.tel = tel
+        self.ctl = ctl
+        self.protocol = protocol
+        self.estado = "idle"
+        self.sair = False
+        self.seed = args.seed
+        self.exp_id = None
+        self.corpo = None
+        self.eng = None
+        self.escopo_montado = None
+        self.arena_montada = None
+        self.nomes_tipo = nomes_por_body_id()
+        self.passo_atual = 0
+        self.t_s = 0.0
+        self.escapes = 0
+        self.hz = 0.0
+        self.prof = Profiler(["physics", "vision", "neural", "leitura",
+                              "telemetry"])
 
-    sens = papeis.get("LC4/LPLC2", np.zeros(0, np.int32))
-    motor = papeis.get("TTMn", np.zeros(0, np.int32))
-    taxas = np.zeros(eng.c.n, dtype=np.float64)
-    rng = np.random.default_rng(0)
-    prof = Profiler(["physics", "vision", "neural", "leitura", "telemetry"])
+    # ------------------------------------------------------------- montagem
 
-    escuro_lento = None
-    dark_tau = 0.3 * VISION_HZ
-    drive = np.array([BASE_DRIVE, BASE_DRIVE])
-    escape_ate, escapes = -1.0, 0
-    n_passos = int(args.duracao / DT)
-    # Intervalo em TEMPO, nao em modulo de passo. A pose so pode ser enviada
-    # dentro do ramo da retina (que roda a cada 100 passos), e um
-    # `passo % 333 == 0` quase nunca cai nesses passos -- os dois so coincidem
-    # a cada 33.300, ou seja 3,3 s de mosca. Com intervalo em tempo, sai no
-    # primeiro quadro de retina depois de cada 1/POSE_HZ.
-    intervalo_pose = 1.0 / POSE_HZ
-    proxima_pose = 0.0
-    ultimo_log = time.time()
-    avisou_v = False
+    @staticmethod
+    def item(exp_id):
+        for e in CATALOGO:
+            if e["id"] == exp_id:
+                return e
+        return None
 
-    print(f"\nrodando {args.duracao}s de mosca...")
-    for passo in range(n_passos):
-        t_s = passo * DT
-        corpo.antes_do_passo(t_s)
+    def _cerebro_para(self, escopo: str):
+        """Monta o cerebro do escopo pedido, reaproveitando se ja for esse."""
+        if self.eng is not None and self.escopo_montado == escopo:
+            self.eng.reset()
+            return
+        t0 = time.perf_counter()
+        self.eng, self.papeis, self.nomes_grupos = monta_cerebro(
+            escopo, self.args.neural)
+        self.escopo_montado = escopo
+        self.idx_gf = self.papeis.get("DNp01", np.zeros(0, np.int32))
+        self.gf_pre, self.gf_peso = entradas_do_gf(self.eng.c, self.idx_gf)
+        r = self.eng.resumo()
+        print(f"  cerebro   {r['neurons_simulated']:,} neuronios, "
+              f"{r['edges_simulated']:,} arestas, {r['backend']} em "
+              f"{r['device']}   ({time.perf_counter() - t0:.1f} s)")
 
-        with prof("physics", "passo de fisica"):
-            frame = corpo.passo(MotorFrame(drive=drive))
-        prof.avanca_sim(DT * 1000)
+    def _corpo_para(self, arena: str, seed: int):
+        """Remonta o corpo so quando a arena muda; senao, reset e barato."""
+        from physics import cria
 
+        t0 = time.perf_counter()
+        if self.corpo is not None and self.arena_montada == arena:
+            self.frame = self.corpo.reset(seed=seed)
+            return
+        if self.corpo is not None:
+            self.corpo.fecha()
+        self.corpo = cria(self.args.physics, arena=arena,
+                          self_collisions=self.args.colisao,
+                          timestep=DT, com_visao=True)
+        self.arena_montada = arena
+        self.frame = self.corpo.reset(seed=seed)
+        rc = self.corpo.resumo()
+        print(f"  corpo     {rc['physics_backend']}, arena={arena}, "
+              f"{rc['collision_pairs']} pares, nv={rc['nv']}   "
+              f"({time.perf_counter() - t0:.1f} s)")
+
+    def monta(self, exp_id: str, seed: int) -> bool:
+        item = self.item(exp_id)
+        if item is None:
+            self._falha(f"experimento desconhecido: {exp_id!r}")
+            return False
+        self.estado = "loading"
+        self.exp_id, self.seed = exp_id, seed
+        self._publica_estado(message="montando cerebro, arena e mosca")
+        try:
+            self._cerebro_para(item["cns"])
+            self._corpo_para(item["arena"], seed)
+        except Exception as e:                                # noqa: BLE001
+            self._falha(f"{type(e).__name__}: {e}")
+            return False
+
+        # estado do laco, zerado junto com o experimento
+        self.sens = self.papeis.get("LC4/LPLC2", np.zeros(0, np.int32))
+        self.motor = self.papeis.get("TTMn", np.zeros(0, np.int32))
+        self.taxas = np.zeros(self.eng.c.n, dtype=np.float64)
+        # Semente do EXPERIMENTO, nao semente global: a realizacao de Poisson
+        # tem que ser reproduzivel por corrida pra que duas corridas com a
+        # mesma semente sejam comparaveis.
+        self.rng = np.random.default_rng(seed)
+        self.escuro_lento = None
+        self.drive = np.array([BASE_DRIVE, BASE_DRIVE])
+        self.escape_ate, self.escapes = -1.0, 0
+        self.passo_atual, self.t_s = 0, 0.0
+        self.hz, self.janelas = 0.0, 0
+        self.proxima_pose = 0.0
+        self.avisou_v = False
+        self.prof = Profiler(["physics", "vision", "neural", "leitura",
+                              "telemetry"])
+        self._abertura()
+        self.estado = "running"
+        self._publica_estado()
+        return True
+
+    # -------------------------------------------------------------- comandos
+
+    def trata(self, msg):
+        cmd = msg.get("command")
+        sock = msg.get("_sock")
+        resp = self.ctl.responder
+
+        if cmd == "list":
+            self._publica_catalogo()
+            resp(sock, True, experiments=CATALOGO, current=self.exp_id,
+                 state=self.estado)
+
+        elif cmd == "select":
+            alvo = msg.get("experiment_id")
+            if self.item(alvo) is None:
+                resp(sock, False, error=f"id desconhecido: {alvo!r}")
+                return
+            self.exp_id = alvo
+            self.seed = int(msg.get("seed", self.seed))
+            self.estado = "idle"
+            self._publica_estado()
+            self._publica_catalogo()
+            resp(sock, True, experiment_id=self.exp_id, seed=self.seed)
+
+        elif cmd == "start":
+            alvo = msg.get("experiment_id") or self.exp_id
+            if self.item(alvo) is None:
+                resp(sock, False, error="nenhum experimento selecionado")
+                return
+            seed = int(msg.get("seed", self.seed))
+            # O ack vai ANTES de montar: subir a arena (e, na primeira vez, o
+            # conectoma) leva segundos, e segurar a conexao de controle nesse
+            # tempo faz o cliente estourar o timeout achando que morreu.
+            self.estado = "loading"
+            self._publica_estado(message="montando")
+            resp(sock, True, experiment_id=alvo, seed=seed, state="loading")
+            self.monta(alvo, seed)
+
+        elif cmd == "pause":
+            if self.estado == "running":
+                self.estado = "paused"
+                self.prof.pausa()
+                self._publica_estado()
+            resp(sock, self.estado == "paused", state=self.estado)
+
+        elif cmd == "resume":
+            if self.estado == "paused":
+                self.estado = "running"
+                self.prof.retoma()
+                self._publica_estado()
+            resp(sock, self.estado == "running", state=self.estado)
+
+        elif cmd == "reset":
+            seed = int(msg.get("seed", self.seed))
+            alvo = self.exp_id or CATALOGO[0]["id"]
+            resp(sock, True, seed=seed, state="loading")
+            if self.monta(alvo, seed):
+                self.tel.enviar(self.protocol.event(0.0, "experiment_reset",
+                                                    {"seed": seed}))
+
+        elif cmd == "stop":
+            self._encerra("parado pela interface")
+            resp(sock, True, state=self.estado)
+
+        elif cmd == "quit":
+            resp(sock, True)
+            self._encerra("processo encerrado")
+            self.sair = True
+
+    # ----------------------------------------------------------------- laco
+
+    def passo(self) -> bool:
+        """Um passo de fisica. Devolve True se uma janela neural rodou."""
+        from physics import MotorFrame
+
+        self.t_s = self.passo_atual * DT
+        self.corpo.antes_do_passo(self.t_s)
+
+        with self.prof("physics", "passo de fisica"):
+            self.frame = self.corpo.passo(MotorFrame(drive=self.drive))
+        self.prof.avanca_sim(DT * 1000)
+        self.passo_atual += 1
+
+        frame = self.frame
         if not frame.retina_atualizou or frame.retina is None:
-            continue
+            return False
 
-        with prof("vision", "quadro de retina"):
+        with self.prof("vision", "quadro de retina"):
             escuro = (frame.retina < DARK_THRESHOLD).mean(axis=1)
-            if escuro_lento is None:
-                escuro_lento = escuro.copy()
-            expansao = np.clip(escuro - escuro_lento, 0, None)
-            escuro_lento += (escuro - escuro_lento) / dark_tau
-            hz = float(np.clip(expansao * LOOM_GAIN, 0, LOOM_MAX_HZ).max())
-            taxas[:] = 0.0
-            if len(sens):
-                taxas[sens] = hz
+            if self.escuro_lento is None:
+                self.escuro_lento = escuro.copy()
+            expansao = np.clip(escuro - self.escuro_lento, 0, None)
+            self.escuro_lento += (escuro - self.escuro_lento) / (0.3 * VISION_HZ)
+            self.hz = float(np.clip(expansao * LOOM_GAIN, 0, LOOM_MAX_HZ).max())
+            self.taxas[:] = 0.0
+            if len(self.sens):
+                self.taxas[self.sens] = self.hz
 
-        with prof("neural", "janela de 10 ms"):
-            eng.roda_poisson(JANELA_MS, taxas, rng, indices=sens)
+        with self.prof("neural", "janela de 10 ms"):
+            self.eng.roda_poisson(JANELA_MS, self.taxas, self.rng,
+                                  indices=self.sens)
 
-        with prof("leitura", "janela"):
-            gate = mede_gate(eng, idx_gf, gf_pre, gf_peso)
-            est_m = eng.le(motor) if len(motor) else None
+        with self.prof("leitura", "janela"):
+            gate = mede_gate(self.eng, self.idx_gf, self.gf_pre, self.gf_peso,
+                             self.nomes_tipo)
+            est_m = self.eng.le(self.motor) if len(self.motor) else None
             ttmn = int(est_m.spike.sum()) if est_m is not None else 0
 
-        # eventos cientificos, nao ruido de baixo nivel
+        eventos = self._eventos(gate, ttmn)
+        self.drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE])
+                      if self.t_s < self.escape_ate
+                      else np.array([BASE_DRIVE, BASE_DRIVE]))
+
+        self.janelas += 1
+        with self.prof("telemetry", "quadro"):
+            if self.tel.ativo:
+                self._publica_quadro(gate, ttmn, eventos, escuro)
+        return True
+
+    def _eventos(self, gate, ttmn):
+        """Eventos CIENTIFICOS. Nao ha evento por passo de fisica aqui."""
         eventos = []
-        if hz > 1.0:
-            eventos.append(("looming", {"hz": round(hz, 2)}))
+        if self.hz > 1.0:
+            eventos.append(("looming", {"hz": round(self.hz, 2)}))
         if gate["spikes_gf"]:
             eventos.append(("gf_spike", {"net_mV": gate["liquido_mV"]}))
         if ttmn:
             eventos.append(("ttmn_spike", {"n": ttmn}))
-        if ttmn and t_s > escape_ate:
-            escape_ate = t_s + ESCAPE_MS / 1000.0
-            escapes += 1
-            eventos.append(("escape", {"t_s": round(t_s, 3)}))
-        if not avisou_v and gate["v_min_mV"] < V_AVISO_MV:
-            avisou_v = True
+        if ttmn and self.t_s > self.escape_ate:
+            self.escape_ate = self.t_s + ESCAPE_MS / 1000.0
+            self.escapes += 1
+            eventos.append(("escape", {"t_s": round(self.t_s, 3)}))
+        if not self.avisou_v and gate["v_min_mV"] < V_AVISO_MV:
+            self.avisou_v = True
             eventos.append(("model_limitation", {
                 "v_mV": gate["v_min_mV"], "limiar_aviso": V_AVISO_MV,
                 "id": "no_inhibitory_reversal"}))
+        return eventos
 
-        drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE]) if t_s < escape_ate
-                 else np.array([BASE_DRIVE, BASE_DRIVE]))
+    def roda(self):
+        """Laco principal. Controle e simulacao no mesmo fio, de proposito."""
+        n_passos = int(self.args.duracao / DT) if self.args.duracao > 0 else -1
+        ultimo_log = time.time()
+        while not self.sair:
+            # o controle e drenado SEMPRE, inclusive pausado -- senao nao ha
+            # como despausar
+            while True:
+                msg = self.ctl.proximo()
+                if msg is None:
+                    break
+                self.trata(msg)
+                if self.sair:
+                    return
 
-        with prof("telemetry", "quadro"):
-            if tel.ativo:
-                pose = None
-                if t_s >= proxima_pose:
-                    pose = corpo.pose_corpo()
-                    proxima_pose = t_s + intervalo_pose
-                _quadro(tel, protocol, eng, prof, frame, drive, t_s, passo, hz,
-                        papeis, nomes_grupos, ttmn, gate, eventos, pose)
+            if self.estado != "running":
+                # sem interface nao ha quem mande continuar: acabou, acabou
+                if not self.ctl.ativo and self.estado in ("finished", "error"):
+                    return
+                time.sleep(0.02)
+                continue
 
-        agora = time.time()
-        if agora - ultimo_log > 2.0:
-            ultimo_log = agora
-            v = prof.valores()
-            print(f"  t={t_s:5.2f}s  RTF {v['_total']['rtf']:.4f}  "
-                  f"looming {hz:5.1f}Hz  GF exc {gate['exc_mV']:7.1f} "
-                  f"inib {gate['inib_mV']:8.1f} liq {gate['liquido_mV']:8.1f}  "
-                  f"v {gate['v_min_mV']:8.1f}  TTMn {ttmn}  fugas {escapes}")
+            self.passo()
 
-    print("\n== profiler ==")
-    print(prof.relatorio())
-    print(f"\n  fugas: {escapes}")
-    corpo.fecha()
-    if tel.ativo:
-        tel.enviar(protocol.bye("corrida terminada"))
-        tel.fechar()
+            if n_passos > 0 and self.passo_atual >= n_passos:
+                self._encerra("duracao alcancada")
+                continue
+
+            agora = time.time()
+            if agora - ultimo_log > 2.0:
+                ultimo_log = agora
+                self._log()
+
+    def _log(self):
+        v = self.prof.valores()
+        print(f"  t={self.t_s:5.2f}s  RTF {v['_total']['rtf']:.4f}  "
+              f"looming {self.hz:5.1f}Hz  fugas {self.escapes}")
+
+    def _encerra(self, motivo):
+        if self.estado in ("finished", "error"):
+            return
+        self.estado = "finished"
+        self._publica_estado(message=motivo)
+        print(f"\n== profiler ==\n{self.prof.relatorio()}")
+        print(f"\n  fugas: {self.escapes}")
+
+    def _falha(self, texto):
+        self.estado = "error"
+        print(f"[erro] {texto}", file=sys.stderr)
+        self._publica_estado(message=texto)
+
+    # ----------------------------------------------------------- publicacao
+
+    def _publica_estado(self, message=None):
+        self.tel.enviar(self.protocol.run_state(
+            self.estado, experiment_id=self.exp_id, seed=self.seed,
+            sim_time=self.t_s, step=self.passo_atual,
+            detail={"message": message} if message else {}))
+
+    def _publica_catalogo(self):
+        self.tel.enviar(self.protocol.experiment_list(CATALOGO,
+                                                      current=self.exp_id))
+
+    def _abertura(self):
+        protocol, eng, args = self.protocol, self.eng, self.args
+        r, rc = eng.resumo(), self.corpo.resumo()
+        item = self.item(self.exp_id)
+        circuitos = [{"name": n, "role": n,
+                      "body_ids": [int(b) for b in eng.c.body_ids[idx]],
+                      "sides": [None] * len(idx), "types": [n] * len(idx),
+                      "neurotransmitters": [None] * len(idx)}
+                     for n, idx in self.papeis.items() if len(idx)]
+        dev = dispositivo()
+        self.tel.enviar(protocol.experiment_info(
+            experiment_id=self.exp_id,
+            name=item["name"],
+            description=item["description"],
+            parameters={"dt_physics_s": DT, "dt_neural_ms": eng.dt,
+                        "vision_hz": VISION_HZ, "loom_gain": LOOM_GAIN,
+                        "collision_set": args.colisao,
+                        "collision_pairs": rc["collision_pairs"],
+                        "seed": self.seed, "entrada": "poisson_por_taxa",
+                        "v_aviso_mV": V_AVISO_MV},
+            provenance={
+                "body_ids": protocol.DATA, "synapse_weight": protocol.DATA,
+                "neurotransmitter": protocol.DATA,
+                "membrane_potential": protocol.MODEL, "spikes": protocol.MODEL,
+                "synapse_sign": protocol.MODEL,
+                "gf_excitation": protocol.MODEL, "gf_inhibition": protocol.MODEL,
+                "loom_gain": protocol.ASSUMPTION,
+                "dark_fraction_detector": protocol.ASSUMPTION,
+                "motor_to_gait_mapping": protocol.ASSUMPTION,
+                "collision_set": protocol.ASSUMPTION,
+            },
+            circuits=circuitos,
+            runtime={
+                "os": dev["os"], "cpu": dev["cpu"], "python": dev["python"],
+                "physics_backend": rc["physics_backend"],
+                "physics_adapter": rc["adapter"],
+                "neural_backend": r["backend"], "neural_device": r["device"],
+                "neurons_simulated": r["neurons_simulated"],
+                "edges_simulated": r["edges_simulated"],
+                "vram_mib": r.get("vram_mib", 0),
+                "collision_set": args.colisao,
+                "collision_pairs": rc["collision_pairs"],
+                "population_names": self.nomes_grupos,
+            },
+            scope={
+                "simulated": ("whole_connectome" if item["cns"] == "whole"
+                              else "circuit"),
+                "functional_brain": "no",
+                # Simulado e visualizado sao numeros DIFERENTES e a interface
+                # nao pode somar os dois. Quantas morfologias existem e
+                # propriedade do asset da Unity, nao do runtime -- por isso o
+                # campo vai nulo aqui em vez de chutado.
+                "neurons_simulated": r["neurons_simulated"],
+                "morphologies_visualized": None,
+                "note": ("conectoma inteiro simulado; NAO e um cerebro funcional "
+                         "completo -- so a via de looming e a motora tem semantica "
+                         "sensorial/motora modelada"),
+            },
+            model_limitations=[{
+                "id": "no_inhibitory_reversal",
+                "text": ("The Shiu et al. LIF formulation used here has no "
+                         "inhibitory reversal potential. In whole-CNS simulations, "
+                         "strong convergent inhibition can therefore drive membrane "
+                         "potential to non-physiological negative values."),
+                "warning_threshold_mV": V_AVISO_MV,
+                "action": "reported, never clamped",
+            }],
+            gf_gate={
+                "edges": int(len(self.gf_peso)),
+                "excitatory": int((self.gf_peso > 0).sum()),
+                "inhibitory": int((self.gf_peso < 0).sum()),
+                "peso_exc_mV": round(float(self.gf_peso[self.gf_peso > 0].sum()), 2),
+                "peso_inib_mV": round(float(self.gf_peso[self.gf_peso < 0].sum()), 2),
+            },
+        ))
+        self.tel.enviar(protocol.scene_info(
+            arena={"kind": item["arena"]},
+            stimulus=({"kind": "approaching_sphere", "radius": 3.0,
+                       "start_distance": 30.0, "end_distance": 4.0,
+                       "cycle_s": 0.8}
+                      if item["arena"] == "looming" else {"kind": "none"})))
+        self._publica_catalogo()
+
+    def _publica_quadro(self, gate, ttmn, eventos, escuro):
+        protocol, eng = self.protocol, self.eng
+        v = self.prof.valores()
+        extra = {}
+        if self.t_s >= self.proxima_pose:
+            nomes, pos, quat = self.corpo.pose_corpo()
+            # Pose a 30 Hz, nao a 10.000. A Unity pode interpolar entre
+            # quadros -- nada do que ela fizer volta pra fisica.
+            extra["body_pose"] = {
+                "segments": nomes,
+                "pos": np.asarray(pos, dtype=np.float32).round(4).tolist(),
+                "quat": np.asarray(quat, dtype=np.float32).round(5).tolist(),
+            }
+            self.proxima_pose = self.t_s + 1.0 / POSE_HZ
+
+        self.tel.enviar(protocol.frame(
+            step=self.passo_atual, sim_time=self.t_s, wall_time=time.time(),
+            real_time_factor=v["_total"]["rtf"], position=self.frame.posicao,
+            drive=self.drive,
+            profile={k: v[k]["ms_por_seg_simulado"]
+                     for k in ("physics", "vision", "neural", "leitura",
+                               "telemetry")},
+            **extra))
+
+        camadas = []
+        for nome, idx in self.papeis.items():
+            if not len(idx):
+                continue
+            est = eng.le(idx)
+            camadas.append({"name": nome, "spikes": est.spike.tolist(),
+                            "v_mV": est.v_mV.tolist(), "g_mV": est.g_mV.tolist()})
+        self.tel.enviar(protocol.neural_activity(self.t_s, camadas))
+
+        if self.janelas % RETINA_A_CADA == 0 and self.frame.retina is not None:
+            ret = self.frame.retina
+            self.tel.enviar(protocol.retina(
+                self.t_s, left=ret[0], right=ret[1],
+                derived={"dark_fraction": {"L": round(float(escuro[0]), 4),
+                                           "R": round(float(escuro[1]), 4)},
+                         "input_hz": {"L": round(self.hz, 2),
+                                      "R": round(self.hz, 2)}}))
+
+        soma = eng.atividade_por_grupo(zerar=True)
+        self.tel.enviar(protocol.statistics(self.t_s, {
+            "population_activity": {n: int(s)
+                                    for n, s in zip(self.nomes_grupos, soma)},
+            "looming_hz": self.hz, "ttmn_spikes": ttmn, "gf_gate": gate,
+            "escapes": self.escapes,
+        }))
+        for tipo, detalhe in eventos:
+            self.tel.enviar(protocol.event(self.t_s, tipo, detalhe))
 
 
-def _abertura(tel, protocol, eng, corpo, papeis, nomes_grupos, args, gf_peso):
-    r = eng.resumo()
-    rc = corpo.resumo()
-    circuitos = [{"name": n, "role": n,
-                  "body_ids": [int(b) for b in eng.c.body_ids[idx]],
-                  "sides": [None] * len(idx), "types": [n] * len(idx),
-                  "neurotransmitters": [None] * len(idx)}
-                 for n, idx in papeis.items() if len(idx)]
-    tel.enviar(protocol.experiment_info(
-        experiment_id=f"lab_{args.physics}_{args.cns}",
-        name=f"Drosobot Lab -- {args.experiment} / "
-             f"{'Male CNS inteiro' if args.cns == 'whole' else 'circuito GF'}",
-        description="FlyGym/MuJoCo -> retina -> CNS na GPU -> TTMn -> marcha.",
-        parameters={"dt_physics_s": DT, "dt_neural_ms": eng.dt,
-                    "vision_hz": VISION_HZ, "loom_gain": LOOM_GAIN,
-                    "collision_set": args.colisao,
-                    "collision_pairs": rc["collision_pairs"],
-                    "entrada": "poisson_por_taxa", "v_aviso_mV": V_AVISO_MV},
-        provenance={
-            "body_ids": protocol.DATA, "synapse_weight": protocol.DATA,
-            "neurotransmitter": protocol.DATA,
-            "membrane_potential": protocol.MODEL, "spikes": protocol.MODEL,
-            "synapse_sign": protocol.MODEL,
-            "gf_excitation": protocol.MODEL, "gf_inhibition": protocol.MODEL,
-            "loom_gain": protocol.ASSUMPTION,
-            "dark_fraction_detector": protocol.ASSUMPTION,
-            "motor_to_gait_mapping": protocol.ASSUMPTION,
-            "collision_set": protocol.ASSUMPTION,
-        },
-        circuits=circuitos,
-        runtime={
-            "os": sys.platform,
-            "physics_backend": rc["physics_backend"],
-            "physics_adapter": rc["adapter"],
-            "neural_backend": r["backend"], "neural_device": r["device"],
-            "neurons_simulated": r["neurons_simulated"],
-            "edges_simulated": r["edges_simulated"],
-            "vram_mib": r.get("vram_mib", 0),
-            "collision_set": args.colisao,
-            "collision_pairs": rc["collision_pairs"],
-            "population_names": nomes_grupos,
-        },
-        scope={
-            "simulated": "whole_connectome" if args.cns == "whole" else "circuit",
-            "functional_brain": "no",
-            "note": ("conectoma inteiro simulado; NAO e um cerebro funcional "
-                     "completo -- so a via de looming e a motora tem semantica "
-                     "sensorial/motora modelada"),
-        },
-        model_limitations=[{
-            "id": "no_inhibitory_reversal",
-            "text": ("The Shiu et al. LIF formulation used here has no "
-                     "inhibitory reversal potential. In whole-CNS simulations, "
-                     "strong convergent inhibition can therefore drive membrane "
-                     "potential to non-physiological negative values."),
-            "warning_threshold_mV": V_AVISO_MV,
-            "action": "reported, never clamped",
-        }],
-        gf_gate={"edges": int(len(gf_peso)),
-                 "excitatory": int((gf_peso > 0).sum()),
-                 "inhibitory": int((gf_peso < 0).sum()),
-                 "peso_exc_mV": round(float(gf_peso[gf_peso > 0].sum()), 2),
-                 "peso_inib_mV": round(float(gf_peso[gf_peso < 0].sum()), 2)},
-    ))
-    tel.enviar(protocol.scene_info(
-        arena={"kind": args.experiment},
-        stimulus=({"kind": "approaching_sphere", "radius": 3.0,
-                   "start_distance": 30.0, "end_distance": 4.0, "cycle_s": 0.8}
-                  if args.experiment == "looming"
-                  else {"kind": "self_motion_flow"})))
+def _resolve_experimento(args) -> str:
+    """
+    `--experiment looming` e atalho pro item do catalogo que casa com a arena
+    e o escopo de `--cns`. E o que faz a linha de comando documentada funcionar
+    sem obrigar ninguem a decorar id.
+    """
+    if args.experiment and Laboratorio.item(args.experiment):
+        return args.experiment
+    arena = args.experiment or "looming"
+    casa = [e for e in CATALOGO if e["arena"] == arena and e["cns"] == args.cns]
+    if casa:
+        return casa[0]["id"]
+    casa = [e for e in CATALOGO if e["arena"] == arena]
+    return casa[0]["id"] if casa else CATALOGO[0]["id"]
 
 
-def _quadro(tel, protocol, eng, prof, frame, drive, t_s, passo, hz, papeis,
-            nomes_grupos, ttmn, gate, eventos, pose):
-    v = prof.valores()
-    extra = {}
-    if pose is not None:
-        nomes, pos, quat = pose
-        # Pose a 30 Hz, nao a 10.000. A Unity pode interpolar entre quadros --
-        # nada do que ela fizer volta pra fisica.
-        extra["body_pose"] = {
-            "segments": nomes,
-            "pos": np.asarray(pos, dtype=np.float32).round(4).tolist(),
-            "quat": np.asarray(quat, dtype=np.float32).round(5).tolist(),
-        }
-    tel.enviar(protocol.frame(
-        step=passo, sim_time=t_s, wall_time=time.time(),
-        real_time_factor=v["_total"]["rtf"], position=frame.posicao, drive=drive,
-        profile={k: v[k]["ms_por_seg_simulado"]
-                 for k in ("physics", "vision", "neural", "leitura", "telemetry")},
-        **extra))
+def main():
+    ap = argparse.ArgumentParser(description="Drosobot Lab")
+    ap.add_argument("--physics", choices=["flygym1", "flygym2"], default="flygym2",
+                    help="flygym2 e o caminho principal; flygym1 e a referencia")
+    ap.add_argument("--neural", default="auto", help="auto | opencl | cpu | d3d12")
+    ap.add_argument("--cns", choices=["whole", "circuit"], default="whole")
+    ap.add_argument("--experiment", default=None,
+                    help="id do catalogo, ou looming/flat (atalho)")
+    ap.add_argument("--colisao", choices=["legs", "tarsi", "none"], default="legs",
+                    help="legs = padrao cientifico validado; tarsi = otimizacao "
+                         "por cenario (REPROVOU em curva, ver COLLISION_PAIR_AUDIT)")
+    ap.add_argument("--duracao", type=float, default=2.0,
+                    help="segundos de mosca; 0 = ate a interface mandar parar")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--telemetry", action="store_true")
+    ap.add_argument("--porta", type=int, default=8765)
+    ap.add_argument("--porta-controle", type=int, default=8766)
+    ap.add_argument("--sem-controle", action="store_true",
+                    help="nao abre o canal de controle da Unity")
+    ap.add_argument("--espera", action="store_true",
+                    help="nao comeca sozinho; espera a interface mandar")
+    ap.add_argument("--info", action="store_true")
+    ap.add_argument("--lista", action="store_true", help="imprime o catalogo e sai")
+    args = ap.parse_args()
 
-    camadas = []
-    for nome, idx in papeis.items():
-        if not len(idx):
-            continue
-        est = eng.le(idx)
-        camadas.append({"name": nome, "spikes": est.spike.tolist(),
-                        "v_mV": est.v_mV.tolist(), "g_mV": est.g_mV.tolist()})
-    tel.enviar(protocol.neural_activity(t_s, camadas))
+    if args.lista:
+        for e in CATALOGO:
+            print(f"  {e['id']:18s} {e['name']}")
+        return
 
-    soma = eng.atividade_por_grupo(zerar=True)
-    tel.enviar(protocol.statistics(t_s, {
-        "population_activity": {n: int(s) for n, s in zip(nomes_grupos, soma)},
-        "looming_hz": hz, "ttmn_spikes": ttmn, "gf_gate": gate,
-    }))
-    for tipo, detalhe in eventos:
-        tel.enviar(protocol.event(t_s, tipo, detalhe))
+    print("== Drosobot Lab ==")
+    dev = dispositivo()
+    print(f"  maquina   {dev['os']}, {dev['cpu']}, Python {dev['python']}")
+
+    if args.info:
+        eng, papeis, _ = monta_cerebro(args.cns, args.neural)
+        r = eng.resumo()
+        print(f"  cerebro   {r['neurons_simulated']:,} neuronios, "
+              f"{r['edges_simulated']:,} arestas")
+        print(f"            {r['backend']} em {r['device']}   "
+              f"VRAM {r.get('vram_mib', 0):.1f} MiB")
+        for nome, idx in papeis.items():
+            print(f"            {nome:10s} {len(idx):5d}")
+        print(f"  escopo    {'WHOLE CONNECTOME SIMULATED' if args.cns == 'whole' else 'circuito do Giant Fiber'}")
+        print("            NAO e um cerebro funcional completo: so a via de")
+        print("            looming e a motora tem semantica modelada.")
+        return
+
+    from telemetry import protocol
+    from telemetry.control import abrir as abrir_controle
+    from telemetry.server import abrir as abrir_telemetria
+
+    exp_id = _resolve_experimento(args)
+    tel = abrir_telemetria(porta=args.porta, ativo=args.telemetry)
+    ctl = abrir_controle(porta=args.porta_controle, ativo=not args.sem_controle)
+    lab = Laboratorio(args, tel, ctl, protocol)
+    lab._publica_catalogo()
+
+    try:
+        if args.espera:
+            lab.exp_id = exp_id
+            lab._publica_estado(message="esperando a interface")
+            print(f"  esperando a interface escolher "
+                  f"({len(CATALOGO)} experimentos no catalogo)")
+        elif not lab.monta(exp_id, args.seed):
+            return
+        lab.roda()
+    except KeyboardInterrupt:
+        print("\ninterrompido")
+        lab._encerra("interrompido pelo teclado")
+    finally:
+        if lab.corpo is not None:
+            lab.corpo.fecha()
+        if tel.ativo:
+            tel.enviar(protocol.bye("corrida terminada"))
+            tel.fechar()
+        ctl.fechar()
 
 
 if __name__ == "__main__":
