@@ -1,0 +1,54 @@
+{
+ "gerado_em": "2026-09-20T13:43:17",
+ "passos": 3000,
+ "dt_s": 0.0001,
+ "sim_ms": 300.0,
+ "parede_ms": 1696.4,
+ "etapas": {
+  "controlador": {
+   "ms_por_seg_simulado": 2275.6,
+   "us_por_passo": 227.56,
+   "pct": 40.2
+  },
+  "mj_step_parede": {
+   "ms_por_seg_simulado": 1532.3,
+   "us_por_passo": 153.23,
+   "pct": 27.1
+  },
+  "retina": {
+   "ms_por_seg_simulado": 750.5,
+   "us_por_passo": 75.05,
+   "pct": 13.3
+  },
+  "observacao": {
+   "ms_por_seg_simulado": 718.1,
+   "us_por_passo": 71.81,
+   "pct": 12.7
+  },
+  "aplica_acao": {
+   "ms_por_seg_simulado": 156.1,
+   "us_por_passo": 15.61,
+   "pct": 2.8
+  },
+  "estimulo": {
+   "ms_por_seg_simulado": 138.0,
+   "us_por_passo": 13.8,
+   "pct": 2.4
+  }
+ },
+ "mujoco_timers_ms": {
+  "step": 0.0,
+  "forward": 0.0,
+  "position": 0.0,
+  "collision": 0.0,
+  "col_broad": 0.0,
+  "col_narrow": 0.0,
+  "make_constraint": 0.0,
+  "project_constraint": 0.0,
+  "kinematics": 0.0,
+  "inertia": 0.0,
+  "constraint_solve": 0.0
+ },
+ "overhead_wrapper_ms": 459.7,
+ "dentro_do_mj_step_pct": 0.0
+}

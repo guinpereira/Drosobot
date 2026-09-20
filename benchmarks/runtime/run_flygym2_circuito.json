@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-09-20T03:24:07",
+  "gerado_em": "2026-09-20T13:44:46",
   "physics": "flygym2",
   "escopo": "circuito",
   "rotulo": "flygym2+circuito",
@@ -22,15 +22,15 @@
     "edges_simulated": 105130,
     "vram_mib": 0.9
   },
-  "rtf": 0.0534,
+  "rtf": 0.1435,
   "ms_por_seg_simulado": {
-    "physics": 15937.3,
-    "vision": 10.6,
-    "neural": 2204.5,
-    "leitura": 342.5
+    "physics": 5121.1,
+    "vision": 8.1,
+    "neural": 1478.5,
+    "leitura": 159.3
   },
-  "outro_ms_por_seg_simulado": 238.1,
-  "total_ms_por_seg_simulado": 18733.0,
+  "outro_ms_por_seg_simulado": 202.3,
+  "total_ms_por_seg_simulado": 6969.3,
   "desfecho": {
     "fugas": 2,
     "posicao_final": [

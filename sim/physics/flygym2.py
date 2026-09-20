@@ -31,6 +31,7 @@ import mujoco as mj
 import numpy as np
 
 from .adapter import MotorFrame, SensorFrame
+from .fastpath import ControladorRapido, ForcasContato
 
 VISION_HZ = 100
 
@@ -110,6 +111,11 @@ class FlyGym2Adapter:
         self._retina_cache = None
         self._pos_cache = None
         self._prepara_indices()
+        # caminho rapido: mesma conta, sem o bookkeeping refeito por passo.
+        # Verificado bit a bit em tests/test_fastpath_equivalencia.py.
+        self._rapido = ControladorRapido(self.controlador)
+        self._forcas = ForcasContato(self.sim, self.fly.name,
+                                     self._segs_stumbling, ground_only=True)
         return self._quadro(True)
 
     def _prepara_indices(self) -> None:
@@ -141,9 +147,8 @@ class FlyGym2Adapter:
         from flygym_demo.complex_terrain import HybridControllerObservation
 
         pos = self.sim.get_body_positions(self.fly.name)
-        forcas = self.sim.get_bodysegment_contact_forces(
-            self.fly.name, self._segs_stumbling, ground_only=True
-        ).reshape(len(self._legs), len(self._stumbling_links), 3)
+        forcas = self._forcas.le().reshape(
+            len(self._legs), len(self._stumbling_links), 3)
         self._pos_cache = pos
         return HybridControllerObservation(
             thorax_z=float(pos[self._i_torax, 2]),
@@ -169,7 +174,7 @@ class FlyGym2Adapter:
         from flygym_demo.complex_terrain import apply_locomotion_action
 
         obs = self._observacao()
-        acao = self.controlador.step(np.asarray(motor.drive, dtype=float), obs)
+        acao = self._rapido.step(np.asarray(motor.drive, dtype=float), obs)
         apply_locomotion_action(self.sim, self.fly.name, acao,
                                 actuator_type=ActuatorType.POSITION)
         self.sim.step()
