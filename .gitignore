@@ -46,3 +46,8 @@ unity_assets/
 # Reconstroi com benchmarks/neural/build_csr.py a partir dos downloads
 # listados em docs/research/WHOLE_CNS_GPU_FEASIBILITY.md.
 data/male-cns/
+
+# venv paralelo do FlyGym 2.x (Python 3.14). Reconstroi com:
+#   uv venv --python 3.14 .venv-flygym2
+#   uv pip install --python .venv-flygym2/Scripts/python.exe -e research/upstream/flygym pyopencl
+.venv-flygym2/

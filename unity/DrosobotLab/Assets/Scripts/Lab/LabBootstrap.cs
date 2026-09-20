@@ -69,6 +69,16 @@ namespace Drosobot.Lab
         private float[] _retinaDerivadaL, _retinaDerivadaR;
         private string _retinaLabel = "";
 
+        // runtime: quem produziu o dado que esta na tela. Vem do campo
+        // `runtime` do experiment_info, que o sim/drosobot_lab.py publica.
+        // Nunca inferido aqui -- se o runtime nao disser, fica em branco.
+        private readonly Dictionary<string, string> _runtime = new Dictionary<string, string>();
+        private string _escopoSimulado = "", _escopoSensorimotor = "", _escopoNota = "";
+        // custo por etapa, em ms de relogio por SEGUNDO SIMULADO. E a unica base
+        // em que as etapas se somam -- ver sim/profiler.py.
+        private readonly Dictionary<string, float> _profile = new Dictionary<string, float>();
+        private readonly Dictionary<string, int> _popAtividade = new Dictionary<string, int>();
+
         // paineis
         private readonly List<Sparkline> _graficos = new List<Sparkline>();
         private Sparkline _gSensorL, _gSensorR, _gEsquerda, _gDireita, _gSelecionado;
@@ -260,6 +270,18 @@ namespace Drosobot.Lab
             switch ((string)msg["type"])
             {
                 case "experiment_info":
+                    if (msg["runtime"] is JObject rt)
+                    {
+                        _runtime.Clear();
+                        foreach (var kv in rt)
+                            _runtime[kv.Key] = kv.Value?.ToString() ?? "";
+                    }
+                    if (msg["scope"] is JObject esc)
+                    {
+                        _escopoSimulado = (string)esc["simulated"] ?? "";
+                        _escopoSensorimotor = (string)esc["sensorimotor_model"] ?? "";
+                        _escopoNota = (string)esc["note"] ?? "";
+                    }
                     _expName = (string)msg["name"] ?? "?";
                     _expDescription = (string)msg["description"] ?? "";
                     _provenance.Clear();
@@ -283,6 +305,11 @@ namespace Drosobot.Lab
                     }
                     var d = msg["drive"] as JArray;
                     if (d != null && d.Count >= 2) _drive = new[] { (float)d[0], (float)d[1] };
+                    if (msg["profile"] is JObject pf)
+                    {
+                        _profile.Clear();
+                        foreach (var kv in pf) _profile[kv.Key] = (float)kv.Value;
+                    }
                     break;
 
                 case "neural_activity":
@@ -335,6 +362,16 @@ namespace Drosobot.Lab
                     }
                     break;
 
+                case "statistics":
+                    // atividade agregada das populacoes SEM morfologia 3D. O
+                    // runtime nunca manda 164 mil estados por quadro.
+                    if (msg["values"]?["population_activity"] is JObject pa)
+                    {
+                        _popAtividade.Clear();
+                        foreach (var kv in pa) _popAtividade[kv.Key] = (int)kv.Value;
+                    }
+                    break;
+
                 case "event":
                     _eventos.Insert(0, $"{(double)msg["sim_time"]:F2}s  {(string)msg["kind"]}");
                     // so os mais recentes: a lista alimenta um painel de altura
@@ -369,6 +406,7 @@ namespace Drosobot.Lab
         private readonly Painel _pRetina = new Painel("retina");
         private readonly Painel _pInspector = new Painel("inspector");
         private readonly Painel _pSinais = new Painel("sinais");
+        private readonly Painel _pRuntime = new Painel("runtime");
 
         void OnGUI()
         {
@@ -419,6 +457,7 @@ namespace Drosobot.Lab
                 _colEsquerda.Adiciona(_pPopulacao);
 
                 MontaProcedencia();
+                MontaRuntime();
                 MontaRetina();
                 MontaInspector();
                 MontaExperimento();
@@ -427,6 +466,7 @@ namespace Drosobot.Lab
                 // logo abaixo do INSPECTOR pra dar pra olhar o neuronio
                 // selecionado e trocar de corrida sem atravessar a tela.
                 _colDireita.Adiciona(_pProcedencia);
+                _colDireita.Adiciona(_pRuntime);
                 _colDireita.Adiciona(_pRetina);
                 _colDireita.Adiciona(_pInspector);
                 _colDireita.Adiciona(_pExperimento);
@@ -511,6 +551,50 @@ namespace Drosobot.Lab
             foreach (Provenance p in new[] { Provenance.Data, Provenance.Model, Provenance.Assumption })
                 _pProcedencia.Texto($"  {ProvenanceUtil.Label(p)}  {Explica(p)}", _mono,
                                     ProvenanceUtil.Color(p));
+        }
+
+        private void MontaRuntime()
+        {
+            _pRuntime.Limpar();
+            if (_runtime.Count == 0) return;
+            _pRuntime.Texto("RUNTIME", _rotulo);
+
+            string Le(string k) => _runtime.TryGetValue(k, out var v) ? v : "-";
+            _pRuntime.Texto($"OS       {Le("os")}", _mono);
+            _pRuntime.Texto($"Physics  {Le("physics_backend")}", _mono);
+            _pRuntime.Texto($"Neural   {Le("neural_backend")}", _mono);
+            _pRuntime.Texto($"Device   {Le("neural_device")}", _mono);
+
+            // SIMULADO e MODELADO sao coisas diferentes e ficam separados de
+            // proposito: o conectoma inteiro participar da dinamica nao quer
+            // dizer que exista modelo sensorimotor completo.
+            if (_escopoSimulado.Length > 0)
+            {
+                _pRuntime.Espacador();
+                _pRuntime.Texto($"Escopo simulado    {_escopoSimulado}", _mono,
+                                ProvenanceUtil.Color(Provenance.Data));
+                _pRuntime.Texto($"Modelo sensorimotor {_escopoSensorimotor}", _mono,
+                                ProvenanceUtil.Color(Provenance.Assumption));
+                if (_escopoNota.Length > 0) _pRuntime.Texto(_escopoNota, _mono);
+            }
+
+            if (_runtime.ContainsKey("neurons_simulated"))
+            {
+                _pRuntime.Espacador();
+                _pRuntime.Texto($"Neurons  {Le("neurons_simulated")}", _mono);
+                _pRuntime.Texto($"Edges    {Le("edges_simulated")}", _mono);
+                _pRuntime.Texto($"VRAM     {Le("vram_mib")} MiB", _mono);
+            }
+
+            if (_profile.Count > 0)
+            {
+                _pRuntime.Espacador();
+                _pRuntime.Texto("CUSTO (ms de relogio por segundo simulado)", _rotulo);
+                foreach (var kv in _profile)
+                    _pRuntime.Texto($"  {kv.Key,-10} {kv.Value,8:F0} ms", _mono);
+            }
+            _pRuntime.Espacador();
+            _pRuntime.Texto($"RTF      {_rtf:F4}x", _mono);
         }
 
         private void MontaSinais()

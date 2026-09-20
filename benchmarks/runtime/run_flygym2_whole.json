@@ -1,0 +1,41 @@
+{
+  "gerado_em": "2026-09-20T01:42:33",
+  "physics": "flygym2",
+  "escopo": "whole",
+  "rotulo": "flygym2+whole",
+  "duracao_s": 0.5,
+  "corpo": {
+    "physics_backend": "FlyGym 2.1.0 / mujoco 3.9",
+    "adapter": "flygym2",
+    "timestep": 0.0001,
+    "collision_set": "padrao 2.x",
+    "collision_pairs": 55,
+    "nv": 72,
+    "vision_hz": 100,
+    "diferenca_declarada": "arena plana: a arena de looming do 1.x ainda nao tem equivalente no 2.x"
+  },
+  "cerebro": {
+    "backend": "drosobot-opencl",
+    "device": "gfx1031 (20 CUs, 12.0 GiB)",
+    "neurons_simulated": 164451,
+    "edges_simulated": 25550583,
+    "vram_mib": 201.5
+  },
+  "rtf": 0.0418,
+  "ms_por_seg_simulado": {
+    "physics": 18169.2,
+    "vision": 34.1,
+    "neural": 5335.5,
+    "leitura": 229.5
+  },
+  "outro_ms_por_seg_simulado": 181.4,
+  "total_ms_por_seg_simulado": 23949.6,
+  "desfecho": {
+    "fugas": 0,
+    "posicao_final": [
+      5.08458300493167,
+      0.6211369284901644,
+      1.118602251257073
+    ]
+  }
+}

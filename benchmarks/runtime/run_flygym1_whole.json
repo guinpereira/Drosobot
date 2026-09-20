@@ -1,0 +1,40 @@
+{
+  "gerado_em": "2026-09-20T01:42:44",
+  "physics": "flygym1",
+  "escopo": "whole",
+  "rotulo": "flygym1+whole",
+  "duracao_s": 0.5,
+  "corpo": {
+    "physics_backend": "FlyGym 1.2.1 / mujoco 3.2.7",
+    "adapter": "flygym1",
+    "timestep": 0.0001,
+    "collision_set": "legs",
+    "collision_pairs": 2268,
+    "nv": 93,
+    "vision_hz": 100
+  },
+  "cerebro": {
+    "backend": "drosobot-opencl",
+    "device": "gfx1031 (20 CUs, 12.0 GiB)",
+    "neurons_simulated": 164451,
+    "edges_simulated": 25550583,
+    "vram_mib": 201.5
+  },
+  "rtf": 0.031,
+  "ms_por_seg_simulado": {
+    "physics": 27787.3,
+    "vision": 19.3,
+    "neural": 4119.6,
+    "leitura": 82.8
+  },
+  "outro_ms_por_seg_simulado": 206.3,
+  "total_ms_por_seg_simulado": 32215.2,
+  "desfecho": {
+    "fugas": 1,
+    "posicao_final": [
+      3.9500629901885986,
+      0.16611377894878387,
+      1.0492584705352783
+    ]
+  }
+}
