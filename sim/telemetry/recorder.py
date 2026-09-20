@@ -35,8 +35,12 @@ class Gravador:
     """Envolve um sink de telemetria e guarda tudo que passa."""
 
     def __init__(self, sink, experiment_id: str, metadata: dict[str, Any] | None = None,
-                 raiz: Path | None = None):
+                 raiz: Path | None = None, fechar_sink: bool = True):
         self._sink = sink
+        # Nos scripts de uma corrida so, fechar a gravacao e fechar tudo. O
+        # lab_runner reusa o MESMO servidor de telemetria entre experimentos --
+        # la, fechar o sink junto derrubaria a conexao da Unity a cada troca.
+        self._fechar_sink = fechar_sink
         carimbo = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         self.pasta = (raiz or RAIZ_RUNS) / f"{carimbo}_{experiment_id}"
         self.pasta.mkdir(parents=True, exist_ok=True)
@@ -81,7 +85,8 @@ class Gravador:
             self._f.close()
         except Exception:
             pass
-        self._sink.fechar()
+        if self._fechar_sink:
+            self._sink.fechar()
         print(f"[gravacao] {self._n} mensagens em {time.time() - self._t0:.1f} s -> {self.pasta}")
 
     def __enter__(self):

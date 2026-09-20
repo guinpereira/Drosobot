@@ -109,8 +109,11 @@ class ServidorTelemetria:
     def descartadas(self) -> int:
         return self._descartadas
 
-    # tipos que descrevem a corrida e nao mudam: todo cliente novo precisa deles
-    FIXAS = ("experiment_info", "scene_info")
+    # Tipos que descrevem a corrida: todo cliente novo precisa deles, mesmo
+    # chegando no meio. experiment_list e run_state entram aqui porque sem eles o
+    # seletor abre vazio e sem saber se ha algo rodando -- so a ULTIMA de cada
+    # tipo e guardada, entao run_state mudar nao acumula nada.
+    FIXAS = ("experiment_list", "experiment_info", "scene_info", "run_state")
 
     def enviar(self, msg: dict[str, Any]) -> None:
         """Nunca bloqueia. Fila cheia: joga fora a mais antiga e poe esta."""

@@ -148,15 +148,27 @@ class Rede:
             self.conexoes.append(Conexao(n_origem, tamanhos[k], i_pre, j_pos, w, dt_ms))
             n_origem = tamanhos[k]
         self.contagem = [np.zeros(n, dtype=np.int64) for n in tamanhos]
+        # A populacao de entrada e Poisson: os spikes dela sao sorteados a cada
+        # passo e antes eram descartados. Contar custa uma soma por passo, entao
+        # fica DESLIGADO por padrao -- os scripts de figura nao pagam por isso.
+        # Quem liga e a telemetria, que precisa mostrar a atividade dos LC4/LPLC2
+        # (a maioria deles nao tem morfologia exportada e so aparece como
+        # populacao; sem esta contagem, some da tela em vez de somar ali).
+        self.contar_entrada = False
+        self.contagem_entrada = np.zeros(n_entrada, dtype=np.int64)
 
     def roda(self, duracao_ms, taxas_hz, rng=None):
         """Avanca a rede. Devolve quantos spikes cada neuronio de cada camada deu."""
         rng = rng or np.random
         for c in self.contagem:
             c[:] = 0
+        if self.contar_entrada:
+            self.contagem_entrada[:] = 0
         p = np.asarray(taxas_hz, dtype=float) * (self.dt / 1000.0)
         for _ in range(int(round(duracao_ms / self.dt))):
             disparou = rng.random(self.n_entrada) < p
+            if self.contar_entrada:
+                self.contagem_entrada += disparou
             for k, camada in enumerate(self.camadas):
                 chega = self.conexoes[k].empurra(disparou)
                 disparou = camada.passo(self.t, chega)
@@ -174,6 +186,13 @@ class Rede:
         timestep.
         """
         saida = []
+        if self.contar_entrada and nomes and len(nomes) > len(self.camadas):
+            # A entrada vem PRIMEIRO e so com spikes. Ela nao e LIF: nao tem
+            # potencial de membrana nem refratario, e inventar esses campos pra
+            # deixar a mensagem uniforme seria inventar dado.
+            saida.append({"index": -1, "name": nomes[0],
+                          "spikes": self.contagem_entrada.copy()})
+            nomes = nomes[1:]
         for k, camada in enumerate(self.camadas):
             item = {"index": k, "spikes": self.contagem[k].copy()}
             if nomes and k < len(nomes):

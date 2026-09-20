@@ -7,8 +7,14 @@ em C# com StreamReader.ReadLine(), e sobrevive bem no Windows. O volume aqui e
 pequeno -- dezenas de mensagens por segundo, nao milhares.
 
 REGRA DE MAO UNICA: a telemetria so OBSERVA. Nenhuma mensagem volta pra
-simulacao, e nenhum dado daqui entra em conta na fisica ou no circuito. Se o
-visualizador cair, a simulacao nao muda de comportamento.
+simulacao neste socket, e nenhum dado daqui entra em conta na fisica ou no
+circuito. Se o visualizador cair, a simulacao nao muda de comportamento.
+
+Escolher QUAL experimento roda e quando comeca e outra coisa, e vive noutro
+socket: sim/telemetry/control.py. A separacao e proposital -- assim o canal de
+observacao continua sendo so leitura, e da pra ver no codigo que a interface
+nunca decide se a mosca virou, escapou ou se um neuronio disparou. Ela escolhe o
+experimento; o circuito e a fisica decidem o resto.
 
 Toda mensagem carrega:
 
@@ -17,6 +23,8 @@ Toda mensagem carrega:
 Tipos:
 
     hello             identificacao do emissor, uma vez na conexao
+    experiment_list   quais experimentos existem, pro seletor da interface
+    run_state         parado/rodando/pausado, mais o experimento e a semente
     experiment_info   id/nome/descricao do experimento e seus parametros
     scene_info        geometria estatica: obstaculos, arena, estimulo
     frame             pose da mosca + comando motor (o mais frequente)
@@ -200,6 +208,41 @@ def statistics(sim_time: float, values: dict[str, Any], **extra) -> dict[str, An
     return _envelope("statistics", {
         "sim_time": round(float(sim_time), 6),
         "values": values,
+        **extra,
+    })
+
+
+def experiment_list(experiments: list[dict[str, Any]],
+                    current: str | None = None, **extra) -> dict[str, Any]:
+    """
+    Catalogo pro seletor. Cada item: {"id", "name", "description"}.
+
+    Mandado na conexao e sempre que o catalogo mudar. E mensagem fixa: quem
+    conectar depois recebe do mesmo jeito.
+    """
+    return _envelope("experiment_list", {
+        "experiments": experiments,
+        "current": current,
+        **extra,
+    })
+
+
+def run_state(state: str, experiment_id: str | None = None, seed: int = 0,
+              sim_time: float = 0.0, step: int = 0,
+              detail: dict[str, Any] | None = None, **extra) -> dict[str, Any]:
+    """
+    state: idle | loading | running | paused | finished | error
+
+    `loading` existe porque montar arena, mosca e circuito leva alguns segundos e
+    sem isso a interface fica parecendo travada.
+    """
+    return _envelope("run_state", {
+        "state": state,
+        "experiment_id": experiment_id,
+        "seed": int(seed),
+        "sim_time": round(float(sim_time), 6),
+        "step": int(step),
+        "detail": detail or {},
         **extra,
     })
 

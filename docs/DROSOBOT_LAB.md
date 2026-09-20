@@ -23,12 +23,23 @@ Male CNS / neuPrint  ──>  connectome/*.csv
                       sim/telemetry/              <- MAO UNICA
                               │
                      unity/DrosobotLab/           <- so visualizacao
+                              │
+                   telemetry/control.py           <- unica volta, e so isto:
+                                                     qual experimento, quando
 ```
 
-**A Unity nao decide nada.** Ela nao simula fisica, nao simula neuronio, nao
-escolhe se a mosca virou ou escapou. MuJoCo continua sendo a autoridade da fisica
-e o circuito rodando sobre o conectoma a do comportamento. A telemetria e de mao
-unica: nao existe caminho de volta.
+**A Unity nao decide nada do experimento.** Ela nao simula fisica, nao simula
+neuronio, nao escolhe se a mosca virou ou escapou. MuJoCo continua sendo a
+autoridade da fisica e o circuito rodando sobre o conectoma a do comportamento.
+
+O canal de telemetria continua sendo de mao unica: nada volta por ele, e da pra
+abrir `sim/telemetry/server.py` e conferir que nada la le do socket.
+
+O que a interface PODE fazer vive num socket separado, `control.py`, e a lista
+inteira e esta: `list select start pause resume reset stop quit`. Nao existe
+comando pra mexer em peso sinaptico, limiar, taxa de disparo ou drive motor, e
+comando fora da lista e recusado com erro visivel em vez de ignorado. Escolher
+qual experimento roda e controle; decidir o que a mosca faz continua nao sendo.
 
 Isso e o que evita o pior resultado possivel aqui, que seria ter duas
 implementacoes do cerebro divergindo em silencio.
@@ -175,6 +186,20 @@ porque nao acrescenta dependencia e e trivial de ler com `StreamReader.ReadLine(
 | `retina` | mais espacado | 2x721 omatideos + derivados |
 | `event` | discreto | escape_triggered, turn_left/right, ... |
 | `statistics` | periodico | agregados |
+| `experiment_list` | ao conectar e quando muda | catalogo pro seletor |
+| `run_state` | a cada transicao | idle/loading/running/paused/error |
+
+`loading` existe porque montar arena, mosca e circuito leva de 1 a 10 segundos e
+sem ele a interface parece travada. Ele tambem e o que separa uma corrida da
+seguinte: logo depois de um Start, esperar so por `running` ainda encontraria o
+experimento ANTERIOR rodando.
+
+A camada de ENTRADA (LC4/LPLC2, T4/T5) vai em `neural_activity` so com `spikes`.
+Ela e uma populacao de Poisson: nao tem potencial de membrana nem refratario, e
+mandar `v_mV` zerado pra ela deixaria a mensagem uniforme ao custo de inventar
+dado. O vetor dela e recortado pros bodyIds DECLARADOS -- no Giant Fiber a rede
+tem 1271 pre-sinapticos e o circuito declarado tem os 311 de looming; publicar o
+vetor inteiro acenderia o neuronio errado no cerebro 3D sem erro nenhum na tela.
 
 Duas garantias, ambas com teste:
 
@@ -183,7 +208,8 @@ Duas garantias, ambas com teste:
   quadro e aceitavel; atrasar a fisica nao e.
 - **desligada custa quase nada.**
 
-`experiment_info` e `scene_info` sao guardados e reenviados a cada cliente novo.
+`experiment_list`, `experiment_info`, `scene_info` e `run_state` sao guardados e
+reenviados a cada cliente novo (so o ultimo de cada tipo).
 Sem isso, conectar com a simulacao ja rodando dava tela vazia -- falha que so
 apareceu no teste de integracao contra a simulacao de verdade.
 
