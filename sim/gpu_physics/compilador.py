@@ -52,7 +52,11 @@ import numpy as np
 # aqui e aspiracional. Ver benchmarks/physics/mjmodel_inventario.json.
 JNT_SUPORTADAS = {0, 3}                       # free, hinge
 GEOM_SUPORTADOS = {0, 2, 5, 7}                # plane, sphere, cylinder, mesh
-GEOM_COLIDIVEIS = {(0, 7), (5, 7)}            # plane-mesh, cylinder-mesh
+# So plano x malha. O cilindro x malha da arena de obstaculos passa por
+# `mjc_Convex` (GJK/EPA) no original e NAO esta implementado; aceita-lo aqui
+# devolveria zero contatos com o pilar e a mosca o atravessaria -- exatamente o
+# modo de falha que `test_pilar_barra_a_mosca` existe para pegar.
+GEOM_COLIDIVEIS = {(0, 7)}                    # plane-mesh
 TRN_SUPORTADAS = {0, 5}                       # joint, body (adesao)
 DYN_SUPORTADAS = {0}                          # none (atuador sem estado)
 GAIN_SUPORTADOS = {0}                         # fixed
@@ -145,6 +149,14 @@ def valida(m) -> dict:
 
     _exige({int(t) for t in m.actuator_trntype} <= TRN_SUPORTADAS,
            "transmissao de atuador fora de {joint, body}")
+    # A adesao soma as Jacobianas normais dos contatos do corpo. Contatos na
+    # faixa de `gap` entram por um caminho proprio no original, com a Jacobiana
+    # montada na hora; sem `gap` esse caminho nao pode ocorrer, e o kernel nao o
+    # implementa. Recusar aqui e melhor que implementa-lo sem nunca exercita-lo.
+    if int(m.npair):
+        _exige(float(np.max(m.pair_gap)) == 0.0,
+               "pair_gap nao nulo: o caminho de adesao para contato em gap nao "
+               "esta implementado")
     _exige({int(t) for t in m.actuator_dyntype} <= DYN_SUPORTADAS,
            "dyntype de atuador != none")
     _exige({int(t) for t in m.actuator_gaintype} <= GAIN_SUPORTADOS,

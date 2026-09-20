@@ -51,13 +51,17 @@ Todos derivam do **MuJoCo 3.9.0**, que e a versao do binario que roda os
 experimentos. A versao importa: o `mjc_PlaneConvex` mudou de algoritmo entre
 3.9 e 3.13, e portar da versao errada produz contato quase certo. Ver
 `VERSAO_MUJOCO_PORTADA` em `sim/gpu_physics/compilador.py`, que recusa um
-runtime divergente.
+runtime divergente. A fonte de consulta e o worktree
+`research/upstream/mujoco-3.9.0` (tag `3.9.0`), separado do clone principal
+justamente para que "abrir o arquivo" nao volte a abrir a versao errada.
 
 | arquivo | deriva de | licenca |
 |---|---|---|
 | `sim/gpu_physics/kernels/cinematica.cl` | `engine_core_smooth.c` (`mj_kinematics1`, `mj_kinematics2`) e `engine_util_spatial.c` (`mju_mulQuat`, `mju_rotVecQuat`, `mju_quat2Mat`, `mju_axisAngle2Quat`, `mju_normalize4`) | Apache-2.0, (c) DeepMind Technologies Limited |
 | `sim/gpu_physics/kernels/dinamica.cl` | `engine_core_smooth.c` (`mj_comPos`, `mj_crb`, `mj_factorI`, `mj_solveLD`, `mj_comVel`, `mj_rne`), `engine_passive.c` (`mj_springdamper`), `engine_forward.c` (`mj_fwdActuation`, `mj_Euler`), `engine_util_spatial.c` (`mju_inertCom`, `mju_dofCom`, `mju_crossMotion`, `mju_crossForce`, `mju_mulInertVec`) | idem |
 | `sim/gpu_physics/kernels/colisao.cl` | `engine_collision_convex.c` (`mjc_PlaneConvex`, `addplanemesh`, `mjc_meshSupport`) | idem |
+| `sim/gpu_physics/kernels/restricao.cl` | `engine_core_constraint.c` (`mj_instantiateContact`, `mj_diagApprox`, `mj_makeImpedance`, `getimpedance`, `mj_referenceConstraint`), `engine_core_util.c` (`mj_jac`), `engine_util_spatial.c` (`mju_makeFrame`), `engine_core_smooth.c` (`mj_transmission`, ramo `mjTRN_BODY`) | idem |
+| `sim/gpu_physics/kernels/solver.cl` | SEMANTICAS de `engine_core_constraint.c` (`mj_constraintUpdate_impl`) e `engine_solver.c` (`mj_solveNewton`): objetivo, custo e forca por linha. O ALGORITMO e proprio -- Newton denso com recuo de Armijo, nao a fatoracao unica com atualizacoes de posto 1 do original | idem |
 
 Nao e inspiracao: e traducao de C para OpenCL C, **termo a termo**, preservando
 a ordem das operacoes de ponto flutuante e os atalhos para quaternio identidade

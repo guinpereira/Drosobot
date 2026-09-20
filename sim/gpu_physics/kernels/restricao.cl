@@ -316,4 +316,69 @@ __kernel void restricao_aref(
                   - efc_KBIP[4*i]*efc_KBIP[4*i+2]*(efc_pos[i] - efc_margin[i]);
 }
 
+// ---------------------------------------------------------------- adesao
+//
+// `mj_transmission`, ramo `mjTRN_BODY`. O atuador de adesao nao tem
+// comprimento: o "momento" dele e a MEDIA das Jacobianas normais dos contatos
+// que tocam o corpo, com o sinal trocado -- puxar, nao empurrar.
+//
+// Para cone piramidal a normal nao e uma linha: ela e a media das `2*(dim-1)`
+// direcoes da piramide, cada uma com peso `0.5/(dim-1)`. Com `condim = 3` sao
+// quatro linhas com peso 0,25.
+//
+// Contatos na faixa de `gap` (`exclude == 1`) entram no original por um caminho
+// proprio, com a Jacobiana montada na hora. O compilador recusa o modelo se
+// algum `pair_gap` for nao nulo, entao esse caminho nao pode ocorrer aqui e
+// nao e implementado -- em vez de ser implementado errado e nunca exercitado.
+__kernel void adesao_momento(
+    const int nu, __global const int* ncon,
+    __global const int* actuator_trntype, __global const int* actuator_trnid,
+    __global const int* con_geom, __global const int* con_efcadr,
+    __global const int* geom_bodyid, __global const real* efc_J,
+    __global real* ades_momento, __global int* ades_conta)
+{
+    int gid = get_global_id(0);
+    int a = gid / NV;
+    int i = gid - a * NV;
+    if (a >= nu) return;
+    if (actuator_trntype[a] != TRN_BODY) {
+        ades_momento[(size_t)a*NV + i] = REAL_ZERO;
+        if (i == 0) ades_conta[a] = 0;
+        return;
+    }
+    int corpo = actuator_trnid[2*a];
+    int conta = 0;
+    real mom = REAL_ZERO;
+    for (int c = 0; c < ncon[0]; ++c) {
+        int b1 = geom_bodyid[con_geom[2*c]], b2 = geom_bodyid[con_geom[2*c+1]];
+        if (b1 != corpo && b2 != corpo) continue;
+        int base = con_efcadr[c];
+        if (base < 0) continue;              // contato excluido: fora do subset
+        conta++;
+        // condim = 3 -> quatro linhas, peso 0,5/(dim-1) = 0,25
+        for (int k = 0; k < 4; ++k) {
+            mom += (real)0.25 * efc_J[(size_t)(base+k)*NV + i];
+        }
+    }
+    ades_momento[(size_t)a*NV + i] = conta ? (-mom/(real)conta) : REAL_ZERO;
+    if (i == 0) ades_conta[a] = conta;
+}
+
+// Soma a contribuicao da adesao em `qfrc_actuator`. Uma thread por DOF varrendo
+// os atuadores: sem corrida e sem atomico.
+__kernel void adesao_projeta(
+    const int nu, __global const int* actuator_trntype,
+    __global const real* ades_momento, __global const real* actuator_force,
+    __global real* qfrc_actuator)
+{
+    int i = get_global_id(0);
+    if (i >= NV) return;
+    real s = REAL_ZERO;
+    for (int a = 0; a < nu; ++a) {
+        if (actuator_trntype[a] != TRN_BODY) continue;
+        s += ades_momento[(size_t)a*NV + i] * actuator_force[a];
+    }
+    qfrc_actuator[i] += s;
+}
+
 #endif  // NV && NEFC_MAX && NCON_MAX

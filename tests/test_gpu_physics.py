@@ -3,9 +3,9 @@ O que o backend de fisica nao pode quebrar.
 
     .venv-flygym2\Scripts\python tests/test_gpu_physics.py
 
-Oito propriedades, oito motivos distintos. Nao ha um nono teste medindo a
-mesma coisa por outro angulo -- isso so faria a suite demorar mais e falhar
-junto.
+Doze propriedades, doze motivos distintos. Nao ha um decimo terceiro teste
+medindo a mesma coisa por outro angulo -- isso so faria a suite demorar mais e
+falhar junto.
 
   1. **O hash da ciencia e invariante ao backend.** Trocar de motor fisico nao
      e mudanca cientifica. Se `hash_ciencia()` mudar durante trabalho de
@@ -252,7 +252,7 @@ def _motor_e_referencia(arena="looming", passos=200, sem_adesao=True):
     g = MotorFisicoGPU(mod, dev=Device(), fp64=True)
     g.escreve_estado(qpos=d.qpos, qvel=d.qvel, ctrl=d.ctrl,
                      mocap_pos=d.mocap_pos, mocap_quat=d.mocap_quat)
-    g.forward_smooth()
+    g.forward()
     return corpo, m, d, g
 
 
@@ -323,6 +323,160 @@ def test_contatos_batem_com_o_mujoco():
             f"contatos divergiram: dist {pior_d:.2e}, pos {pior_p:.2e}")
         print(f"    {con['ncon']} contatos, mesma ordem: "
               f"dist {pior_d:.1e}, pos {pior_p:.1e}")
+    finally:
+        corpo.fecha()
+
+
+def test_restricoes_batem_com_o_mujoco():
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    corpo, m, d, g = _motor_e_referencia()
+    try:
+        e = g.efc()
+        assert e["nefc"] == int(d.nefc) and e["nefc"] > 0, (
+            f"nefc difere: GPU {e['nefc']}, MuJoCo {d.nefc}")
+        # a efc_J do MuJoCo e esparsa quando nv >= 60; densifica para comparar
+        nefc, nv = int(d.nefc), int(m.nv)
+        J = np.zeros((nefc, nv))
+        rownnz = np.asarray(d.efc_J_rownnz)[:nefc]
+        rowadr = np.asarray(d.efc_J_rowadr)[:nefc]
+        colind = np.asarray(d.efc_J_colind)
+        vals = np.asarray(d.efc_J)
+        for i in range(nefc):
+            a0, n = int(rowadr[i]), int(rownnz[i])
+            J[i, colind[a0:a0 + n]] = vals[a0:a0 + n]
+
+        for nome, got, ref in (("efc_J", e["J"], J),
+                               ("efc_R", e["R"], d.efc_R),
+                               ("efc_D", e["D"], d.efc_D),
+                               ("efc_aref", e["aref"], d.efc_aref)):
+            ref = np.asarray(ref, dtype=np.float64).reshape(np.shape(got))
+            esc = max(1e-30, float(np.abs(ref).max()))
+            rel = float(np.abs(got - ref).max()) / esc
+            assert rel < 1e-11, f"{nome} divergiu {rel:.2e}"
+        assert np.array_equal(e["id"], np.asarray(d.efc_id)[:e["nefc"]]), (
+            "efc_id difere: a ordem das linhas e a ordem dos contatos")
+        print(f"    {e['nefc']} linhas, mesma ordem; R e D exatos")
+    finally:
+        corpo.fecha()
+
+
+def test_adesao_bate_com_o_mujoco():
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    # adesao LIGADA: e como os experimentos rodam, e o momento dela depende dos
+    # contatos, entao desligar tornaria o teste vazio
+    corpo, m, d, g = _motor_e_referencia(sem_adesao=False)
+    try:
+        ades = [a for a in range(m.nu) if int(m.actuator_trntype[a]) == 5]
+        assert ades and float(np.abs(np.asarray(d.ctrl)[ades]).max()) > 0, (
+            "nenhum atuador de adesao acionado: o teste passaria com zeros")
+        for nome, ref in (("actuator_force", d.actuator_force),
+                          ("qfrc_actuator", d.qfrc_actuator)):
+            ref = np.asarray(ref, dtype=np.float64)
+            got = g.le(nome).reshape(ref.shape)
+            esc = max(1e-30, float(np.abs(ref).max()))
+            rel = float(np.abs(got - ref).max()) / esc
+            assert rel < 1e-12, f"{nome} divergiu {rel:.2e}"
+        print(f"    {len(ades)} atuadores de adesao, ctrl=1: "
+              f"actuator_force e qfrc_actuator batem")
+    finally:
+        corpo.fecha()
+
+
+def test_solver_chega_ao_minimo():
+    """
+    Estacionariedade, nao igualdade com o MuJoCo.
+
+    O problema e estritamente convexo e C1, entao a propriedade que define a
+    resposta certa e `grad = 0` -- verificavel aqui mesmo, sem depender de uma
+    segunda implementacao. Medido: o MuJoCo as vezes para longe disso, e exigir
+    igualdade com ele faria da parada antecipada dele a especificacao.
+    """
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    corpo, m, d, g = _motor_e_referencia(sem_adesao=False)
+    try:
+        nv = int(m.nv)
+        nefc = int(g.le_int("nefc")[0])
+        assert nefc > 0, "sem restricao ativa: o teste nao provaria nada"
+        J = g.le("efc_J")[:nefc * nv].reshape(nefc, nv)
+        D = g.le("efc_D")[:nefc]
+        aref = g.le("efc_aref")[:nefc]
+        Md = g.le("Md").reshape(nv, nv)
+        qs = g.le("qacc_smooth")
+
+        def grad(a):
+            neg = np.minimum(J @ a - aref, 0.0)
+            return Md @ (a - qs) + J.T @ (D * neg)
+
+        g_gpu = float(np.linalg.norm(grad(g.le("qacc"))))
+        # normaliza pela escala do problema, senao o limiar vira arbitrario
+        escala = float(np.linalg.norm(Md @ (g.le("qacc") - qs))) + 1.0
+        assert g_gpu / escala < 1e-12, (
+            f"o solver nao chegou ao minimo: |grad|/escala = {g_gpu/escala:.2e}")
+        g_mj = float(np.linalg.norm(grad(np.asarray(d.qacc))))
+        print(f"    |grad| GPU {g_gpu:.2e}  (MuJoCo no mesmo objetivo: "
+              f"{g_mj:.2e})")
+    finally:
+        corpo.fecha()
+
+
+def test_passo_completo_e_dois_seguidos():
+    """
+    Dois passos, nao um: o primeiro esconde bug de buffer residente.
+
+    Adesao desligada de proposito -- com ela o solver do MuJoCo para antes do
+    minimo ja no primeiro passo (ver `test_solver_chega_ao_minimo`) e a
+    trajetoria separa por motivo que nao e o porte. Sem ela os dois solvers
+    concordam, e a comparacao mede a cadeia inteira.
+    """
+    import mujoco as mj
+
+    try:
+        from gpu_physics.device import Device
+        Device()
+    except Exception as e:                                    # noqa: BLE001
+        print(f"    pulado: sem device OpenCL ({type(e).__name__})")
+        return
+
+    corpo, m, d, g = _motor_e_referencia()
+    try:
+        q0 = np.array(d.qpos, copy=True)
+        v0 = np.array(d.qvel, copy=True)
+        c0 = np.array(d.ctrl, copy=True)
+        g.escreve_estado(qpos=q0, qvel=v0, ctrl=c0,
+                         mocap_pos=d.mocap_pos, mocap_quat=d.mocap_quat)
+        d.qpos[:] = q0
+        d.qvel[:] = v0
+        d.ctrl[:] = c0
+        for k in (1, 2):
+            g.passo()
+            mj.mj_step(m, d)
+            eq = float(np.abs(g.le("qpos") - np.asarray(d.qpos)).max())
+            ev = float(np.abs(g.le("qvel") - np.asarray(d.qvel)).max())
+            ncon_g = int(g.le_int("ncon")[0])
+            assert ncon_g == int(d.ncon), (
+                f"passo {k}: ncon {ncon_g} != {int(d.ncon)}")
+            assert eq < 1e-13 and ev < 1e-11, (
+                f"passo {k}: dqpos {eq:.2e}, dqvel {ev:.2e}")
+            print(f"    passo {k}: dqpos {eq:.1e}  dqvel {ev:.1e}  "
+                  f"ncon {ncon_g}")
     finally:
         corpo.fecha()
 

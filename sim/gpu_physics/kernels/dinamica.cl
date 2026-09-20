@@ -84,6 +84,23 @@ static real dot6(__global const real* a, const real b[6]) {
          + a[3]*b[3] + a[4]*b[4] + a[5]*b[5];
 }
 
+// As condicoes de contorno do mundo, por passo: `cvel[0] = 0`,
+// `cacc[0] = -gravidade`, `cfrc_body[0] = 0`.
+//
+// Isto era tres `enqueue_copy` do host. Alem de contradizer "estado residente",
+// a copia do pyopencl e BLOQUEANTE por padrao: eram tres sincronizacoes por
+// passo dentro do laco quente.
+__kernel void zera_raizes(
+    const real gx, const real gy, const real gz,
+    __global real* cvel, __global real* cacc, __global real* cfrc_body)
+{
+    int i = get_global_id(0);
+    if (i >= 6) return;
+    cvel[i] = REAL_ZERO;
+    cfrc_body[i] = REAL_ZERO;
+    cacc[i] = (i == 3) ? -gx : ((i == 4) ? -gy : ((i == 5) ? -gz : REAL_ZERO));
+}
+
 // ----------------------------------------------------------------- comPos
 //
 // `mj_comPos` tem tres fases e as tres tem forma diferente na GPU:
@@ -561,14 +578,21 @@ __kernel void atuacao(
 {
     int a = get_global_id(0);
     if (a >= nu) return;
-    if (actuator_trntype[a] != TRN_JOINT) {
+    real len, vel;
+    if (actuator_trntype[a] == TRN_BODY) {
+        // adesao: `mj_transmission` nao consegue definir comprimento e o zera.
+        // O momento dela vem dos contatos, em `adesao_momento`.
+        len = REAL_ZERO;
+        vel = REAL_ZERO;
+    } else if (actuator_trntype[a] == TRN_JOINT) {
+        int j = actuator_trnid[2*a];
+        real gear = actuator_gear[6*a];
+        len = gear * qpos[jnt_qposadr[j]];
+        vel = gear * qvel[jnt_dofadr[j]];
+    } else {
         actuator_force[a] = REAL_ZERO;
         return;
     }
-    int j = actuator_trnid[2*a];
-    real gear = actuator_gear[6*a];
-    real len = gear * qpos[jnt_qposadr[j]];
-    real vel = gear * qvel[jnt_dofadr[j]];
     actuator_length[a] = len;
     actuator_velocity[a] = vel;
 

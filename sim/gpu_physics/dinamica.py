@@ -177,6 +177,7 @@ class MotorFisicoGPU:
             # M densa: o Hessiano `M + J'DJ` preenche tudo, entao nao ha
             # esparsidade a preservar dentro do solver
             "Md": self.nv * self.nv,
+            "ades_momento": self.nu * self.nv,
         }
         for nome, n in derivados.items():
             self.tam[nome] = n
@@ -185,6 +186,7 @@ class MotorFisicoGPU:
                         ("nefc", 1), ("solver_iters", 1),
                         ("con_exclude", max(1, self.ncon_max)),
                         ("con_efcadr", max(1, self.ncon_max)),
+                        ("ades_conta", self.nu),
                         ("sup_vert", max(1, self.npair)),
                         ("n_por_par", max(1, self.npair)),
                         ("con_geom", max(1, 2 * MAX_CON_POR_PAR * self.npair)),
@@ -204,6 +206,7 @@ class MotorFisicoGPU:
         self.k = {nome: d.kernel(ARQUIVOS, nome, self.fp64, self._defines)
                   for nome in (
                       "fk_registradores", "fk_lds",
+                      "zera_raizes",
                       "com_momento", "com_acumula_nivel", "com_normaliza",
                       "com_inercia", "com_cdof",
                       "crb_inicia", "crb_acumula_nivel", "crb_monta_M",
@@ -217,7 +220,7 @@ class MotorFisicoGPU:
                       "compacta_contatos",
                       "contato_quadro", "contato_jacobiana",
                       "restricao_impedancia", "restricao_aref",
-                      "contato_enderecos",
+                      "contato_enderecos", "adesao_momento", "adesao_projeta",
                       "M_densa", "M_simetriza", "solver_newton")}
         self.usa_registradores = self.grupo >= max(self.nbody, self.ngeom)
         self.dt = self.real(mod.opcoes["timestep"])
@@ -296,18 +299,11 @@ class MotorFisicoGPU:
         self.dev.escreve(self.b["xquat"], q)
 
     def _zera_raizes(self) -> None:
-        """
-        `cvel[0] = 0` e `cacc[0] = -g`: as condicoes de contorno do mundo.
-
-        Sao duas escritas de 6 reais por passo. Ficam no host enquanto a forma e
-        por etapa; na forma residente elas viram duas linhas no inicio do kernel.
-        """
-        zero6 = np.zeros(6, dtype=self.real)
-        self.dev.escreve(self.b["cvel"], zero6)
-        cacc0 = np.zeros(6, dtype=self.real)
-        cacc0[3:6] = -self.gravidade
-        self.dev.escreve(self.b["cacc"], cacc0)
-        self.dev.escreve(self.b["cfrc_body"], zero6)
+        """`cvel[0] = 0`, `cacc[0] = -g`, `cfrc_body[0] = 0`, no device."""
+        gx, gy, gz = (self.real(v) for v in self.gravidade)
+        self._roda("zera_raizes", 6,
+                   (gx, gy, gz, self.b["cvel"], self.b["cacc"],
+                    self.b["cfrc_body"]))
 
     # ------------------------------------------------------------- entrada
 
@@ -564,6 +560,18 @@ class MotorFisicoGPU:
                    (np.int32(self.nu), b["actuator_trntype"],
                     b["actuator_trnid"], b["actuator_gear"], b["jnt_dofadr"],
                     b["actuator_force"], b["qfrc_actuator"]))
+        # Adesao DEPOIS da projecao das juntas, e depois das restricoes: o
+        # momento dela e a media das Jacobianas normais dos contatos, entao ela
+        # so existe quando `efc_J` ja existe.
+        self._roda("adesao_momento", self.nu * self.nv,
+                   (np.int32(self.nu), b["ncon"], b["actuator_trntype"],
+                    b["actuator_trnid"], b["con_geom"], b["con_efcadr"],
+                    b["geom_bodyid"], b["efc_J"], b["ades_momento"],
+                    b["ades_conta"]))
+        self._roda("adesao_projeta", self.nv,
+                   (np.int32(self.nu), b["actuator_trntype"],
+                    b["ades_momento"], b["actuator_force"],
+                    b["qfrc_actuator"]))
 
     def smooth(self) -> None:
         b = self.b

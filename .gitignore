@@ -63,3 +63,4 @@ unity/sessao_sim.log
 unity/sessao_sim.err
 unity/sessao_player.log
 MUJOCO_LOG.TXT
+benchmarks/physics/gpu/trace/

@@ -7,9 +7,10 @@ Este documento é o estado real do trabalho: o que foi construído, o que foi
 medido, e — a parte mais importante — **o que a medição refuta e o que ela
 ainda permite**.
 
-Estado em uma linha: **a dinâmica sem restrição e a colisão plano × malha
-rodam na GPU e batem com o MuJoCo em precisão de máquina. A construção das
-restrições e o solver ainda não existem.**
+Estado em uma linha: **o passo de física completo — `state(t) → state(t+dt)` —
+roda na GPU para o subconjunto plano × malha, sem o MuJoCo executar nenhuma
+etapa dinâmica. Falta colisão cilindro × malha, e a latência ainda é 50× a da
+CPU, dominada por enfileiramento no host.**
 
 ---
 
@@ -425,65 +426,112 @@ Sem eufemismo.
 
 | etapa | campos conferidos | pior erro relativo |
 |---|---|---|
-| cinemática direta | `xpos`, `xquat`, `xmat`, `xipos`, `ximat`, `xanchor`, `xaxis`, `geom_xpos`, `geom_xmat` | 6,7e-16 (fp64) |
+| cinemática direta | `xpos`, `xquat`, `xmat`, `xipos`, `ximat`, `xanchor`, `xaxis`, `geom_xpos`, `geom_xmat` | 6,7e-16 |
 | centro de massa e inércias | `subtree_com`, `cinert`, `cdof` | ~1e-16 |
 | matriz de massa e fatoração | `crb`, `M`, `qLD`, `qLDiagInv` | 2,7e-15 |
 | velocidades de corpo | `cvel`, `cdof_dot` | 3,3e-16 |
-| forças passivas | `qfrc_passive` (mola + amortecedor) | 1,5e-16 |
+| forças passivas | `qfrc_passive` | 1,5e-16 |
 | bias (RNE) | `qfrc_bias` | 5,9e-18 |
-| atuação de junta | `actuator_force`, `qfrc_actuator` | 0 (exato) |
-| **aceleração sem restrição** | **`qacc_smooth`** | **3,2e-15** |
-| **colisão plano × malha** | **`ncon`, ordem, `dist`, `pos`** | **4,5e-16** |
-| integração Euler | `qvel`, `qpos` (semi-implícito, amortecimento implícito) | — |
-
-São 14 campos numa cadeia sequencial mais a lista de contatos. O teste compara
-todos e reprova no primeiro: a cadeia é sequencial, então o primeiro campo a
-divergir é a causa e os seguintes herdam.
+| atuação de junta | `actuator_force`, `qfrc_actuator` | exato |
+| **adesão** (`mjTRN_BODY`) | `actuator_force`, `qfrc_actuator`, com `ctrl = 1` | 1,2e-16 |
+| aceleração sem restrição | `qacc_smooth` | 3,2e-15 |
+| colisão plano × malha | `ncon`, ordem, `dist`, `pos` | 4,5e-16 |
+| **construção das restrições** | `efc_J`, `efc_pos`, `efc_margin`, `efc_id`, ordem | 4,6e-16 |
+| | `efc_diagApprox`, `efc_R`, `efc_D` | **exatos** |
+| | `efc_vel`, `efc_aref` | 1,0e-13 |
+| **solver de restrição** | `efc_force`, `qfrc_constraint`, `qacc` | 2,0e-14 |
+| integração Euler | `qvel`, `qpos` | — |
+| **passo completo** | dois passos consecutivos contra `mj_step` | dqpos 2,2e-16, dqvel 1,9e-13 |
 
 ### Continua no MuJoCo CPU
 
-* **construção das restrições** — `efc_J`, `efc_D`, `efc_aref`, `efc_R`
-* **o solver de restrição** — 39% do passo
-* adesão (`mjTRN_BODY`): o momento dela sai das Jacobianas de contato, que
-  dependem das restrições
-* colisão **cilindro × malha** (GJK/EPA), usada só na arena de obstáculos
+* colisão **cilindro × malha** (GJK/EPA), usada só na arena de obstáculos — e o
+  compilador **recusa** o modelo em vez de devolver zero contatos com o pilar
+* parsing, compilação do `mjModel`, pré-processamento estático, e a referência
+  de comparação
 * **todos os experimentos gravados**: `looming`, `obstáculos` e `optomotor`
   rodaram e continuam rodando 100% em `flygym2-mujoco`
 
-`physics.cria('drosobot-gpu')` continua recusando montar. Com a mosca no ar o
-que existe já é a física inteira; com ela no chão, falta a força que a impede
-de atravessar — e gravar `physics: drosobot-gpu` num metadata sem ela seria
-procedência falsa.
+`physics.cria('drosobot-gpu')` continua recusando montar: falta o adaptador que
+liga o motor ao laço do laboratório (retina, arena, pose dos segmentos), e sem
+cilindro × malha a arena de obstáculos não roda.
 
-### Um erro que vale registrar: portar da versão errada
+### O solver, e por que ele não "bate com o MuJoCo"
 
-O primeiro porte da colisão saiu do clone em `research/upstream/`, que estava
-em **MuJoCo 3.13.1**. O binário que roda os experimentos é **3.9.0**.
-
-O `mjc_PlaneConvex` mudou de algoritmo entre as duas:
+O objetivo é o do 3.9.0, termo a termo:
 
 ```
-3.9.0    vizinhos do vertice de suporte no grafo de hull, ate 3 contatos,
-         descartando o que estiver a menos de 0,3*rbound do primeiro
-3.13.1   face poligonal mais anti-alinhada, podada ao quadrilatero de area
-         maxima (hull4f), ate 4 contatos
+custo(a) = 1/2 (a - a_s)' M (a - a_s) + sum_i 1/2 D_i min(jar_i, 0)^2
+jar      = J a - aref
 ```
 
-O sintoma foi enganoso: o contato **mais profundo batia bit a bit** em todos os
-pares, e só os contatos extras erravam — 11 contra 12, com as multiplicidades
-por par trocadas. Uma reimplementação em numpy do que eu tinha lido reproduziu
-exatamente o meu kernel, o que separou "porte errado" de "leitura errada" e
-apontou para fora do código.
+estritamente convexo e C¹, com mínimo único. O caminho até ele difere de
+propósito: o MuJoCo fatora o Hessiano uma vez e faz atualizações de posto 1 com
+busca de linha exata; aqui é refatoração densa com recuo de Armijo, num
+work-group, com `H` (72×72) em `__local`.
 
-Duas coisas saíram disso, além do conserto:
+Medido, no estado inicial, com as entradas dos dois batendo a 1e-13:
 
-* `compilador.confere_versao()` **recusa** um runtime que não seja a versão de
-  onde os kernels foram portados, com o motivo na mensagem;
-* há teste para a guarda disparar, não só para o caminho feliz.
+```
+            custo           |grad|
+GPU         1,394463e+09    1,3e-13
+MuJoCo      1,394733e+09    5,0e+01
+```
 
-A dinâmica suave não mudou entre 3.9 e 3.13, e é por isso que ela validou a
-3e-15 desde o primeiro porte — o que tornou o erro mais difícil de ver, não
-mais fácil.
+**O ponto da GPU é estacionário e tem custo menor.** O MuJoCo pára antes do
+mínimo nesse passo — com `solref[0] = 2e-4` e `dt = 1e-4` a restrição é muito
+rígida, e a busca de linha dele estagna.
+
+Consequência prática: as trajetórias coincidem a 1e-13 enquanto os dois solvers
+concordam e separam quando não concordam mais. Com adesão desligada isso são
+dois passos a 1e-16/1e-13; com adesão ligada, a separação começa no primeiro
+passo. **Isso não é erro do porte**, e o teste reflete isso: ele exige
+estacionariedade (`|grad| ≈ 0`), não igualdade com o MuJoCo — exigir igualdade
+faria da parada antecipada dele a especificação.
+
+### Latência do passo completo
+
+Agora faz sentido medir, porque o passo existe:
+
+```
+Drosobot GPU passo completo     6345 us
+  host para enfileirar          4390 us      80 despachos, ~53 us cada
+  alem do enfileiramento        1956 us
+MuJoCo CPU mj_step               104 us
+```
+
+**70% do custo é Python enfileirando kernels**, não a GPU calculando. Os 1956 us
+de GPU ainda são ~19× a CPU, e a maior parte está nos estágios com laço por
+nível — `com_pos`, `massa`, `com_vel`, `bias` somam ~56 dos 80 despachos, cada um
+com poucas dezenas de threads ativas.
+
+Isso é exatamente o que a fase de fusão/kernel persistente ataca, e foi deixado
+para depois de propósito: primeiro uma física completa e correta, depois uma
+implementação de baixa latência.
+
+### Trace físico
+
+`sim/lab/trace_fisico.py` grava `physics_trace.jsonl` — `qpos`, `qvel`, `qacc`,
+contatos e forças de restrição por passo, com passo configurável e **desligado
+por padrão**. Arquivo próprio, não colunas novas no `timeseries.csv`: são
+centenas de números por passo de física contra poucos por janela neural, e as
+colunas do timeseries são fixas de propósito.
+
+`primeira_divergencia()` compara dois traces e diz o primeiro passo e o primeiro
+campo que se separam, na ordem causal.
+
+### Dois bugs que só a trajetória pegou
+
+Nenhum dos dois aparece num teste de campo isolado, porque os dois dependem de
+estado residente entre passos:
+
+* **`crb_monta_M` acumulava em `M` sem zerar.** O passo 1 batia porque o buffer
+  nasce zerado; o passo 2 somava sobre o passo 1 e a trajetória ia a 1e71.
+* **`factor_M` recebia o mesmo buffer como entrada `const` e como saída.**
+  Aliasing é comportamento indefinido, e o compilador tem licença para supor que
+  não há.
+
+É por isso que o teste de passo roda **dois** passos, não um.
 
 ---
 
@@ -542,6 +590,9 @@ traduzir.
 ## Como executar
 
 ```bat
+REM trajetoria GPU x MuJoCo, trace fisico e latencia do passo completo
+.venv-flygym2\Scripts\python benchmarks\physics\gpu\trajetoria_gpu_vs_mujoco.py
+
 REM quantos estagios sequenciais cabem no orcamento
 .venv-flygym2\Scripts\python benchmarks\physics\gpu\orcamento_de_estagios.py
 
