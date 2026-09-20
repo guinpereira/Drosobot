@@ -1,9 +1,9 @@
 {
-  "gerado_em": "2026-09-20T01:42:20",
+  "gerado_em": "2026-09-20T03:24:07",
   "physics": "flygym2",
   "escopo": "circuito",
   "rotulo": "flygym2+circuito",
-  "duracao_s": 0.5,
+  "duracao_s": 1.0,
   "corpo": {
     "physics_backend": "FlyGym 2.1.0 / mujoco 3.9",
     "adapter": "flygym2",
@@ -12,7 +12,8 @@
     "collision_pairs": 55,
     "nv": 72,
     "vision_hz": 100,
-    "diferenca_declarada": "arena plana: a arena de looming do 1.x ainda nao tem equivalente no 2.x"
+    "arena": "looming",
+    "diferenca_declarada": "arena de looming reproduzida com esfera mocap; o chao e o FlatGroundWorld do 2.x, com os parametros de contato dele, nao os da MovingObjArena do 1.x"
   },
   "cerebro": {
     "backend": "drosobot-opencl",
@@ -21,21 +22,35 @@
     "edges_simulated": 105130,
     "vram_mib": 0.9
   },
-  "rtf": 0.0516,
+  "rtf": 0.0534,
   "ms_por_seg_simulado": {
-    "physics": 16789.1,
-    "vision": 14.0,
-    "neural": 2274.9,
-    "leitura": 182.2
+    "physics": 15937.3,
+    "vision": 10.6,
+    "neural": 2204.5,
+    "leitura": 342.5
   },
-  "outro_ms_por_seg_simulado": 124.1,
-  "total_ms_por_seg_simulado": 19384.4,
+  "outro_ms_por_seg_simulado": 238.1,
+  "total_ms_por_seg_simulado": 18733.0,
   "desfecho": {
-    "fugas": 1,
+    "fugas": 2,
     "posicao_final": [
-      3.665978189519222,
-      0.32219779821892225,
-      1.1333918753738097
+      7.210566712103882,
+      0.9331002117058894,
+      1.0961970736027007
     ]
+  },
+  "gf": {
+    "spikes": 8,
+    "excitacao_mV": 1981.2,
+    "inibicao_mV": -2056.5,
+    "liquido_mV": -75.3,
+    "v_min_mV": -178.6,
+    "arestas_entrando": 1455
+  },
+  "diferencas_declaradas": {
+    "collision_pairs": 55,
+    "nv": 72,
+    "arena": "looming",
+    "nota": "arena de looming reproduzida com esfera mocap; o chao e o FlatGroundWorld do 2.x, com os parametros de contato dele, nao os da MovingObjArena do 1.x"
   }
 }

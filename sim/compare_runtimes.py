@@ -22,15 +22,24 @@ experimentos existentes. Um unico processo nao consegue importar os dois.
 O cerebro, esse, e o mesmo nos dois: `sim/neural/` so precisa de numpy e
 pyopencl, e o CSR vem do mesmo arquivo. E o ponto do `PhysicsAdapter`.
 
-## O que a tabela compara, e o que ela NAO compara
+## O que e igual nos quatro, e o que nao da pra igualar
 
-Compara custo: RTF e ms de relogio por segundo simulado, por etapa.
+Igual: semente, estimulo de looming (a MESMA classe `Estimulo` -- esfera de raio
+3 mm, 30 -> 4 mm, ciclo de 0,8 s), duracao, timestep 1e-4, realizacao Poisson
+(mesma semente de rng) e a semantica do experimento.
 
-NAO compara comportamento entre FlyGym 1 e 2. O adaptador 2.x roda em chao
-plano (a arena de looming do 1.x ainda nao tem equivalente), entao a mosca nao
-ve a mesma coisa. A coluna de desfecho esta la, mas comparar 4 fugas com 0 fugas
-entre versoes de simulador seria comparar experimentos diferentes -- isso esta
-dito na propria tabela.
+NAO da pra igualar, e vai registrado em cada corrida:
+
+  - o MODELO padrao do 2.x e mais leve: 55 pares de colisao contra 2268, nv 72
+    contra 93
+  - o chao do 2.x e `FlatGroundWorld`, com os parametros de contato dele; o do
+    1.x vem da `MovingObjArena`
+  - o controlador do 2.x e o `HybridTurningController` do flygym_demo; o do 1.x
+    e o de `flygym.examples.locomotion`. Mesma semantica de sinal descendente,
+    implementacoes diferentes
+
+Por isso a analise separa GANHO OBSERVADO de CAUSA ATRIBUIDA. Dizer "o wrapper
+do 2.x e N vezes mais rapido" seria errado: o modelo tambem mudou.
 """
 from __future__ import annotations
 
@@ -47,6 +56,7 @@ AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parent
 sys.path.insert(0, str(AQUI))
 
+from drosobot_lab import entradas_do_gf, mede_gate  # noqa: E402
 from profiler import Profiler  # noqa: E402
 
 SAIDA = RAIZ / "benchmarks" / "runtime"
@@ -103,12 +113,19 @@ def roda(physics: str, escopo: str, backend: str, duracao_s: float,
     taxas = np.zeros(eng.c.n, dtype=np.float64)
     rng = np.random.default_rng(0)
 
+    idx_gf = papeis.get("DNp01", np.zeros(0, np.int32))
+    gf_pre, gf_peso = entradas_do_gf(eng.c, idx_gf)
+
     escuro_lento = None
     dark_tau = 0.3 * VISION_HZ
     drive = np.array([BASE_DRIVE, BASE_DRIVE])
     escape_ate, escapes = -1.0, 0
-    prof = Profiler(["physics", "vision", "neural", "leitura"])
+    prof = Profiler(["physics", "vision", "neural", "leitura", "telemetry"])
     n_passos = int(duracao_s / DT)
+    # o gate e ACUMULADO na corrida, nao so o ultimo valor
+    gf_exc = gf_inib = 0.0
+    gf_spikes = 0
+    gf_vmin = 0.0
 
     for passo in range(n_passos):
         t_s = passo * DT
@@ -138,6 +155,11 @@ def roda(physics: str, escopo: str, backend: str, duracao_s: float,
             eng.roda_poisson(JANELA_MS, taxas, rng, indices=sens)
 
         with prof("leitura", "janela"):
+            gate = mede_gate(eng, idx_gf, gf_pre, gf_peso)
+            gf_exc += gate["exc_mV"]
+            gf_inib += gate["inib_mV"]
+            gf_spikes += gate["spikes_gf"]
+            gf_vmin = min(gf_vmin, gate["v_min_mV"])
             est = eng.le(motor) if len(motor) else None
             disparou = int(est.spike.sum()) if est is not None else 0
 
@@ -166,6 +188,17 @@ def roda(physics: str, escopo: str, backend: str, duracao_s: float,
         "outro_ms_por_seg_simulado": v["_outro"]["ms_por_seg_simulado"],
         "total_ms_por_seg_simulado": v["_total"]["ms_por_seg_simulado"],
         "desfecho": {"fugas": escapes, "posicao_final": frame.posicao.tolist()},
+        "gf": {"spikes": gf_spikes, "excitacao_mV": round(gf_exc, 1),
+               "inibicao_mV": round(gf_inib, 1),
+               "liquido_mV": round(gf_exc + gf_inib, 1),
+               "v_min_mV": round(gf_vmin, 1),
+               "arestas_entrando": int(len(gf_pre))},
+        "diferencas_declaradas": {
+            "collision_pairs": corpo.resumo()["collision_pairs"],
+            "nv": corpo.resumo()["nv"],
+            "arena": corpo.resumo().get("arena", "looming"),
+            "nota": corpo.resumo().get("diferenca_declarada", ""),
+        },
     }
     corpo.fecha()
     print(prof.relatorio())
@@ -187,9 +220,9 @@ def tabela():
     ordem = ["flygym1+circuito", "flygym1+whole",
              "flygym2+circuito", "flygym2+whole"]
     print()
-    print("  ms de relogio por SEGUNDO SIMULADO (grandezas comparaveis)")
+    print("  CUSTO -- ms de relogio por SEGUNDO SIMULADO")
     print(f"  {'configuracao':<20s} {'RTF':>7s} {'physics':>9s} {'neural':>9s} "
-          f"{'vision':>8s} {'leitura':>8s} {'outro':>8s} {'total':>9s} {'fugas':>6s}")
+          f"{'vision':>8s} {'leitura':>8s} {'telem':>7s} {'outro':>7s} {'total':>9s}")
     print("  " + "-" * 92)
     for rot in ordem:
         d = corridas.get(rot)
@@ -199,9 +232,24 @@ def tabela():
         m = d["ms_por_seg_simulado"]
         print(f"  {rot:<20s} {d['rtf']:7.4f} {m['physics']:9.0f} {m['neural']:9.0f} "
               f"{m['vision']:8.0f} {m['leitura']:8.0f} "
-              f"{d['outro_ms_por_seg_simulado']:8.0f} "
-              f"{d['total_ms_por_seg_simulado']:9.0f} "
-              f"{d['desfecho']['fugas']:6d}")
+              f"{m.get('telemetry', 0):7.0f} "
+              f"{d['outro_ms_por_seg_simulado']:7.0f} "
+              f"{d['total_ms_por_seg_simulado']:9.0f}")
+
+    print()
+    print("  COMPORTAMENTO e GIANT FIBER")
+    print(f"  {'configuracao':<20s} {'fugas':>6s} {'GFspk':>6s} {'exc mV':>9s} "
+          f"{'inib mV':>10s} {'liq mV':>10s} {'v min mV':>9s} {'arestas':>8s}")
+    print("  " + "-" * 92)
+    for rot in ordem:
+        d = corridas.get(rot)
+        if d is None:
+            continue
+        g = d.get("gf", {})
+        print(f"  {rot:<20s} {d['desfecho']['fugas']:6d} {g.get('spikes', 0):6d} "
+              f"{g.get('excitacao_mV', 0):9.1f} {g.get('inibicao_mV', 0):10.1f} "
+              f"{g.get('liquido_mV', 0):10.1f} {g.get('v_min_mV', 0):9.1f} "
+              f"{g.get('arestas_entrando', 0):8d}")
     print()
     for rot in ordem:
         d = corridas.get(rot)
@@ -211,9 +259,24 @@ def tabela():
                   f"nv={c['nv']} | {b['neurons_simulated']:,} neuronios, "
                   f"{b['edges_simulated']:,} arestas, {b['backend']}")
     print()
-    print("  NOTA: a coluna de fugas NAO compara FlyGym 1 com FlyGym 2. O")
-    print("  adaptador 2.x roda em chao plano -- a arena de looming do 1.x ainda")
-    print("  nao tem equivalente -- entao a mosca nao ve o mesmo estimulo.")
+    print("  DIFERENCAS DECLARADAS (o que nao da pra igualar entre 1.x e 2.x)")
+    for rot in ordem:
+        d = corridas.get(rot)
+        if d and d.get("diferencas_declaradas"):
+            dd = d["diferencas_declaradas"]
+            print(f"    {rot}: {dd['collision_pairs']} pares, nv={dd['nv']}, "
+                  f"arena={dd['arena']}")
+    print()
+    print("  GANHO OBSERVADO x CAUSA ATRIBUIDA")
+    a = corridas.get("flygym1+whole")
+    b = corridas.get("flygym2+whole")
+    if a and b:
+        ganho = a["total_ms_por_seg_simulado"] / b["total_ms_por_seg_simulado"]
+        print(f"    ponta a ponta, whole CNS: {ganho:.2f}x mais rapido no 2.x")
+    print("    NAO atribuivel so ao wrapper: o modelo padrao do 2.x tambem e mais")
+    print("    leve (55 pares contra 2268, nv 72 contra 93) e o controlador e")
+    print("    outra implementacao. As duas causas nao foram separadas -- fazer")
+    print("    isso exigiria rodar o 2.x com o modelo do 1.x.")
 
 
 def main():

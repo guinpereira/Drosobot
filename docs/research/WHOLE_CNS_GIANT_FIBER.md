@@ -135,3 +135,82 @@ deve ser** -- ali eles tem fonte de verdade.
   estimulo em que o whole CNS volta a disparar fuga.
 - Nao sabemos se com potencial de reversao o resultado mudaria. Isso exigiria
   mudar o modelo.
+
+---
+
+## O gate nao esta ligado em t=0: a janela de partida
+
+Achado da comparacao 4-vias com arena equivalente (20/09). O whole CNS **nao da
+sempre zero fuga**: no `flygym1+whole` deu **1 fuga**, e a causa e de tempo, nao
+de estimulo.
+
+Rastreando janela a janela (`v_min` do GF e o balanco de entrada, whole CNS,
+FlyGym 1, 1 s):
+
+```
+passo   t_s   hz_entrada  GFspk  TTMnspk   v_gf_min      exc_mV      inib_mV
+  299  0.030       2.65      0        0      -52.0          0.0          0.0
+  399  0.040       3.23      0        0      -58.6          0.0         -4.1
+  499  0.050       8.46      1        0      -52.0         82.5       -132.8
+  599  0.060       8.18      0        1      -48.1         26.4         -5.2
+  799  0.080      12.02      0        0      -89.1         39.3        -13.2
+  999  0.100       6.60      0        0     -102.1          4.7       -113.8
+ 1499  0.150       2.66      0        0     -285.5          4.7       -241.4
+ 1999  0.200       3.09      0        0     -483.5          7.7       -121.8
+```
+
+O GF dispara **na primeira janela com looming forte** (t = 0,050 s), estando
+ainda em **−52,0 mV, o repouso**. Um passo depois o TTMn dispara e a fuga e
+contada. A partir dai o potencial desce monotonicamente -- −89, −102, −285,
+−483 mV -- e o GF nao dispara mais em 1 s de corrida.
+
+### O que isso muda na conclusao
+
+A frase "o conectoma inteiro suprime a fuga" estava certa no conteudo e
+imprecisa no escopo. A versao correta:
+
+> O conectoma inteiro suprime a fuga **depois que a rede inibitoria carrega**.
+> A supressao nao e uma propriedade instantanea da conectividade: e o estado
+> acumulado de ~25,5 milhoes de arestas depois de algumas dezenas de
+> milissegundos de atividade. Em t = 0, com todas as condutancias em zero, o
+> whole CNS responde ao looming como o circuito isolado responde -- porque
+> nesse instante ele *e* o circuito isolado, do ponto de vista do GF.
+
+Isso tambem responde uma das perguntas que estavam em aberto: sim, existe um
+regime em que o whole CNS volta a disparar fuga, e ele e o **transitorio de
+partida**, nao um regime de estimulo mais forte.
+
+### O que NAO foi feito
+
+Nao foi adicionado periodo de aquecimento antes do estimulo. Um aquecimento
+faria a corrida voltar a dar 0 fugas, que e o numero ja publicado -- e essa e
+exatamente a razao de nao fazer sem decisao explicita: seria escolher o
+protocolo pelo resultado que ele produz.
+
+A decisao tem argumento dos dois lados e fica registrada aqui em vez de ser
+tomada em silencio:
+
+- **a favor do aquecimento**: uma mosca real nao nasce no instante do estimulo;
+  o estado de repouso da rede biologica ja inclui a atividade de fundo. Deixar a
+  rede assentar antes de medir e protocolo padrao em simulacao de rede.
+- **contra**: a rede aqui nao tem entrada tonica (ver secao acima), entao
+  "assentar" significa assentar em cima da propria resposta ao estimulo. Nao ha
+  estado de repouso independente pra alcancar, e o aquecimento viraria mais um
+  parametro escolhido por nos.
+
+Enquanto nao houver decisao, **a corrida comeca fria e o 1 e reportado como 1**.
+
+### Contraste entre os dois simuladores
+
+| | flygym1+whole | flygym2+whole |
+|---|---|---|
+| spikes do GF | 1 | 1 |
+| fugas (TTMn) | 1 | 0 |
+| inibicao acumulada | −7.723 mV | −12.373 mV |
+| v minimo do GF | −651,8 mV | −576,2 mV |
+
+O transitorio de partida existe nos dois -- o GF dispara uma vez nos dois. O que
+difere e se o TTMn acompanha. Nao ha base pra atribuir essa diferenca ao
+simulador: os dois modelos tem corpos diferentes (55 contra 2.268 pares de
+colisao), entao a retina ve sequencias diferentes e o Poisson cai em pontos
+diferentes. Um unico evento nao separa causa de acaso.

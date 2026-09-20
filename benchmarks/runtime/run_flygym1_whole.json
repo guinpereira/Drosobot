@@ -1,9 +1,9 @@
 {
-  "gerado_em": "2026-09-20T01:42:44",
+  "gerado_em": "2026-09-20T03:24:58",
   "physics": "flygym1",
   "escopo": "whole",
   "rotulo": "flygym1+whole",
-  "duracao_s": 0.5,
+  "duracao_s": 1.0,
   "corpo": {
     "physics_backend": "FlyGym 1.2.1 / mujoco 3.2.7",
     "adapter": "flygym1",
@@ -20,21 +20,35 @@
     "edges_simulated": 25550583,
     "vram_mib": 201.5
   },
-  "rtf": 0.031,
+  "rtf": 0.0301,
   "ms_por_seg_simulado": {
-    "physics": 27787.3,
-    "vision": 19.3,
-    "neural": 4119.6,
-    "leitura": 82.8
+    "physics": 28936.6,
+    "vision": 15.6,
+    "neural": 3793.3,
+    "leitura": 211.1
   },
-  "outro_ms_por_seg_simulado": 206.3,
-  "total_ms_por_seg_simulado": 32215.2,
+  "outro_ms_por_seg_simulado": 238.9,
+  "total_ms_por_seg_simulado": 33195.5,
   "desfecho": {
     "fugas": 1,
     "posicao_final": [
-      3.9500629901885986,
-      0.16611377894878387,
-      1.0492584705352783
+      10.543235778808594,
+      0.23531746864318848,
+      1.065639615058899
     ]
+  },
+  "gf": {
+    "spikes": 1,
+    "excitacao_mV": 2003.3,
+    "inibicao_mV": -7723.2,
+    "liquido_mV": -5719.8,
+    "v_min_mV": -651.8,
+    "arestas_entrando": 1455
+  },
+  "diferencas_declaradas": {
+    "collision_pairs": 2268,
+    "nv": 93,
+    "arena": "looming",
+    "nota": ""
   }
 }
