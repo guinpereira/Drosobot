@@ -1,0 +1,21 @@
+{
+ "gerado_em": "2026-09-20T15:44:36",
+ "device": "gfx1031",
+ "cus": 20,
+ "clock_mhz": 2424,
+ "opencl": "OpenCL 2.0 AMD-APP (3652.0)",
+ "despacho_sincrono_us": 84.283,
+ "despacho_em_lote_10_us_por_kernel": 8.8864,
+ "despacho_em_lote_100_us_por_kernel": 2.8123,
+ "despacho_em_lote_1000_us_por_kernel": 1.6151,
+ "persistente_1_iters_total_us": 136.373,
+ "persistente_100_iters_total_us": 160.413,
+ "persistente_1000_iters_total_us": 237.575,
+ "persistente_10000_iters_total_us": 897.46,
+ "persistente_us_por_iteracao": 0.0761,
+ "suporte_100x1024verts_us": 321.17,
+ "suporte_5500x1024verts_us": 3874.828,
+ "suporte_1_varredura_us": 0.6581,
+ "suporte_55_varreduras_us": 36.195,
+ "banda_1_grupo_GBs": 24.9
+}

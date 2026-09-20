@@ -1,0 +1,156 @@
+{
+ "gerado_em": "2026-09-20T16:01:17",
+ "mujoco": "3.9.0",
+ "arenas": {
+  "looming": {
+   "arena": "looming",
+   "hash_modelo": "7321b8f91e4b2ebb",
+   "dims": {
+    "nq": 73,
+    "nv": 72,
+    "nbody": 70,
+    "njnt": 67,
+    "ngeom": 71
+   },
+   "device": {
+    "nome": "gfx1031",
+    "vendor": "Advanced Micro Devices, Inc.",
+    "versao_opencl": "OpenCL 2.0 AMD-APP (3652.0)",
+    "driver": "3652.0 (PAL,LC)",
+    "compute_units": 20,
+    "clock_mhz": 2424,
+    "max_work_group_size": 256,
+    "local_mem_bytes": 65536,
+    "global_mem_bytes": 12868124672,
+    "fp64": true
+   },
+   "precisao": {
+    "fp64": {
+     "erro_max_por_campo": {
+      "xpos": 4.441e-16,
+      "xquat": 1.665e-16,
+      "xmat": 4.441e-16,
+      "xipos": 4.441e-16,
+      "ximat": 6.661e-16,
+      "xanchor": 4.441e-16,
+      "xaxis": 4.441e-16,
+      "geom_xpos": 4.441e-16,
+      "geom_xmat": 6.661e-16
+     },
+     "erro_max": 6.661e-16,
+     "us_por_fk_por_work_group": {
+      "16": 32.854,
+      "32": 29.935,
+      "64": 27.195,
+      "128": 27.017,
+      "256": 27.312
+     },
+     "us_por_fk_melhor": 27.017,
+     "arvore_profundidade": 10
+    },
+    "fp32": {
+     "erro_max_por_campo": {
+      "xpos": 3.4e-07,
+      "xquat": 1.472e-07,
+      "xmat": 2.937e-07,
+      "xipos": 3.593e-07,
+      "ximat": 3.433e-07,
+      "xanchor": 3.4e-07,
+      "xaxis": 3.349e-07,
+      "geom_xpos": 3.593e-07,
+      "geom_xmat": 3.433e-07
+     },
+     "erro_max": 3.593e-07,
+     "us_por_fk_por_work_group": {
+      "16": 15.267,
+      "32": 13.994,
+      "64": 13.211,
+      "128": 12.28,
+      "256": 12.771
+     },
+     "us_por_fk_melhor": 12.28,
+     "arvore_profundidade": 10
+    }
+   },
+   "mujoco_cpu_us_por_fk": 6.33,
+   "razao_gpu_sobre_cpu_melhor_caso": 1.94,
+   "limitado_por_paralelismo": false,
+   "leitura": "tempo plano de 16 a 256 threads: o kernel NAO esta limitado por paralelismo. O que limita e a cadeia serial da arvore -- 10 niveis de operacoes escalares dependentes -- e nenhum numero de threads a encurta."
+  },
+  "obstaculos": {
+   "arena": "obstaculos",
+   "hash_modelo": "18abc363145d742a",
+   "dims": {
+    "nq": 73,
+    "nv": 72,
+    "nbody": 70,
+    "njnt": 67,
+    "ngeom": 71
+   },
+   "device": {
+    "nome": "gfx1031",
+    "vendor": "Advanced Micro Devices, Inc.",
+    "versao_opencl": "OpenCL 2.0 AMD-APP (3652.0)",
+    "driver": "3652.0 (PAL,LC)",
+    "compute_units": 20,
+    "clock_mhz": 2424,
+    "max_work_group_size": 256,
+    "local_mem_bytes": 65536,
+    "global_mem_bytes": 12868124672,
+    "fp64": true
+   },
+   "precisao": {
+    "fp64": {
+     "erro_max_por_campo": {
+      "xpos": 6.661e-16,
+      "xquat": 2.22e-16,
+      "xmat": 4.441e-16,
+      "xipos": 8.882e-16,
+      "ximat": 6.661e-16,
+      "xanchor": 6.661e-16,
+      "xaxis": 4.441e-16,
+      "geom_xpos": 8.882e-16,
+      "geom_xmat": 6.661e-16
+     },
+     "erro_max": 8.882e-16,
+     "us_por_fk_por_work_group": {
+      "16": 30.677,
+      "32": 32.368,
+      "64": 27.173,
+      "128": 27.918,
+      "256": 25.466
+     },
+     "us_por_fk_melhor": 25.466,
+     "arvore_profundidade": 10
+    },
+    "fp32": {
+     "erro_max_por_campo": {
+      "xpos": 4.52e-07,
+      "xquat": 1.462e-07,
+      "xmat": 3.316e-07,
+      "xipos": 5.036e-07,
+      "ximat": 4.495e-07,
+      "xanchor": 4.52e-07,
+      "xaxis": 4.671e-07,
+      "geom_xpos": 5.036e-07,
+      "geom_xmat": 4.495e-07
+     },
+     "erro_max": 5.036e-07,
+     "us_por_fk_por_work_group": {
+      "16": 16.384,
+      "32": 13.925,
+      "64": 12.967,
+      "128": 12.189,
+      "256": 11.968
+     },
+     "us_por_fk_melhor": 11.968,
+     "arvore_profundidade": 10
+    }
+   },
+   "mujoco_cpu_us_por_fk": 6.492,
+   "razao_gpu_sobre_cpu_melhor_caso": 1.84,
+   "limitado_por_paralelismo": false,
+   "leitura": "tempo plano de 16 a 256 threads: o kernel NAO esta limitado por paralelismo. O que limita e a cadeia serial da arvore -- 10 niveis de operacoes escalares dependentes -- e nenhum numero de threads a encurta."
+  }
+ }
+}

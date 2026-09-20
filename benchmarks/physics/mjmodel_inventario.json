@@ -1,0 +1,310 @@
+{
+ "gerado_em": "2026-09-20T15:39:01",
+ "mujoco": "3.9.0",
+ "arenas": {
+  "looming": {
+   "dimensoes": {
+    "nq": 73,
+    "nv": 72,
+    "nu": 48,
+    "nbody": 72,
+    "njnt": 67,
+    "ngeom": 73,
+    "nsite": 1,
+    "ntendon": 0,
+    "nmesh": 69,
+    "nhfield": 0,
+    "npair": 55,
+    "nexclude": 0,
+    "neq": 0,
+    "nsensor": 6,
+    "nmocap": 1,
+    "nflex": 0,
+    "nM": 813,
+    "nD": 1554
+   },
+   "opcoes": {
+    "timestep": 0.0001,
+    "integrator": "Euler",
+    "solver": "Newton",
+    "cone": "pyramidal",
+    "jacobian": "auto",
+    "iterations": 100,
+    "ls_iterations": 50,
+    "tolerance": 1e-08,
+    "impratio": 1.0,
+    "gravity": [
+     0.0,
+     0.0,
+     -9810.0
+    ],
+    "wind": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "density": 0.0,
+    "viscosity": 0.0,
+    "o_margin": 0.0,
+    "disableflags": 0,
+    "enableflags": 2
+   },
+   "juntas": {
+    "free": 1,
+    "hinge": 66
+   },
+   "geoms_todos": {
+    "plane": 1,
+    "sphere": 3,
+    "mesh": 69
+   },
+   "geoms_colidiveis": {},
+   "atuadores": {
+    "transmissao": {
+     "joint": 42,
+     "body": 6
+    },
+    "dyntype": {
+     "none": 48
+    },
+    "gaintype": {
+     "fixed": 48
+    },
+    "biastype": {
+     "none": 6,
+     "affine": 42
+    },
+    "ctrllimited": 6,
+    "forcelimited": 42,
+    "actlimited": 0,
+    "na": 0
+   },
+   "restricoes": {
+    "equality": {},
+    "jnt_limited": 0,
+    "tendon_limited": 0
+   },
+   "colisao": {
+    "npair_explicitos": 55,
+    "nexclude": 0,
+    "geoms_com_mask_nao_nula": 0,
+    "geoms_totais": 73,
+    "condim_usados": [
+     3
+    ],
+    "pair_condim_usados": [
+     3
+    ],
+    "margin_max": 0.0,
+    "gap_max": 0.0
+   },
+   "sensores": {
+    "CONTACT": 6
+   }
+  },
+  "obstaculos": {
+   "dimensoes": {
+    "nq": 73,
+    "nv": 72,
+    "nu": 48,
+    "nbody": 72,
+    "njnt": 67,
+    "ngeom": 73,
+    "nsite": 1,
+    "ntendon": 0,
+    "nmesh": 69,
+    "nhfield": 0,
+    "npair": 110,
+    "nexclude": 0,
+    "neq": 0,
+    "nsensor": 6,
+    "nmocap": 0,
+    "nflex": 0,
+    "nM": 813,
+    "nD": 1554
+   },
+   "opcoes": {
+    "timestep": 0.0001,
+    "integrator": "Euler",
+    "solver": "Newton",
+    "cone": "pyramidal",
+    "jacobian": "auto",
+    "iterations": 100,
+    "ls_iterations": 50,
+    "tolerance": 1e-08,
+    "impratio": 1.0,
+    "gravity": [
+     0.0,
+     0.0,
+     -9810.0
+    ],
+    "wind": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "density": 0.0,
+    "viscosity": 0.0,
+    "o_margin": 0.0,
+    "disableflags": 0,
+    "enableflags": 2
+   },
+   "juntas": {
+    "free": 1,
+    "hinge": 66
+   },
+   "geoms_todos": {
+    "plane": 1,
+    "sphere": 2,
+    "cylinder": 1,
+    "mesh": 69
+   },
+   "geoms_colidiveis": {
+    "cylinder": 1
+   },
+   "atuadores": {
+    "transmissao": {
+     "joint": 42,
+     "body": 6
+    },
+    "dyntype": {
+     "none": 48
+    },
+    "gaintype": {
+     "fixed": 48
+    },
+    "biastype": {
+     "none": 6,
+     "affine": 42
+    },
+    "ctrllimited": 6,
+    "forcelimited": 42,
+    "actlimited": 0,
+    "na": 0
+   },
+   "restricoes": {
+    "equality": {},
+    "jnt_limited": 0,
+    "tendon_limited": 0
+   },
+   "colisao": {
+    "npair_explicitos": 110,
+    "nexclude": 0,
+    "geoms_com_mask_nao_nula": 1,
+    "geoms_totais": 73,
+    "condim_usados": [
+     3
+    ],
+    "pair_condim_usados": [
+     3
+    ],
+    "margin_max": 0.0,
+    "gap_max": 0.0
+   },
+   "sensores": {
+    "CONTACT": 6
+   }
+  },
+  "optomotor": {
+   "dimensoes": {
+    "nq": 73,
+    "nv": 72,
+    "nu": 48,
+    "nbody": 72,
+    "njnt": 67,
+    "ngeom": 84,
+    "nsite": 1,
+    "ntendon": 0,
+    "nmesh": 69,
+    "nhfield": 0,
+    "npair": 55,
+    "nexclude": 0,
+    "neq": 0,
+    "nsensor": 6,
+    "nmocap": 1,
+    "nflex": 0,
+    "nM": 813,
+    "nD": 1554
+   },
+   "opcoes": {
+    "timestep": 0.0001,
+    "integrator": "Euler",
+    "solver": "Newton",
+    "cone": "pyramidal",
+    "jacobian": "auto",
+    "iterations": 100,
+    "ls_iterations": 50,
+    "tolerance": 1e-08,
+    "impratio": 1.0,
+    "gravity": [
+     0.0,
+     0.0,
+     -9810.0
+    ],
+    "wind": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "density": 0.0,
+    "viscosity": 0.0,
+    "o_margin": 0.0,
+    "disableflags": 0,
+    "enableflags": 2
+   },
+   "juntas": {
+    "free": 1,
+    "hinge": 66
+   },
+   "geoms_todos": {
+    "plane": 1,
+    "sphere": 2,
+    "cylinder": 12,
+    "mesh": 69
+   },
+   "geoms_colidiveis": {},
+   "atuadores": {
+    "transmissao": {
+     "joint": 42,
+     "body": 6
+    },
+    "dyntype": {
+     "none": 48
+    },
+    "gaintype": {
+     "fixed": 48
+    },
+    "biastype": {
+     "none": 6,
+     "affine": 42
+    },
+    "ctrllimited": 6,
+    "forcelimited": 42,
+    "actlimited": 0,
+    "na": 0
+   },
+   "restricoes": {
+    "equality": {},
+    "jnt_limited": 0,
+    "tendon_limited": 0
+   },
+   "colisao": {
+    "npair_explicitos": 55,
+    "nexclude": 0,
+    "geoms_com_mask_nao_nula": 0,
+    "geoms_totais": 84,
+    "condim_usados": [
+     3
+    ],
+    "pair_condim_usados": [
+     3
+    ],
+    "margin_max": 0.0,
+    "gap_max": 0.0
+   },
+   "sensores": {
+    "CONTACT": 6
+   }
+  }
+ }
+}
