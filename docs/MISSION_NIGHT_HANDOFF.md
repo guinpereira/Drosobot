@@ -1,57 +1,62 @@
 # Handoff da missão noturna — Drosobot
 
-Estado vivo da missão. **Atualizado a cada etapa concluída.** Se a sessão cair,
-é daqui que se retoma.
+Estado da missão ao fim da noite de 20/09/2026. Branch `research/gpu-core`.
 
-Branch: `research/gpu-core`. Não mergear para `master`, não force-push.
+Para retomar:
 
-Para retomar manualmente, basta colar:
-
-> Retome a missão noturna do Drosobot. Leia `docs/MISSION_NIGHT_HANDOFF.md`,
-> continue autônomo até o fim, commit e push em `research/gpu-core`.
+> Leia `docs/MISSION_NIGHT_HANDOFF.md` e continue de onde parou.
 
 ---
 
-## Ordem de trabalho
+## Etapas
 
 | # | etapa | estado |
 |---|---|---|
-| 1 | Unificar o runtime: `drosobot_lab.py` ganha canal de controle, catálogo de experimentos, retina e máquina de estados | **a fazer** |
-| 2 | Device/GPU na telemetria e no painel (OS, CPU, GPU, backends, escopo, neurônios, arestas, VRAM, RTF) | a fazer |
-| 3 | GF gate: contribuintes inibitórios por nome (via `connectome/neuron_properties.csv`) | a fazer |
-| 4 | CNS: separar `simulated neurons` de `visualized morphologies` na UI | a fazer |
-| 5 | Guard de overflow na acumulação de ponto fixo | a fazer |
-| 6 | Smoke test + regressão científica + teste ponta a ponta | a fazer |
-| 7 | Um benchmark ponta a ponta (RTF, física, neural, visão, telemetria, gargalo) | a fazer |
-| 8 | Docs: README + `docs/` (arquitetura, execução, ambientes, GPU, FlyGym1x2, whole CNS, limitações, troubleshooting) | a fazer |
-| 9 | Commits funcionais + `git push origin research/gpu-core` | a fazer |
-| 10 | Relatório final (18 seções + WHAT I DID NOT CHANGE) | a fazer |
+| 1 | Unificar o runtime: controle, catálogo, retina, máquina de estados | **feito** |
+| 2 | Device/GPU na telemetria e no painel | **feito** |
+| 3 | GF gate: contribuintes inibitórios rotulados por tipo | **feito** |
+| 4 | CNS: `simulated` separado de `visualized morphologies` | **feito** |
+| 5 | Guard de overflow no ponto fixo | **feito** |
+| 6 | Smoke + regressão científica + ponta a ponta + contrato de telemetria | **feito** |
+| 7 | Benchmark ponta a ponta | **feito** |
+| 8 | Docs: README, RUNNING_THE_LAB, VULKAN_STRATEGY, THIRD_PARTY_NOTICES | **feito** |
+| 9 | Commits + push | **feito** |
+| 10 | Relatório final | **feito** |
 
-## Já concluído antes da missão
+## O que ficou pendente, e por quê
 
-- Mosca 3D validada: eixos, bind pose, normais com vinco, três paletas
-  (Clay/Flybody/Drosophila). Ver `docs/UNITY_BODY_COORDINATES.md`.
-- Comparação 4-vias com arena equivalente. Ver
-  `docs/research/FOUR_WAY_LOOMING_COMPARISON.md`.
-- Achado: o gate do GF não está ligado em t=0 — o whole CNS dá 1 fuga no
-  transiente de partida. Ver `docs/research/WHOLE_CNS_GIANT_FIBER.md`.
-
-## Estado do código (para quem retoma)
-
-- `sim/drosobot_lab.py` — runtime novo: PhysicsAdapter + NeuralEngine + whole
-  CNS + telemetria. **Não** tem canal de controle nem manda retina.
-- `sim/lab_runner.py` — runtime antigo: canal de controle (8766), catálogo de
-  experimentos, circuitos de `sim/experiments/`. É o que a Unity conversa hoje.
-- A unificação é dar ao `drosobot_lab.py` o que o `lab_runner.py` tem de
-  controle, mantendo o `lab_runner.py` como referência/regressão dos
-  experimentos de circuito que geram as figuras do README.
+- **Vulkan.** Decisão registrada em `docs/research/VULKAN_STRATEGY.md`: não
+  implementar agora. A física é 79–86% do relógio; o neural é 18% com o
+  conectoma inteiro. A interface está pronta, os gatilhos que fariam valer a
+  pena estão listados.
+- **Sessão Unity ao vivo não foi vista por olho humano nesta rodada.** O que foi
+  verificado: o C# compila sem erro, e o teste de contrato confirma que toda
+  mensagem e todo campo que os painéis leem chegam no fluxo. Ver o laboratório
+  rodando exige Play no Editor.
+- **Custo da física.** É o gargalo e não foi atacado. Reduzi-lo é o próximo
+  ganho real; qualquer trabalho no neural mexe em menos de um quinto do relógio.
+- **`lab_runner.py` continua existindo.** É a regressão dos circuitos que
+  produzem as figuras do README. Não foi absorvido de propósito.
 
 ## Invariantes que não podem ser tocados
 
 - `legs` é o padrão de colisão; `tarsi` não vira padrão global.
 - Sem clamp no potencial de membrana. O valor vai como veio; o aviso é registro.
 - Sem entrada tônica global no whole CNS. `TONIC_INHIB_HZ` não volta.
-- Escala de ponto fixo fica em 16384; não volta para 1024.
+- Escala de ponto fixo fica em 16384; não volta para 1024. O guard confere
+  contra o conectoma carregado e levanta se não couber.
 - Entrada sensorial é Poisson discreto, nunca corrente média equivalente.
 - Conectoma inteiro nunca é chamado de cérebro funcional completo.
 - Não ajustar parâmetro para o comportamento "aparecer".
+
+## Onde estão as coisas
+
+| | |
+|---|---|
+| runtime | `sim/drosobot_lab.py` |
+| como rodar | `docs/RUNNING_THE_LAB.md` |
+| coordenadas da mosca | `docs/UNITY_BODY_COORDINATES.md` |
+| gate do GF | `docs/research/WHOLE_CNS_GIANT_FIBER.md` |
+| tabela 4-vias | `docs/research/FOUR_WAY_LOOMING_COMPARISON.md` |
+| backends | `docs/research/BACKEND_MATRIX.md`, `VULKAN_STRATEGY.md` |
+| testes | `tests/test_drosobot_lab.py`, `tests/test_neural_backend.py` |
