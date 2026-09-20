@@ -55,6 +55,30 @@ namespace Drosobot.Lab
         private Camera _camBrain;
         private readonly List<Renderer> _shellRenderers = new List<Renderer>();
         private ConnectivityGraph _grafo;
+        private FlyBody _mosca;
+
+        // O cerebro ganhou camera propria. Antes CNS e mosca dividiam a mesma
+        // camera; quando ela passou a seguir a mosca (que anda), o CNS saia de
+        // quadro e sumia. Agora cada um tem a sua, e o cerebro e desenhado numa
+        // caixa no painel lateral -- da pra ver o corpo andando e as sinapses
+        // pulsando ao mesmo tempo.
+        private Camera _camCns;
+        private RenderTexture _rtCns;
+        private const int CAMADA_CNS = 30;      // layer dedicada ao CNS
+        public int larguraCaixaCns = 300;
+        public int alturaCaixaCns = 300;
+        private float _cnsYaw = 0f;
+        [Tooltip("Graus por segundo que a caixa do cerebro gira sozinha. " +
+                 "0 = parada.")]
+        public float giroCns = 8f;
+
+        // gate do Giant Fiber: dado REAL vindo do runtime, nao animacao
+        private float _gfExc, _gfInib, _gfLiquido, _gfVmin;
+        private int _gfSpikes;
+        private readonly List<string> _gfTopInib = new List<string>();
+        private string _limitacaoTexto = "";
+        private float _limitacaoLimiar = 0f;
+        private bool _limitacaoDisparou;
 
         // ultimo estado recebido, so pra desenhar
         private string _expName = "(nenhum experimento)";
@@ -134,6 +158,18 @@ namespace Drosobot.Lab
             _camBrain.transform.LookAt(Vector3.zero);
             camGo.AddComponent<OrbitCamera>();
 
+            // camera do cerebro: renderiza SO a layer do CNS, numa textura
+            var cnsGo = new GameObject("CnsCamera");
+            _camCns = cnsGo.AddComponent<Camera>();
+            _camCns.clearFlags = CameraClearFlags.SolidColor;
+            _camCns.backgroundColor = new Color(0.04f, 0.045f, 0.06f);
+            _camCns.cullingMask = 1 << CAMADA_CNS;
+            _rtCns = new RenderTexture(larguraCaixaCns, alturaCaixaCns, 16);
+            _camCns.targetTexture = _rtCns;
+            // e a camera principal deixa de desenhar o CNS, senao ele aparece
+            // duas vezes -- uma na caixa e outra por cima da arena
+            _camBrain.cullingMask &= ~(1 << CAMADA_CNS);
+
             var luzGo = new GameObject("KeyLight");
             var luz = luzGo.AddComponent<Light>();
             luz.type = LightType.Directional;
@@ -141,14 +177,34 @@ namespace Drosobot.Lab
             luz.color = new Color(0.85f, 0.88f, 1f);
             luzGo.transform.rotation = Quaternion.Euler(45f, 35f, 0f);
 
-            // marcador provisorio da mosca. NAO e o modelo do FlyGym.
-            // Trocar por ele exige exportar a malha do NeuroMechFly; ate la, um
-            // marcador honestamente identificado e melhor que anatomia inventada.
-            var flyGo = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            flyGo.name = "FlyMarker (placeholder -- nao e o modelo do FlyGym)";
-            flyGo.transform.localScale = new Vector3(0.6f, 1.2f, 0.6f);
-            Destroy(flyGo.GetComponent<Collider>());
-            _fly = flyGo.transform;
+            // A mosca de verdade: malhas do NeuroMechFly exportadas do modelo
+            // COMPILADO que a fisica roda (tools/export_fly_mesh.py). Se elas
+            // nao estiverem geradas, cai num marcador -- mas rotulado como tal,
+            // porque anatomia inventada e pior que marcador honesto.
+            _mosca = gameObject.AddComponent<FlyBody>();
+            if (_mosca.Montar())
+            {
+                _fly = _mosca.Raiz;
+                // a camera segue o TORAX, nao a raiz: a raiz fica na origem e
+                // quem se move sao os segmentos
+                var torax = _mosca.Raiz.Find("c_thorax");
+                var orb = _camBrain.GetComponent<OrbitCamera>();
+                if (torax != null && orb != null)
+                {
+                    orb.seguir = torax;
+                    orb.distance = 6f;
+                    orb.pitch = 20f;
+                    orb.yaw = 35f;
+                }
+            }
+            else
+            {
+                var flyGo = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                flyGo.name = "FlyMarker (placeholder -- rode tools/export_fly_mesh.py)";
+                flyGo.transform.localScale = new Vector3(0.6f, 1.2f, 0.6f);
+                Destroy(flyGo.GetComponent<Collider>());
+                _fly = flyGo.transform;
+            }
 
             _brain = gameObject.AddComponent<BrainActivity>();
             _grafo = gameObject.AddComponent<ConnectivityGraph>();
@@ -202,6 +258,10 @@ namespace Drosobot.Lab
             {
                 Debug.LogWarning($"[lab] coverage ilegivel: {e.Message}");
             }
+            // tudo do CNS (malhas e arestas) vai pra layer dedicada
+            foreach (var t in _cnsRoot.GetComponentsInChildren<Transform>(true))
+                t.gameObject.layer = CAMADA_CNS;
+
             _grafo.Build(_cnsRoot, meta, _brain);
 
             // malhas de contexto ficam translucidas e discretas: sao referencia
@@ -270,6 +330,14 @@ namespace Drosobot.Lab
             switch ((string)msg["type"])
             {
                 case "experiment_info":
+                    // limitacao declarada do modelo. Fica guardada e so aparece
+                    // quando o runtime avisar que o limiar foi cruzado -- nao
+                    // como alerta permanente.
+                    if (msg["model_limitations"] is JArray ml && ml.Count > 0)
+                    {
+                        _limitacaoTexto = (string)ml[0]["text"] ?? "";
+                        _limitacaoLimiar = (float?)ml[0]["warning_threshold_mV"] ?? 0f;
+                    }
                     if (msg["runtime"] is JObject rt)
                     {
                         _runtime.Clear();
@@ -301,7 +369,12 @@ namespace Drosobot.Lab
                         // Isto e APRESENTACAO. A pose autoritativa continua sendo
                         // a do MuJoCo; nada volta pra la.
                         _flyPos = new Vector3((float)pos[0], (float)pos[2], (float)pos[1]);
-                        if (_fly != null) _fly.position = _flyPos;
+                        // So o MARCADOR e movido por aqui. Quando a mosca real
+                        // esta montada, cada segmento ja chega com pose de
+                        // MUNDO em `body_pose`; mover a raiz tambem somaria o
+                        // deslocamento duas vezes e jogaria a mosca pra longe.
+                        bool temMoscaReal = _mosca != null && _mosca.segmentosMontados > 0;
+                        if (_fly != null && !temMoscaReal) _fly.position = _flyPos;
                     }
                     var d = msg["drive"] as JArray;
                     if (d != null && d.Count >= 2) _drive = new[] { (float)d[0], (float)d[1] };
@@ -310,6 +383,9 @@ namespace Drosobot.Lab
                         _profile.Clear();
                         foreach (var kv in pf) _profile[kv.Key] = (float)kv.Value;
                     }
+                    // pose dos segmentos: chega a 30 Hz, nao por passo de fisica
+                    if (msg["body_pose"] is JObject bp && _mosca != null)
+                        _mosca.AplicarPose(bp);
                     break;
 
                 case "neural_activity":
@@ -352,6 +428,7 @@ namespace Drosobot.Lab
                         foreach (var kv in der)
                         {
                             if (!(kv.Value is JObject lr)) continue;
+                            if (lr["L"] == null || lr["R"] == null) continue;
                             _retinaLabel = kv.Key;
                             _retinaDerivadaL = new[] { (float)lr["L"] };
                             _retinaDerivadaR = new[] { (float)lr["R"] };
@@ -370,9 +447,23 @@ namespace Drosobot.Lab
                         _popAtividade.Clear();
                         foreach (var kv in pa) _popAtividade[kv.Key] = (int)kv.Value;
                     }
+                    if (msg["values"]?["gf_gate"] is JObject gg)
+                    {
+                        _gfExc = (float)gg["exc_mV"];
+                        _gfInib = (float)gg["inib_mV"];
+                        _gfLiquido = (float)gg["liquido_mV"];
+                        _gfVmin = (float)gg["v_min_mV"];
+                        _gfSpikes = (int)gg["spikes_gf"];
+                        _gfTopInib.Clear();
+                        if (gg["top_inib"] is JArray ti)
+                            foreach (var e in ti)
+                                _gfTopInib.Add($"{(long)e["body_id"]}  {(float)e["mV"]:F1} mV");
+                    }
                     break;
 
                 case "event":
+                    if ((string)msg["kind"] == "model_limitation")
+                        _limitacaoDisparou = true;
                     _eventos.Insert(0, $"{(double)msg["sim_time"]:F2}s  {(string)msg["kind"]}");
                     // so os mais recentes: a lista alimenta um painel de altura
                     // medida, entao cada evento a mais empurra o resto pra baixo
@@ -407,6 +498,8 @@ namespace Drosobot.Lab
         private readonly Painel _pInspector = new Painel("inspector");
         private readonly Painel _pSinais = new Painel("sinais");
         private readonly Painel _pRuntime = new Painel("runtime");
+        private readonly Painel _pGate = new Painel("gate");
+        private readonly Painel _pCns3D = new Painel("cns3d");
 
         void OnGUI()
         {
@@ -465,8 +558,12 @@ namespace Drosobot.Lab
                 // Ordem pedida: da leitura passiva pra acao. O EXPERIMENTO fica
                 // logo abaixo do INSPECTOR pra dar pra olhar o neuronio
                 // selecionado e trocar de corrida sem atravessar a tela.
+                MontaGate();
+                MontaCns3D();
+                _colDireita.Adiciona(_pCns3D);
                 _colDireita.Adiciona(_pProcedencia);
                 _colDireita.Adiciona(_pRuntime);
+                _colDireita.Adiciona(_pGate);
                 _colDireita.Adiciona(_pRetina);
                 _colDireita.Adiciona(_pInspector);
                 _colDireita.Adiciona(_pExperimento);
@@ -513,7 +610,12 @@ namespace Drosobot.Lab
                 _pPrincipal.Texto($"  {kv.Key,-10} {kv.Value,4}{sufixo}", _mono);
             }
 
-            if (_retinaDerivadaL != null)
+            // Os dois arrays sao indexados aqui, entao os dois precisam ser
+            // checados. O guard antigo so olhava L e estourava quando chegava um
+            // `derived` sem o par -- ou quando o runtime nao publica retina,
+            // como o laco novo, que manda looming_hz em `statistics`.
+            if (_retinaDerivadaL != null && _retinaDerivadaL.Length > 0
+                && _retinaDerivadaR != null && _retinaDerivadaR.Length > 0)
             {
                 _pPrincipal.Espacador(6f);
                 _pPrincipal.Texto($"VISAO ({_retinaLabel})", _rotulo);
@@ -551,6 +653,67 @@ namespace Drosobot.Lab
             foreach (Provenance p in new[] { Provenance.Data, Provenance.Model, Provenance.Assumption })
                 _pProcedencia.Texto($"  {ProvenanceUtil.Label(p)}  {Explica(p)}", _mono,
                                     ProvenanceUtil.Color(p));
+        }
+
+        private void MontaCns3D()
+        {
+            _pCns3D.Limpar();
+            if (_rtCns == null || _cnsRoot == null) return;
+
+            _pCns3D.Texto("MALE CNS", _rotulo);
+            int lado = Mathf.Min(larguraCaixaCns, (int)_colDireita.largura - 24);
+            _pCns3D.Desenho(lado, r =>
+                GUI.DrawTexture(new Rect(r.x, r.y, lado, lado), _rtCns,
+                                ScaleMode.ScaleToFit));
+
+            // legenda do que esta pulsando: as arestas acendem quando o
+            // pre-sinaptico dispara, e a cor e o SINAL (MODEL, regra de Dale)
+            if (_grafo != null && _grafo.show)
+            {
+                _pCns3D.Texto($"sinapses  {_grafo.visibleEdges}/{_grafo.edgeCount} "
+                              + $"visiveis   filtro {_grafo.filtro}", _mono);
+                _pCns3D.Texto("  azul excitatoria   vermelho inibitoria", _mono,
+                              ProvenanceUtil.Color(Provenance.Model));
+            }
+            else
+            {
+                _pCns3D.Texto("C liga o fluxo de sinapses", _mono);
+            }
+        }
+
+        private void MontaGate()
+        {
+            _pGate.Limpar();
+            if (_gfExc == 0f && _gfInib == 0f && _gfSpikes == 0) return;
+
+            _pGate.Texto("GIANT FIBER -- GATE", _rotulo);
+            var corExc = new Color(0.40f, 0.72f, 1.00f);
+            var corInib = new Color(1.00f, 0.42f, 0.42f);
+            _pGate.Texto($"excitacao {_gfExc,10:F1} mV", _mono, corExc);
+            _pGate.Texto($"inibicao  {_gfInib,10:F1} mV", _mono, corInib);
+            _pGate.Texto($"liquido   {_gfLiquido,10:F1} mV", _mono,
+                         _gfLiquido >= 0 ? corExc : corInib);
+            _pGate.Texto($"v min     {_gfVmin,10:F1} mV   (limiar -45,0)", _mono);
+            _pGate.Texto($"spikes do GF {_gfSpikes}", _mono);
+
+            if (_gfTopInib.Count > 0)
+            {
+                _pGate.Espacador();
+                _pGate.Texto("maiores fontes de inibicao neste passo", _mono);
+                foreach (var l in _gfTopInib) _pGate.Texto("  " + l, _mono, corInib);
+            }
+
+            // So aparece depois que o runtime avisou. Nao e alerta decorativo:
+            // e o registro de que o modelo saiu da faixa fisiologica, e NAO ha
+            // clamp -- o valor acima veio como o modelo produziu.
+            if (_limitacaoDisparou && _limitacaoTexto.Length > 0)
+            {
+                _pGate.Espacador();
+                _pGate.Texto($"LIMITACAO DO MODELO (v < {_limitacaoLimiar:F0} mV)",
+                             _mono, ProvenanceUtil.Color(Provenance.Assumption));
+                _pGate.Texto(_limitacaoTexto, _mono);
+                _pGate.Texto("reportado, nunca corrigido por clamp", _mono);
+            }
         }
 
         private void MontaRuntime()
@@ -721,6 +884,18 @@ namespace Drosobot.Lab
         void Update()
         {
             _wallTime = Time.realtimeSinceStartup;
+
+            // a caixa do cerebro gira sozinha, devagar: sem isso ela fica uma
+            // silhueta chapada e nao da pra ler a profundidade das arestas
+            if (_camCns != null && _cnsRoot != null)
+            {
+                _cnsYaw += giroCns * Time.deltaTime;
+                var alvo = _cnsRoot.GetComponent<Renderer>() != null
+                    ? _cnsRoot.position : _cnsRoot.position;
+                var rot = Quaternion.Euler(14f, _cnsYaw, 0f);
+                _camCns.transform.position = alvo + rot * new Vector3(0, 0, -16f);
+                _camCns.transform.rotation = rot;
+            }
             if (Input.GetMouseButtonDown(1) && _camBrain != null && _brain != null)
             {
                 // botao direito seleciona; o esquerdo ja gira a camera
@@ -753,8 +928,18 @@ namespace Drosobot.Lab
         public float distance = 15.5f;
         public float yaw = 0f, pitch = 12f;
 
+        [Tooltip("Segue este transform. A mosca ANDA -- sem isto ela sai de " +
+                 "quadro em poucos segundos e a cena parece vazia.")]
+        public Transform seguir;
+        public float suavizacaoSeguir = 6f;
+
         void LateUpdate()
         {
+            if (seguir != null)
+            {
+                target = Vector3.Lerp(target, seguir.position,
+                                      1f - Mathf.Exp(-suavizacaoSeguir * Time.deltaTime));
+            }
             if (Input.GetMouseButton(0))
             {
                 yaw += Input.GetAxis("Mouse X") * 3f;

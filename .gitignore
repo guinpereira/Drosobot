@@ -51,3 +51,8 @@ data/male-cns/
 #   uv venv --python 3.14 .venv-flygym2
 #   uv pip install --python .venv-flygym2/Scripts/python.exe -e research/upstream/flygym pyopencl
 .venv-flygym2/
+
+# malhas do NeuroMechFly convertidas. Reconstroi com:
+#   .venv-flygym2\Scripts\python tools\export_fly_mesh.py
+unity/DrosobotLab/Assets/Resources/Fly/*.obj
+unity/DrosobotLab/Assets/Resources/Fly/*.obj.meta

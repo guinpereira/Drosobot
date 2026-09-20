@@ -27,6 +27,7 @@ simulador.
 """
 from __future__ import annotations
 
+import mujoco as mj
 import numpy as np
 
 from .adapter import MotorFrame, SensorFrame
@@ -38,7 +39,7 @@ class FlyGym2Adapter:
     nome = "flygym2"
     versao = "2.1.0 / mujoco 3.9"
 
-    def __init__(self, arena: str = "flat", self_collisions: str = "legs",
+    def __init__(self, arena: str = "looming", self_collisions: str = "legs",
                  timestep: float = 1e-4, com_visao: bool = True):
         self.arena_tipo = arena
         self.self_collisions = self_collisions
@@ -50,6 +51,10 @@ class FlyGym2Adapter:
         self._passo = 0
         self._retina_cache = None
         self._pos_cache = None
+        self._nome_obj = None
+        self._estimulo = None
+        self._mocapid = None
+        self._dist_estimulo = None
         self._passos_por_retina = max(1, int(round(1.0 / (VISION_HZ * timestep))))
 
     def reset(self, seed: int = 0) -> SensorFrame:
@@ -75,7 +80,14 @@ class FlyGym2Adapter:
         if self.com_visao:
             fly.add_vision()
 
-        world = FlatGroundWorld()
+        if self.arena_tipo == "looming":
+            from .looming_world import Estimulo, constroi_mundo_looming
+            world, self._nome_obj = constroi_mundo_looming()
+            self._estimulo = Estimulo()
+        else:
+            world = FlatGroundWorld()
+            self._nome_obj = None
+            self._estimulo = None
         world.add_fly(fly, (0, 0, 0.8), Rotation3D("quat", (1, 0, 0, 0)))
 
         self.fly = fly
@@ -84,6 +96,12 @@ class FlyGym2Adapter:
         # deixa a mosca assentar no chao antes de medir qualquer coisa -- o 1.x
         # faz o equivalente no proprio reset
         self.sim.warmup()
+        if self._nome_obj is not None:
+            # id do corpo mocap, resolvido uma vez. `mocap_pos` e indexado pelo
+            # indice de MOCAP, nao pelo bodyid -- body_mocapid faz a traducao.
+            bid = mj.mj_name2id(self.sim.mj_model, mj.mjtObj.mjOBJ_BODY,
+                                self._nome_obj)
+            self._mocapid = int(self.sim.mj_model.body_mocapid[bid])
         self.controlador = HybridTurningController(
             timestep=self._dt,
             output_dof_order=fly.get_actuated_jointdofs_order(
@@ -136,11 +154,15 @@ class FlyGym2Adapter:
         )
 
     def antes_do_passo(self, t_s: float, dist_mm: float | None = None) -> None:
-        # A arena de looming do 1.x nao tem equivalente direto no 2.x ainda.
-        # Enquanto nao houver, este adaptador roda em chao plano e o estimulo
-        # visual e o do proprio caminhar. Isso E uma diferenca de experimento e
-        # esta declarada em resumo(), nao escondida.
-        pass
+        """Move a esfera de looming. Mocap: posicao imposta, sem dinamica."""
+        if self._estimulo is None or self._mocapid is None:
+            return
+        pos = getattr(self, "_pos_cache", None)
+        if pos is None:
+            pos = self.sim.get_body_positions(self.fly.name)
+        alvo = self._estimulo.posicao(t_s, pos[self._i_torax])
+        self.sim.mj_data.mocap_pos[self._mocapid] = alvo
+        self._dist_estimulo = float(self._estimulo.distancia(t_s))
 
     def passo(self, motor: MotorFrame) -> SensorFrame:
         from flygym.compose import ActuatorType
@@ -184,6 +206,21 @@ class FlyGym2Adapter:
     def n_pares_colisao(self) -> int:
         return int(self.sim.mj_model.npair) if self.sim else 0
 
+    def pose_corpo(self):
+        """
+        Pose dos segmentos da mosca, com os nomes do 2.x (`lf_tarsus1`).
+
+        Nomes diferentes dos do 1.x de proposito: quem consome e a Unity, e ela
+        recebe a lista junto. Traduzir aqui pra nomenclatura antiga esconderia
+        qual modelo esta rodando.
+        """
+        # BodySegment tem repr proprio; queremos o nome, nao o repr
+        nomes = [getattr(b, "name", str(b))
+                 for b in self.fly.get_bodysegs_order()]
+        pos = np.asarray(self.sim.get_body_positions(self.fly.name))
+        quat = np.asarray(self.sim.get_body_rotations(self.fly.name))
+        return nomes, pos, quat
+
     def resumo(self) -> dict:
         m = self.sim.mj_model if self.sim else None
         return {
@@ -194,8 +231,12 @@ class FlyGym2Adapter:
             "collision_pairs": self.n_pares_colisao,
             "nv": int(m.nv) if m is not None else 0,
             "vision_hz": VISION_HZ if self.com_visao else 0,
-            "diferenca_declarada": ("arena plana: a arena de looming do 1.x "
-                                    "ainda nao tem equivalente no 2.x"),
+            "arena": self.arena_tipo,
+            "diferenca_declarada": (
+                "arena de looming reproduzida com esfera mocap; o chao e o "
+                "FlatGroundWorld do 2.x, com os parametros de contato dele, "
+                "nao os da MovingObjArena do 1.x"
+                if self.arena_tipo == "looming" else "chao plano"),
         }
 
     def fecha(self) -> None:

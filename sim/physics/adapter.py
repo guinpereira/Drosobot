@@ -47,6 +47,12 @@ class SensorFrame:
     posicao: np.ndarray = field(default_factory=lambda: np.zeros(3))
     orientacao: np.ndarray | None = None      # quaternio (w, x, y, z)
     contatos: np.ndarray | None = None
+    # pose dos segmentos do corpo, so quando pedida (ver `pose_corpo()`).
+    # Nao vem por passo: sao ~70 segmentos x 7 floats, e a fisica anda 10.000
+    # vezes por segundo simulado enquanto a visualizacao precisa de ~30.
+    segmentos: list[str] | None = None
+    seg_pos: np.ndarray | None = None      # (n, 3) mm
+    seg_quat: np.ndarray | None = None     # (n, 4) w,x,y,z
     extras: dict = field(default_factory=dict)
 
 
@@ -87,6 +93,16 @@ class PhysicsAdapter(Protocol):
 
     @property
     def n_pares_colisao(self) -> int: ...
+
+    def pose_corpo(self) -> tuple[list[str], np.ndarray, np.ndarray]:
+        """
+        (nomes, posicoes, quaternios) de todos os segmentos.
+
+        Chamado na cadencia da TELEMETRIA, nao na da fisica. A Unity reconstroi
+        a pose a partir disto; interpolar entre quadros na visualizacao e
+        permitido, desde que nada volte pra fisica.
+        """
+        ...
 
     def resumo(self) -> dict:
         """Pro profiler, pra telemetria e pra interface."""

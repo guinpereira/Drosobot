@@ -1,0 +1,3122 @@
+{
+ "fonte": "NeuroMechFly / FlyGym 2.1.0, do modelo compilado",
+ "licenca": "Apache-2.0 (NeLy-EPFL) -- ver THIRD_PARTY_NOTICES.md",
+ "unidades": "milimetros",
+ "convencoes": {
+  "quaternion": "MuJoCo (w, x, y, z) -- Unity usa (x, y, z, w)",
+  "eixos": "MuJoCo Z-up destro -- Unity Y-up canhoto; a conversao e feita na Unity, nao aqui"
+ },
+ "n_bodies": 69,
+ "n_mesh_geoms": 69,
+ "meshes": {
+  "fly/c_thorax": {
+   "arquivo": "fly_c_thorax.obj",
+   "vertices": 950,
+   "faces": 2000
+  },
+  "fly/c_head": {
+   "arquivo": "fly_c_head.obj",
+   "vertices": 869,
+   "faces": 1998
+  },
+  "fly/c_rostrum": {
+   "arquivo": "fly_c_rostrum.obj",
+   "vertices": 817,
+   "faces": 2000
+  },
+  "fly/c_haustellum": {
+   "arquivo": "fly_c_haustellum.obj",
+   "vertices": 746,
+   "faces": 1998
+  },
+  "fly/c_abdomen12": {
+   "arquivo": "fly_c_abdomen12.obj",
+   "vertices": 807,
+   "faces": 2000
+  },
+  "fly/c_abdomen3": {
+   "arquivo": "fly_c_abdomen3.obj",
+   "vertices": 876,
+   "faces": 2000
+  },
+  "fly/c_abdomen4": {
+   "arquivo": "fly_c_abdomen4.obj",
+   "vertices": 923,
+   "faces": 1998
+  },
+  "fly/c_abdomen5": {
+   "arquivo": "fly_c_abdomen5.obj",
+   "vertices": 878,
+   "faces": 1998
+  },
+  "fly/c_abdomen6": {
+   "arquivo": "fly_c_abdomen6.obj",
+   "vertices": 885,
+   "faces": 1998
+  },
+  "fly/l_eye": {
+   "arquivo": "fly_l_eye.obj",
+   "vertices": 1000,
+   "faces": 2000
+  },
+  "fly/r_eye": {
+   "arquivo": "fly_r_eye.obj",
+   "vertices": 1000,
+   "faces": 2000
+  },
+  "fly/l_pedicel": {
+   "arquivo": "fly_l_pedicel.obj",
+   "vertices": 1002,
+   "faces": 2000
+  },
+  "fly/l_funiculus": {
+   "arquivo": "fly_l_funiculus.obj",
+   "vertices": 261,
+   "faces": 530
+  },
+  "fly/l_arista": {
+   "arquivo": "fly_l_arista.obj",
+   "vertices": 1001,
+   "faces": 2000
+  },
+  "fly/r_pedicel": {
+   "arquivo": "fly_r_pedicel.obj",
+   "vertices": 1002,
+   "faces": 2000
+  },
+  "fly/r_funiculus": {
+   "arquivo": "fly_r_funiculus.obj",
+   "vertices": 261,
+   "faces": 530
+  },
+  "fly/r_arista": {
+   "arquivo": "fly_r_arista.obj",
+   "vertices": 1001,
+   "faces": 2000
+  },
+  "fly/l_wing": {
+   "arquivo": "fly_l_wing.obj",
+   "vertices": 899,
+   "faces": 1999
+  },
+  "fly/r_wing": {
+   "arquivo": "fly_r_wing.obj",
+   "vertices": 899,
+   "faces": 1999
+  },
+  "fly/l_haltere": {
+   "arquivo": "fly_l_haltere.obj",
+   "vertices": 372,
+   "faces": 824
+  },
+  "fly/r_haltere": {
+   "arquivo": "fly_r_haltere.obj",
+   "vertices": 372,
+   "faces": 824
+  },
+  "fly/lf_coxa": {
+   "arquivo": "fly_lf_coxa.obj",
+   "vertices": 905,
+   "faces": 2000
+  },
+  "fly/lf_trochanterfemur": {
+   "arquivo": "fly_lf_trochanterfemur.obj",
+   "vertices": 687,
+   "faces": 1618
+  },
+  "fly/lf_tibia": {
+   "arquivo": "fly_lf_tibia.obj",
+   "vertices": 828,
+   "faces": 1709
+  },
+  "fly/lf_tarsus1": {
+   "arquivo": "fly_lf_tarsus1.obj",
+   "vertices": 854,
+   "faces": 1790
+  },
+  "fly/lf_tarsus2": {
+   "arquivo": "fly_lf_tarsus2.obj",
+   "vertices": 888,
+   "faces": 1796
+  },
+  "fly/lf_tarsus3": {
+   "arquivo": "fly_lf_tarsus3.obj",
+   "vertices": 995,
+   "faces": 2000
+  },
+  "fly/lf_tarsus4": {
+   "arquivo": "fly_lf_tarsus4.obj",
+   "vertices": 988,
+   "faces": 1999
+  },
+  "fly/lf_tarsus5": {
+   "arquivo": "fly_lf_tarsus5.obj",
+   "vertices": 993,
+   "faces": 2000
+  },
+  "fly/lm_coxa": {
+   "arquivo": "fly_lm_coxa.obj",
+   "vertices": 969,
+   "faces": 2000
+  },
+  "fly/lm_trochanterfemur": {
+   "arquivo": "fly_lm_trochanterfemur.obj",
+   "vertices": 379,
+   "faces": 826
+  },
+  "fly/lm_tibia": {
+   "arquivo": "fly_lm_tibia.obj",
+   "vertices": 329,
+   "faces": 676
+  },
+  "fly/lm_tarsus1": {
+   "arquivo": "fly_lm_tarsus1.obj",
+   "vertices": 453,
+   "faces": 924
+  },
+  "fly/lm_tarsus2": {
+   "arquivo": "fly_lm_tarsus2.obj",
+   "vertices": 767,
+   "faces": 1556
+  },
+  "fly/lm_tarsus3": {
+   "arquivo": "fly_lm_tarsus3.obj",
+   "vertices": 924,
+   "faces": 1856
+  },
+  "fly/lm_tarsus4": {
+   "arquivo": "fly_lm_tarsus4.obj",
+   "vertices": 981,
+   "faces": 2000
+  },
+  "fly/lm_tarsus5": {
+   "arquivo": "fly_lm_tarsus5.obj",
+   "vertices": 469,
+   "faces": 986
+  },
+  "fly/lh_coxa": {
+   "arquivo": "fly_lh_coxa.obj",
+   "vertices": 992,
+   "faces": 2000
+  },
+  "fly/lh_trochanterfemur": {
+   "arquivo": "fly_lh_trochanterfemur.obj",
+   "vertices": 983,
+   "faces": 2000
+  },
+  "fly/lh_tibia": {
+   "arquivo": "fly_lh_tibia.obj",
+   "vertices": 363,
+   "faces": 748
+  },
+  "fly/lh_tarsus1": {
+   "arquivo": "fly_lh_tarsus1.obj",
+   "vertices": 371,
+   "faces": 777
+  },
+  "fly/lh_tarsus2": {
+   "arquivo": "fly_lh_tarsus2.obj",
+   "vertices": 982,
+   "faces": 1972
+  },
+  "fly/lh_tarsus3": {
+   "arquivo": "fly_lh_tarsus3.obj",
+   "vertices": 989,
+   "faces": 2000
+  },
+  "fly/lh_tarsus4": {
+   "arquivo": "fly_lh_tarsus4.obj",
+   "vertices": 974,
+   "faces": 1998
+  },
+  "fly/lh_tarsus5": {
+   "arquivo": "fly_lh_tarsus5.obj",
+   "vertices": 979,
+   "faces": 2000
+  },
+  "fly/rf_coxa": {
+   "arquivo": "fly_rf_coxa.obj",
+   "vertices": 905,
+   "faces": 2000
+  },
+  "fly/rf_trochanterfemur": {
+   "arquivo": "fly_rf_trochanterfemur.obj",
+   "vertices": 687,
+   "faces": 1618
+  },
+  "fly/rf_tibia": {
+   "arquivo": "fly_rf_tibia.obj",
+   "vertices": 828,
+   "faces": 1709
+  },
+  "fly/rf_tarsus1": {
+   "arquivo": "fly_rf_tarsus1.obj",
+   "vertices": 854,
+   "faces": 1790
+  },
+  "fly/rf_tarsus2": {
+   "arquivo": "fly_rf_tarsus2.obj",
+   "vertices": 888,
+   "faces": 1796
+  },
+  "fly/rf_tarsus3": {
+   "arquivo": "fly_rf_tarsus3.obj",
+   "vertices": 995,
+   "faces": 2000
+  },
+  "fly/rf_tarsus4": {
+   "arquivo": "fly_rf_tarsus4.obj",
+   "vertices": 988,
+   "faces": 1999
+  },
+  "fly/rf_tarsus5": {
+   "arquivo": "fly_rf_tarsus5.obj",
+   "vertices": 993,
+   "faces": 2000
+  },
+  "fly/rm_coxa": {
+   "arquivo": "fly_rm_coxa.obj",
+   "vertices": 969,
+   "faces": 2000
+  },
+  "fly/rm_trochanterfemur": {
+   "arquivo": "fly_rm_trochanterfemur.obj",
+   "vertices": 379,
+   "faces": 826
+  },
+  "fly/rm_tibia": {
+   "arquivo": "fly_rm_tibia.obj",
+   "vertices": 329,
+   "faces": 676
+  },
+  "fly/rm_tarsus1": {
+   "arquivo": "fly_rm_tarsus1.obj",
+   "vertices": 453,
+   "faces": 924
+  },
+  "fly/rm_tarsus2": {
+   "arquivo": "fly_rm_tarsus2.obj",
+   "vertices": 767,
+   "faces": 1556
+  },
+  "fly/rm_tarsus3": {
+   "arquivo": "fly_rm_tarsus3.obj",
+   "vertices": 924,
+   "faces": 1856
+  },
+  "fly/rm_tarsus4": {
+   "arquivo": "fly_rm_tarsus4.obj",
+   "vertices": 981,
+   "faces": 2000
+  },
+  "fly/rm_tarsus5": {
+   "arquivo": "fly_rm_tarsus5.obj",
+   "vertices": 469,
+   "faces": 986
+  },
+  "fly/rh_coxa": {
+   "arquivo": "fly_rh_coxa.obj",
+   "vertices": 992,
+   "faces": 2000
+  },
+  "fly/rh_trochanterfemur": {
+   "arquivo": "fly_rh_trochanterfemur.obj",
+   "vertices": 983,
+   "faces": 2000
+  },
+  "fly/rh_tibia": {
+   "arquivo": "fly_rh_tibia.obj",
+   "vertices": 363,
+   "faces": 748
+  },
+  "fly/rh_tarsus1": {
+   "arquivo": "fly_rh_tarsus1.obj",
+   "vertices": 371,
+   "faces": 777
+  },
+  "fly/rh_tarsus2": {
+   "arquivo": "fly_rh_tarsus2.obj",
+   "vertices": 982,
+   "faces": 1972
+  },
+  "fly/rh_tarsus3": {
+   "arquivo": "fly_rh_tarsus3.obj",
+   "vertices": 989,
+   "faces": 2000
+  },
+  "fly/rh_tarsus4": {
+   "arquivo": "fly_rh_tarsus4.obj",
+   "vertices": 974,
+   "faces": 1998
+  },
+  "fly/rh_tarsus5": {
+   "arquivo": "fly_rh_tarsus5.obj",
+   "vertices": 979,
+   "faces": 2000
+  }
+ },
+ "geoms": [
+  {
+   "geom": "fly/c_thorax",
+   "body": "fly/c_thorax",
+   "body_index": 1,
+   "mesh": "fly/c_thorax",
+   "pos": [
+    -0.4743740590907638,
+    1.6379188106861043e-16,
+    -0.015367945737142777
+   ],
+   "quat_wxyz": [
+    0.6478429206012805,
+    0.2833717526974139,
+    0.2833717526974139,
+    0.6478429206012805
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/c_head",
+   "body": "fly/c_thorax",
+   "body_index": 1,
+   "mesh": "fly/c_head",
+   "pos": [
+    0.22823167979662895,
+    1.7173999419355453e-16,
+    0.04263870455043129
+   ],
+   "quat_wxyz": [
+    0.7061988326532659,
+    0.7061988326532659,
+    -0.03582190334369914,
+    0.03582190334369914
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/c_rostrum",
+   "body": "fly/c_rostrum",
+   "body_index": 2,
+   "mesh": "fly/c_rostrum",
+   "pos": [
+    -0.1731962761079399,
+    2.8249700006133685e-17,
+    -0.020298663026684104
+   ],
+   "quat_wxyz": [
+    0.9966676863202045,
+    0.0,
+    -0.08156913046692633,
+    0.0
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/c_haustellum",
+   "body": "fly/c_haustellum",
+   "body_index": 3,
+   "mesh": "fly/c_haustellum",
+   "pos": [
+    0.2070903261711789,
+    -1.0849845855637206e-17,
+    -0.11366569162972384
+   ],
+   "quat_wxyz": [
+    0.5435085219264607,
+    0.5435085219264607,
+    -0.45232564220184923,
+    0.45232564220184923
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/l_eye",
+   "body": "fly/l_eye",
+   "body_index": 4,
+   "mesh": "fly/l_eye",
+   "pos": [
+    0.004319622891453924,
+    0.30755306177262426,
+    -0.017030844305281772
+   ],
+   "quat_wxyz": [
+    0.8260503248325464,
+    -0.11608443812848386,
+    -0.08067330576540373,
+    0.5455795833838739
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/r_eye",
+   "body": "fly/r_eye",
+   "body_index": 5,
+   "mesh": "fly/r_eye",
+   "pos": [
+    0.004319622891453924,
+    -0.30755306177262426,
+    -0.017030844305281772
+   ],
+   "quat_wxyz": [
+    0.5455795833838739,
+    -0.08067330576540373,
+    -0.11608443812848386,
+    0.8260503248325464
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/l_pedicel",
+   "body": "fly/l_pedicel",
+   "body_index": 6,
+   "mesh": "fly/l_pedicel",
+   "pos": [
+    0.051380844728670286,
+    0.005053458866594543,
+    -0.025157088825782176
+   ],
+   "quat_wxyz": [
+    0.06570963829944271,
+    0.7512543503188641,
+    -0.3390575396715717,
+    0.5624403340385555
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/l_funiculus",
+   "body": "fly/l_funiculus",
+   "body_index": 7,
+   "mesh": "fly/l_funiculus",
+   "pos": [
+    0.012425565923007793,
+    -0.014712346676503816,
+    -0.0927772787303213
+   ],
+   "quat_wxyz": [
+    0.9497614486565003,
+    0.009879992767847387,
+    -0.06395891075963808,
+    -0.30621044091156346
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/l_arista",
+   "body": "fly/l_arista",
+   "body_index": 8,
+   "mesh": "fly/l_arista",
+   "pos": [
+    0.016069638933061285,
+    0.0936852083345179,
+    0.01560680201672778
+   ],
+   "quat_wxyz": [
+    0.7297668998026333,
+    0.6616882500962614,
+    0.0980814342902423,
+    -0.14138233229286834
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/r_pedicel",
+   "body": "fly/r_pedicel",
+   "body_index": 9,
+   "mesh": "fly/r_pedicel",
+   "pos": [
+    0.051380844728670286,
+    -0.005053458866594543,
+    -0.025157088825782176
+   ],
+   "quat_wxyz": [
+    -0.06570963829944271,
+    0.7512543503188641,
+    0.3390575396715717,
+    0.5624403340385555
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/r_funiculus",
+   "body": "fly/r_funiculus",
+   "body_index": 10,
+   "mesh": "fly/r_funiculus",
+   "pos": [
+    0.012425565923007793,
+    0.014712346676503816,
+    -0.0927772787303213
+   ],
+   "quat_wxyz": [
+    0.9497614486565003,
+    -0.009879992767847387,
+    -0.06395891075963808,
+    0.30621044091156346
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/r_arista",
+   "body": "fly/r_arista",
+   "body_index": 11,
+   "mesh": "fly/r_arista",
+   "pos": [
+    0.016069638933061285,
+    -0.0936852083345179,
+    0.01560680201672778
+   ],
+   "quat_wxyz": [
+    0.6616882500962614,
+    0.7297668998026333,
+    0.14138233229286834,
+    -0.0980814342902423
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/c_abdomen12",
+   "body": "fly/c_abdomen12",
+   "body_index": 12,
+   "mesh": "fly/c_abdomen12",
+   "pos": [
+    -0.23908227084619105,
+    -5.487375984989629e-17,
+    0.07064843618067608
+   ],
+   "quat_wxyz": [
+    0.6943381357514461,
+    0.6943381357514461,
+    -0.133770524560559,
+    0.133770524560559
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/c_abdomen3",
+   "body": "fly/c_abdomen3",
+   "body_index": 13,
+   "mesh": "fly/c_abdomen3",
+   "pos": [
+    -0.07349399588992882,
+    1.1722483323553112e-16,
+    -0.02942389049201437
+   ],
+   "quat_wxyz": [
+    0.7063758183530618,
+    0.7063758183530618,
+    -0.03214347905941383,
+    0.03214347905941383
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/c_abdomen4",
+   "body": "fly/c_abdomen4",
+   "body_index": 14,
+   "mesh": "fly/c_abdomen4",
+   "pos": [
+    -0.0833305818918256,
+    1.0548696191114867e-16,
+    -0.023314413281177546
+   ],
+   "quat_wxyz": [
+    0.7063908061577077,
+    0.7063908061577077,
+    -0.03181240286216254,
+    0.03181240286216254
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/c_abdomen5",
+   "body": "fly/c_abdomen5",
+   "body_index": 15,
+   "mesh": "fly/c_abdomen5",
+   "pos": [
+    -0.10035021681886769,
+    3.003332562173732e-19,
+    -0.04553448586254862
+   ],
+   "quat_wxyz": [
+    0.707077016451254,
+    0.707077016451254,
+    0.006487896916093997,
+    -0.006487896916093997
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/c_abdomen6",
+   "body": "fly/c_abdomen6",
+   "body_index": 16,
+   "mesh": "fly/c_abdomen6",
+   "pos": [
+    -0.06594559017339223,
+    6.178066168359081e-17,
+    -0.04523018578129563
+   ],
+   "quat_wxyz": [
+    0.7061695955386258,
+    0.7061695955386258,
+    -0.036393712874814195,
+    0.036393712874814195
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/l_wing",
+   "body": "fly/l_wing",
+   "body_index": 17,
+   "mesh": "fly/l_wing",
+   "pos": [
+    -0.10732100371108817,
+    0.959152731740281,
+    0.11509556873712865
+   ],
+   "quat_wxyz": [
+    0.5855272178401213,
+    0.5397890942743284,
+    -0.4343765790143,
+    0.4208355955414701
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/r_wing",
+   "body": "fly/r_wing",
+   "body_index": 18,
+   "mesh": "fly/r_wing",
+   "pos": [
+    -0.10732100371108817,
+    -0.959152731740281,
+    0.11509556873712865
+   ],
+   "quat_wxyz": [
+    0.5397890942743284,
+    0.5855272178401213,
+    -0.4208355955414701,
+    0.4343765790143
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/l_haltere",
+   "body": "fly/l_haltere",
+   "body_index": 19,
+   "mesh": "fly/l_haltere",
+   "pos": [
+    -0.02248319654918257,
+    0.20410924204962871,
+    0.009691460560827557
+   ],
+   "quat_wxyz": [
+    0.7061727422421967,
+    0.7021238332903016,
+    0.06383816238793334,
+    -0.06532128185210163
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/r_haltere",
+   "body": "fly/r_haltere",
+   "body_index": 20,
+   "mesh": "fly/r_haltere",
+   "pos": [
+    -0.02248319654918257,
+    -0.20410924204962871,
+    0.009691460560827557
+   ],
+   "quat_wxyz": [
+    0.7021238332903016,
+    0.7061727422421967,
+    0.06532128185210163,
+    -0.06383816238793334
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_coxa",
+   "body": "fly/lf_coxa",
+   "body_index": 21,
+   "mesh": "fly/lf_coxa",
+   "pos": [
+    0.01085458767492539,
+    0.007268863340506961,
+    -0.22940523839894164
+   ],
+   "quat_wxyz": [
+    0.9638670616410862,
+    -0.04725632585340142,
+    -0.0006037722231066062,
+    -0.2621578963321888
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/lf_trochanterfemur",
+   "body": "fly/lf_trochanterfemur",
+   "body_index": 22,
+   "mesh": "fly/lf_trochanterfemur",
+   "pos": [
+    -0.00800083826362463,
+    0.020054340202140187,
+    -0.36245978069377416
+   ],
+   "quat_wxyz": [
+    0.7549910239531109,
+    0.010253095350049223,
+    -0.014038305785646136,
+    0.6555046557856362
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tibia",
+   "body": "fly/lf_tibia",
+   "body_index": 23,
+   "mesh": "fly/lf_tibia",
+   "pos": [
+    0.02232491205503231,
+    0.009637393394507575,
+    -0.29907790354997915
+   ],
+   "quat_wxyz": [
+    0.5420956483670691,
+    -0.006395447284020743,
+    0.027174290183983082,
+    0.8398529420252825
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tarsus1",
+   "body": "fly/lf_tarsus1",
+   "body_index": 24,
+   "mesh": "fly/lf_tarsus1",
+   "pos": [
+    0.007805027676420351,
+    -0.003493516060296508,
+    -0.13632956439903116
+   ],
+   "quat_wxyz": [
+    0.8404531824319889,
+    -0.02345157911880706,
+    -0.004987884764325793,
+    0.5413534821005176
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tarsus2",
+   "body": "fly/lf_tarsus2",
+   "body_index": 25,
+   "mesh": "fly/lf_tarsus2",
+   "pos": [
+    0.009994689757343935,
+    -0.003228302971128356,
+    -0.10319709920278586
+   ],
+   "quat_wxyz": [
+    0.9255496994584226,
+    -0.0019831240194749873,
+    0.028867789923953373,
+    0.37751883629357263
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tarsus3",
+   "body": "fly/lf_tarsus3",
+   "body_index": 26,
+   "mesh": "fly/lf_tarsus3",
+   "pos": [
+    0.00934717643320778,
+    -0.004413574494526449,
+    -0.07330683489715625
+   ],
+   "quat_wxyz": [
+    0.9272077833077659,
+    0.02035327184889196,
+    0.033087373355681085,
+    0.3725274441205182
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tarsus4",
+   "body": "fly/lf_tarsus4",
+   "body_index": 27,
+   "mesh": "fly/lf_tarsus4",
+   "pos": [
+    0.0006929217988820089,
+    -0.005020711281211046,
+    -0.06392354532430522
+   ],
+   "quat_wxyz": [
+    0.9142533978573999,
+    0.02141389260188431,
+    0.03335455833638504,
+    0.4031992598554964
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lf_tarsus5",
+   "body": "fly/lf_tarsus5",
+   "body_index": 28,
+   "mesh": "fly/lf_tarsus5",
+   "pos": [
+    0.0018915455782265208,
+    -0.006422013480992739,
+    -0.06648551239545822
+   ],
+   "quat_wxyz": [
+    0.7323199886367864,
+    0.03542906927922003,
+    0.04527936073646245,
+    0.6785292880814533
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_coxa",
+   "body": "fly/lm_coxa",
+   "body_index": 29,
+   "mesh": "fly/lm_coxa",
+   "pos": [
+    -0.005325861128031422,
+    0.01355930277977692,
+    -0.09653541559341412
+   ],
+   "quat_wxyz": [
+    0.7349805090160134,
+    -0.1979857721055039,
+    0.19362611034324428,
+    0.618962207896166
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_trochanterfemur",
+   "body": "fly/lm_trochanterfemur",
+   "body_index": 30,
+   "mesh": "fly/lm_trochanterfemur",
+   "pos": [
+    0.01746303983716244,
+    0.009440410660169698,
+    -0.4021787560975721
+   ],
+   "quat_wxyz": [
+    0.6979558710253866,
+    -0.00421571301737966,
+    0.001625540105655602,
+    0.7161265163951933
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tibia",
+   "body": "fly/lm_tibia",
+   "body_index": 31,
+   "mesh": "fly/lm_tibia",
+   "pos": [
+    0.017169670175565088,
+    0.011642621028362802,
+    -0.3789077852225215
+   ],
+   "quat_wxyz": [
+    0.9607318275268204,
+    -0.01195163742673908,
+    0.02167328899935765,
+    -0.27637254292665486
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tarsus1",
+   "body": "fly/lm_tarsus1",
+   "body_index": 32,
+   "mesh": "fly/lm_tarsus1",
+   "pos": [
+    -0.011953549038014141,
+    0.00871825678419497,
+    -0.17107745037521074
+   ],
+   "quat_wxyz": [
+    0.7955215248817343,
+    -0.025412213714128162,
+    -0.01671346723118925,
+    0.6051614518928817
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tarsus2",
+   "body": "fly/lm_tarsus2",
+   "body_index": 33,
+   "mesh": "fly/lm_tarsus2",
+   "pos": [
+    -0.009105131146329545,
+    0.009272911925745999,
+    -0.09635317782105382
+   ],
+   "quat_wxyz": [
+    0.6260557573682867,
+    -0.009123479301772968,
+    0.006356157539519202,
+    0.7796990124739066
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tarsus3",
+   "body": "fly/lm_tarsus3",
+   "body_index": 34,
+   "mesh": "fly/lm_tarsus3",
+   "pos": [
+    -0.006360352650439754,
+    0.010501215016305252,
+    -0.061968811655465215
+   ],
+   "quat_wxyz": [
+    0.5790232803936173,
+    0.03767798326071733,
+    0.01737537171035905,
+    0.8142545712475597
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tarsus4",
+   "body": "fly/lm_tarsus4",
+   "body_index": 35,
+   "mesh": "fly/lm_tarsus4",
+   "pos": [
+    -0.007192166579572109,
+    0.009864783094143703,
+    -0.049065755789596384
+   ],
+   "quat_wxyz": [
+    0.6488442529553267,
+    0.04315734470727397,
+    0.06704344857113055,
+    0.7567322875418714
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lm_tarsus5",
+   "body": "fly/lm_tarsus5",
+   "body_index": 36,
+   "mesh": "fly/lm_tarsus5",
+   "pos": [
+    -0.005673297293511568,
+    0.008307929171132518,
+    -0.061320618424859016
+   ],
+   "quat_wxyz": [
+    0.7695757972246102,
+    0.03979802525744512,
+    0.04337357465541966,
+    0.6358364117706106
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_coxa",
+   "body": "fly/lh_coxa",
+   "body_index": 37,
+   "mesh": "fly/lh_coxa",
+   "pos": [
+    -0.014011713868353036,
+    0.029434816998758696,
+    -0.1078818630721314
+   ],
+   "quat_wxyz": [
+    0.743616071009984,
+    -0.11563419742338966,
+    0.12465840779834832,
+    0.6466252026383636
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_trochanterfemur",
+   "body": "fly/lh_trochanterfemur",
+   "body_index": 38,
+   "mesh": "fly/lh_trochanterfemur",
+   "pos": [
+    0.020424592093772728,
+    -0.007889864429657919,
+    -0.4225751376106347
+   ],
+   "quat_wxyz": [
+    0.3933104171478788,
+    -0.0031559757363101276,
+    0.014609650245136318,
+    0.9192842398843948
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tibia",
+   "body": "fly/lh_tibia",
+   "body_index": 39,
+   "mesh": "fly/lh_tibia",
+   "pos": [
+    0.011634958976999009,
+    -0.005989137535949537,
+    -0.4032428629357822
+   ],
+   "quat_wxyz": [
+    0.8456401756399679,
+    0.012322820824236528,
+    0.011690656857314172,
+    0.5334830550006102
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tarsus1",
+   "body": "fly/lh_tarsus1",
+   "body_index": 40,
+   "mesh": "fly/lh_tarsus1",
+   "pos": [
+    -0.014013852735759535,
+    0.013258785689783717,
+    -0.174411310907439
+   ],
+   "quat_wxyz": [
+    0.9683840115647041,
+    -0.004820049059776742,
+    -0.005116644318182171,
+    0.24936518045595948
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tarsus2",
+   "body": "fly/lh_tarsus2",
+   "body_index": 41,
+   "mesh": "fly/lh_tarsus2",
+   "pos": [
+    -0.01175047623302802,
+    0.01082881741257681,
+    -0.09858509310477037
+   ],
+   "quat_wxyz": [
+    0.5345269316530089,
+    0.018956276314072838,
+    -0.005456450650606589,
+    0.8449212070200528
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tarsus3",
+   "body": "fly/lh_tarsus3",
+   "body_index": 42,
+   "mesh": "fly/lh_tarsus3",
+   "pos": [
+    -0.01432634331738053,
+    0.011681988834444526,
+    -0.055710869581794074
+   ],
+   "quat_wxyz": [
+    0.5397571431109089,
+    0.005828420128805092,
+    -0.002471131803449083,
+    0.8417969764065223
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tarsus4",
+   "body": "fly/lh_tarsus4",
+   "body_index": 43,
+   "mesh": "fly/lh_tarsus4",
+   "pos": [
+    -0.013385330487860867,
+    0.010698312301574833,
+    -0.046881111495397976
+   ],
+   "quat_wxyz": [
+    0.5903875681401691,
+    0.031227049593708544,
+    0.03699502410410678,
+    0.8056666549825351
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/lh_tarsus5",
+   "body": "fly/lh_tarsus5",
+   "body_index": 44,
+   "mesh": "fly/lh_tarsus5",
+   "pos": [
+    -0.012452903978749931,
+    0.008274740491813037,
+    -0.0603398689533137
+   ],
+   "quat_wxyz": [
+    0.6189749690961169,
+    0.028098345240215327,
+    0.029613090396693128,
+    0.7843491158306876
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_coxa",
+   "body": "fly/rf_coxa",
+   "body_index": 45,
+   "mesh": "fly/rf_coxa",
+   "pos": [
+    0.01085458767492539,
+    -0.007268863340506961,
+    -0.22940523839894164
+   ],
+   "quat_wxyz": [
+    0.9638670616410862,
+    0.04725632585340142,
+    -0.0006037722231066062,
+    0.2621578963321888
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 2
+  },
+  {
+   "geom": "fly/rf_trochanterfemur",
+   "body": "fly/rf_trochanterfemur",
+   "body_index": 46,
+   "mesh": "fly/rf_trochanterfemur",
+   "pos": [
+    -0.00800083826362463,
+    -0.020054340202140187,
+    -0.36245978069377416
+   ],
+   "quat_wxyz": [
+    0.6555046557856362,
+    -0.014038305785646136,
+    0.010253095350049223,
+    0.7549910239531109
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tibia",
+   "body": "fly/rf_tibia",
+   "body_index": 47,
+   "mesh": "fly/rf_tibia",
+   "pos": [
+    0.02232491205503231,
+    -0.009637393394507575,
+    -0.29907790354997915
+   ],
+   "quat_wxyz": [
+    0.8398529420252825,
+    0.027174290183983082,
+    -0.006395447284020743,
+    0.5420956483670691
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tarsus1",
+   "body": "fly/rf_tarsus1",
+   "body_index": 48,
+   "mesh": "fly/rf_tarsus1",
+   "pos": [
+    0.007805027676420351,
+    0.003493516060296508,
+    -0.13632956439903116
+   ],
+   "quat_wxyz": [
+    0.5413534821005176,
+    -0.004987884764325793,
+    -0.02345157911880706,
+    0.8404531824319889
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tarsus2",
+   "body": "fly/rf_tarsus2",
+   "body_index": 49,
+   "mesh": "fly/rf_tarsus2",
+   "pos": [
+    0.009994689757343935,
+    0.003228302971128356,
+    -0.10319709920278586
+   ],
+   "quat_wxyz": [
+    0.9255496994584226,
+    0.0019831240194749873,
+    0.028867789923953373,
+    -0.37751883629357263
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tarsus3",
+   "body": "fly/rf_tarsus3",
+   "body_index": 50,
+   "mesh": "fly/rf_tarsus3",
+   "pos": [
+    0.00934717643320778,
+    0.004413574494526449,
+    -0.07330683489715625
+   ],
+   "quat_wxyz": [
+    0.9272077833077659,
+    -0.02035327184889196,
+    0.033087373355681085,
+    -0.3725274441205182
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tarsus4",
+   "body": "fly/rf_tarsus4",
+   "body_index": 51,
+   "mesh": "fly/rf_tarsus4",
+   "pos": [
+    0.0006929217988820089,
+    0.005020711281211046,
+    -0.06392354532430522
+   ],
+   "quat_wxyz": [
+    0.4031992598554964,
+    0.03335455833638504,
+    0.02141389260188431,
+    0.9142533978573999
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rf_tarsus5",
+   "body": "fly/rf_tarsus5",
+   "body_index": 52,
+   "mesh": "fly/rf_tarsus5",
+   "pos": [
+    0.0018915455782265208,
+    0.006422013480992739,
+    -0.06648551239545822
+   ],
+   "quat_wxyz": [
+    0.6785292880814533,
+    0.04527936073646245,
+    0.03542906927922003,
+    0.7323199886367864
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_coxa",
+   "body": "fly/rm_coxa",
+   "body_index": 53,
+   "mesh": "fly/rm_coxa",
+   "pos": [
+    -0.005325861128031422,
+    -0.01355930277977692,
+    -0.09653541559341412
+   ],
+   "quat_wxyz": [
+    0.618962207896166,
+    0.19362611034324428,
+    -0.1979857721055039,
+    0.7349805090160134
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_trochanterfemur",
+   "body": "fly/rm_trochanterfemur",
+   "body_index": 54,
+   "mesh": "fly/rm_trochanterfemur",
+   "pos": [
+    0.01746303983716244,
+    -0.009440410660169698,
+    -0.4021787560975721
+   ],
+   "quat_wxyz": [
+    0.7161265163951933,
+    0.001625540105655602,
+    -0.00421571301737966,
+    0.6979558710253866
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tibia",
+   "body": "fly/rm_tibia",
+   "body_index": 55,
+   "mesh": "fly/rm_tibia",
+   "pos": [
+    0.017169670175565088,
+    -0.011642621028362802,
+    -0.3789077852225215
+   ],
+   "quat_wxyz": [
+    0.9607318275268204,
+    0.01195163742673908,
+    0.02167328899935765,
+    0.27637254292665486
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tarsus1",
+   "body": "fly/rm_tarsus1",
+   "body_index": 56,
+   "mesh": "fly/rm_tarsus1",
+   "pos": [
+    -0.011953549038014141,
+    -0.00871825678419497,
+    -0.17107745037521074
+   ],
+   "quat_wxyz": [
+    0.6051614518928817,
+    -0.01671346723118925,
+    -0.025412213714128162,
+    0.7955215248817343
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tarsus2",
+   "body": "fly/rm_tarsus2",
+   "body_index": 57,
+   "mesh": "fly/rm_tarsus2",
+   "pos": [
+    -0.009105131146329545,
+    -0.009272911925745999,
+    -0.09635317782105382
+   ],
+   "quat_wxyz": [
+    0.7796990124739069,
+    0.006356157539519208,
+    -0.009123479301772965,
+    0.6260557573682863
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tarsus3",
+   "body": "fly/rm_tarsus3",
+   "body_index": 58,
+   "mesh": "fly/rm_tarsus3",
+   "pos": [
+    -0.006360352650439754,
+    -0.010501215016305252,
+    -0.061968811655465215
+   ],
+   "quat_wxyz": [
+    0.8142545712475597,
+    0.01737537171035905,
+    0.03767798326071733,
+    0.5790232803936173
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tarsus4",
+   "body": "fly/rm_tarsus4",
+   "body_index": 59,
+   "mesh": "fly/rm_tarsus4",
+   "pos": [
+    -0.007192166579572109,
+    -0.009864783094143703,
+    -0.049065755789596384
+   ],
+   "quat_wxyz": [
+    0.7567322875418714,
+    0.06704344857113055,
+    0.04315734470727397,
+    0.6488442529553267
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rm_tarsus5",
+   "body": "fly/rm_tarsus5",
+   "body_index": 60,
+   "mesh": "fly/rm_tarsus5",
+   "pos": [
+    -0.005673297293511568,
+    -0.008307929171132518,
+    -0.061320618424859016
+   ],
+   "quat_wxyz": [
+    0.6358364117706106,
+    0.04337357465541966,
+    0.03979802525744512,
+    0.7695757972246102
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_coxa",
+   "body": "fly/rh_coxa",
+   "body_index": 61,
+   "mesh": "fly/rh_coxa",
+   "pos": [
+    -0.014011713868353036,
+    -0.029434816998758696,
+    -0.1078818630721314
+   ],
+   "quat_wxyz": [
+    0.6466252026383636,
+    0.12465840779834832,
+    -0.11563419742338966,
+    0.743616071009984
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_trochanterfemur",
+   "body": "fly/rh_trochanterfemur",
+   "body_index": 62,
+   "mesh": "fly/rh_trochanterfemur",
+   "pos": [
+    0.020424592093772728,
+    0.007889864429657919,
+    -0.4225751376106347
+   ],
+   "quat_wxyz": [
+    0.9192842398843948,
+    0.014609650245136318,
+    -0.0031559757363101276,
+    0.3933104171478788
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tibia",
+   "body": "fly/rh_tibia",
+   "body_index": 63,
+   "mesh": "fly/rh_tibia",
+   "pos": [
+    0.011634958976999009,
+    0.005989137535949537,
+    -0.4032428629357822
+   ],
+   "quat_wxyz": [
+    0.5334830550006102,
+    0.011690656857314172,
+    0.012322820824236528,
+    0.8456401756399679
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tarsus1",
+   "body": "fly/rh_tarsus1",
+   "body_index": 64,
+   "mesh": "fly/rh_tarsus1",
+   "pos": [
+    -0.014013852735759535,
+    -0.013258785689783717,
+    -0.174411310907439
+   ],
+   "quat_wxyz": [
+    0.9683840115647041,
+    0.004820049059776742,
+    -0.005116644318182171,
+    -0.24936518045595948
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tarsus2",
+   "body": "fly/rh_tarsus2",
+   "body_index": 65,
+   "mesh": "fly/rh_tarsus2",
+   "pos": [
+    -0.01175047623302802,
+    -0.01082881741257681,
+    -0.09858509310477037
+   ],
+   "quat_wxyz": [
+    0.8449212070200549,
+    -0.005456450650606663,
+    0.01895627631407281,
+    0.5345269316530055
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tarsus3",
+   "body": "fly/rh_tarsus3",
+   "body_index": 66,
+   "mesh": "fly/rh_tarsus3",
+   "pos": [
+    -0.01432634331738053,
+    -0.011681988834444526,
+    -0.055710869581794074
+   ],
+   "quat_wxyz": [
+    0.8417969764065222,
+    -0.0024711318034490843,
+    0.005828420128805091,
+    0.5397571431109093
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tarsus4",
+   "body": "fly/rh_tarsus4",
+   "body_index": 67,
+   "mesh": "fly/rh_tarsus4",
+   "pos": [
+    -0.013385330487860867,
+    -0.010698312301574833,
+    -0.046881111495397976
+   ],
+   "quat_wxyz": [
+    0.8056666549825351,
+    0.03699502410410678,
+    0.031227049593708544,
+    0.5903875681401691
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  },
+  {
+   "geom": "fly/rh_tarsus5",
+   "body": "fly/rh_tarsus5",
+   "body_index": 68,
+   "mesh": "fly/rh_tarsus5",
+   "pos": [
+    -0.012452903978749931,
+    -0.008274740491813037,
+    -0.0603398689533137
+   ],
+   "quat_wxyz": [
+    0.7843491158306872,
+    0.029613090396693142,
+    0.028098345240215313,
+    0.6189749690961173
+   ],
+   "rgba": [
+    0.5,
+    0.5,
+    0.5,
+    1.0
+   ],
+   "group": 0
+  }
+ ],
+ "bodies": [
+  {
+   "index": 0,
+   "name": "world",
+   "parent": 0,
+   "pos": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 1,
+   "name": "fly/c_thorax",
+   "parent": 0,
+   "pos": [
+    0.496,
+    0.0,
+    2.1
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 2,
+   "name": "fly/c_rostrum",
+   "parent": 1,
+   "pos": [
+    0.4587,
+    0.0,
+    -0.27330200000000004
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 3,
+   "name": "fly/c_haustellum",
+   "parent": 2,
+   "pos": [
+    -0.371,
+    0.0,
+    -0.0196
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 4,
+   "name": "fly/l_eye",
+   "parent": 1,
+   "pos": [
+    0.2597,
+    -9.31e-10,
+    0.017698000000000002
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 5,
+   "name": "fly/r_eye",
+   "parent": 1,
+   "pos": [
+    0.2597,
+    9.31e-10,
+    0.017698000000000002
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 6,
+   "name": "fly/l_pedicel",
+   "parent": 1,
+   "pos": [
+    0.4577,
+    0.086,
+    0.08369800000000001
+   ],
+   "quat_wxyz": [
+    0.9623049318254134,
+    0.26130133917279486,
+    0.07290037361537217,
+    -0.019400099425764337
+   ]
+  },
+  {
+   "index": 7,
+   "name": "fly/l_funiculus",
+   "parent": 6,
+   "pos": [
+    0.051,
+    -0.000563,
+    -0.0441
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 8,
+   "name": "fly/l_arista",
+   "parent": 7,
+   "pos": [
+    0.0198,
+    0.0539,
+    -0.0683
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 9,
+   "name": "fly/r_pedicel",
+   "parent": 1,
+   "pos": [
+    0.4577,
+    -0.086,
+    0.08369800000000001
+   ],
+   "quat_wxyz": [
+    0.9623049318254134,
+    -0.26130133917279486,
+    0.07290037361537217,
+    0.019400099425764337
+   ]
+  },
+  {
+   "index": 10,
+   "name": "fly/r_funiculus",
+   "parent": 9,
+   "pos": [
+    0.051,
+    0.000563,
+    -0.0441
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 11,
+   "name": "fly/r_arista",
+   "parent": 10,
+   "pos": [
+    0.0198,
+    -0.0539,
+    -0.0683
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 12,
+   "name": "fly/c_abdomen12",
+   "parent": 1,
+   "pos": [
+    -0.862,
+    0.0,
+    0.0
+   ],
+   "quat_wxyz": [
+    0.991375802657311,
+    0.0,
+    -0.1310496772432974,
+    0.0
+   ]
+  },
+  {
+   "index": 13,
+   "name": "fly/c_abdomen3",
+   "parent": 12,
+   "pos": [
+    -0.326,
+    0.0,
+    0.04
+   ],
+   "quat_wxyz": [
+    0.9990749334301163,
+    0.0,
+    -0.043003225362857854,
+    0.0
+   ]
+  },
+  {
+   "index": 14,
+   "name": "fly/c_abdomen4",
+   "parent": 13,
+   "pos": [
+    -0.208,
+    0.0,
+    0.025
+   ],
+   "quat_wxyz": [
+    0.9990749334301163,
+    0.0,
+    0.043003225362857854,
+    0.0
+   ]
+  },
+  {
+   "index": 15,
+   "name": "fly/c_abdomen5",
+   "parent": 14,
+   "pos": [
+    -0.174,
+    0.0,
+    0.009
+   ],
+   "quat_wxyz": [
+    0.999959502460209,
+    0.0,
+    0.00899963552214188,
+    0.0
+   ]
+  },
+  {
+   "index": 16,
+   "name": "fly/c_abdomen6",
+   "parent": 15,
+   "pos": [
+    -0.228,
+    0.0,
+    0.009
+   ],
+   "quat_wxyz": [
+    0.999959502460209,
+    0.0,
+    0.00899963552214188,
+    0.0
+   ]
+  },
+  {
+   "index": 17,
+   "name": "fly/l_wing",
+   "parent": 1,
+   "pos": [
+    -0.674,
+    0.395,
+    0.081
+   ],
+   "quat_wxyz": [
+    0.6490743232652645,
+    0.03600412270808862,
+    -0.06500744377849335,
+    0.7570866913895303
+   ]
+  },
+  {
+   "index": 18,
+   "name": "fly/r_wing",
+   "parent": 1,
+   "pos": [
+    -0.674,
+    -0.395,
+    0.081
+   ],
+   "quat_wxyz": [
+    0.6490743232652645,
+    -0.03600412270808862,
+    -0.06500744377849335,
+    -0.7570866913895303
+   ]
+  },
+  {
+   "index": 19,
+   "name": "fly/l_haltere",
+   "parent": 1,
+   "pos": [
+    -0.806,
+    0.214,
+    -0.149
+   ],
+   "quat_wxyz": [
+    0.9457082939800224,
+    0.12396176369294164,
+    0.03898797406471551,
+    0.2979081095201339
+   ]
+  },
+  {
+   "index": 20,
+   "name": "fly/r_haltere",
+   "parent": 1,
+   "pos": [
+    -0.806,
+    -0.214,
+    -0.149
+   ],
+   "quat_wxyz": [
+    0.9457082939800224,
+    -0.12396176369294164,
+    0.03898797406471551,
+    -0.2979081095201339
+   ]
+  },
+  {
+   "index": 21,
+   "name": "fly/lf_coxa",
+   "parent": 1,
+   "pos": [
+    -0.161,
+    0.172,
+    -0.23
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 22,
+   "name": "fly/lf_trochanterfemur",
+   "parent": 21,
+   "pos": [
+    -0.00181,
+    -0.00172,
+    -0.365
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 23,
+   "name": "fly/lf_tibia",
+   "parent": 22,
+   "pos": [
+    -0.00465,
+    -0.00149,
+    -0.705
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 24,
+   "name": "fly/lf_tarsus1",
+   "parent": 23,
+   "pos": [
+    -0.000144,
+    -0.000952,
+    -0.518
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 25,
+   "name": "fly/lf_tarsus2",
+   "parent": 24,
+   "pos": [
+    0.00182,
+    -0.000977,
+    -0.225
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 26,
+   "name": "fly/lf_tarsus3",
+   "parent": 25,
+   "pos": [
+    0.00136,
+    -0.000178,
+    -0.154
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 27,
+   "name": "fly/lf_tarsus4",
+   "parent": 26,
+   "pos": [
+    0.00169,
+    0.000303,
+    -0.0985
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 28,
+   "name": "fly/lf_tarsus5",
+   "parent": 27,
+   "pos": [
+    0.00171,
+    -0.000216,
+    -0.087
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 29,
+   "name": "fly/lm_coxa",
+   "parent": 1,
+   "pos": [
+    -0.557,
+    0.125,
+    -0.482
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 30,
+   "name": "fly/lm_trochanterfemur",
+   "parent": 29,
+   "pos": [
+    -0.000216,
+    0.000149,
+    -0.181
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 31,
+   "name": "fly/lm_tibia",
+   "parent": 30,
+   "pos": [
+    -0.000971,
+    5.52e-05,
+    -0.784
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 32,
+   "name": "fly/lm_tarsus1",
+   "parent": 31,
+   "pos": [
+    6.58e-05,
+    -0.00037,
+    -0.667
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 33,
+   "name": "fly/lm_tarsus2",
+   "parent": 32,
+   "pos": [
+    0.000512,
+    -9.8e-05,
+    -0.292
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 34,
+   "name": "fly/lm_tarsus3",
+   "parent": 33,
+   "pos": [
+    -2.81e-05,
+    -0.000153,
+    -0.16
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 35,
+   "name": "fly/lm_tarsus4",
+   "parent": 34,
+   "pos": [
+    -0.000126,
+    -0.000191,
+    -0.0911
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 36,
+   "name": "fly/lm_tarsus5",
+   "parent": 35,
+   "pos": [
+    0.000902,
+    9.86e-05,
+    -0.0635
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 37,
+   "name": "fly/lh_coxa",
+   "parent": 1,
+   "pos": [
+    -0.784,
+    0.087,
+    -0.497
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 38,
+   "name": "fly/lh_trochanterfemur",
+   "parent": 37,
+   "pos": [
+    -0.000177,
+    -0.000227,
+    -0.199
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 39,
+   "name": "fly/lh_tibia",
+   "parent": 38,
+   "pos": [
+    0.000108,
+    0.000294,
+    -0.836
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 40,
+   "name": "fly/lh_tarsus1",
+   "parent": 39,
+   "pos": [
+    -8.94e-07,
+    -0.000324,
+    -0.684
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 41,
+   "name": "fly/lh_tarsus2",
+   "parent": 40,
+   "pos": [
+    9.69e-05,
+    0.00051,
+    -0.353
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 42,
+   "name": "fly/lh_tarsus3",
+   "parent": 41,
+   "pos": [
+    0.000123,
+    -0.000255,
+    -0.175
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 43,
+   "name": "fly/lh_tarsus4",
+   "parent": 42,
+   "pos": [
+    -0.000256,
+    0.000331,
+    -0.0967
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 44,
+   "name": "fly/lh_tarsus5",
+   "parent": 43,
+   "pos": [
+    0.000214,
+    5.86e-05,
+    -0.0733
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 45,
+   "name": "fly/rf_coxa",
+   "parent": 1,
+   "pos": [
+    -0.161,
+    -0.172,
+    -0.23
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 46,
+   "name": "fly/rf_trochanterfemur",
+   "parent": 45,
+   "pos": [
+    -0.00181,
+    0.00172,
+    -0.365
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 47,
+   "name": "fly/rf_tibia",
+   "parent": 46,
+   "pos": [
+    -0.00465,
+    0.00149,
+    -0.705
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 48,
+   "name": "fly/rf_tarsus1",
+   "parent": 47,
+   "pos": [
+    -0.000144,
+    0.000952,
+    -0.518
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 49,
+   "name": "fly/rf_tarsus2",
+   "parent": 48,
+   "pos": [
+    0.00182,
+    0.000977,
+    -0.225
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 50,
+   "name": "fly/rf_tarsus3",
+   "parent": 49,
+   "pos": [
+    0.00136,
+    0.000178,
+    -0.154
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 51,
+   "name": "fly/rf_tarsus4",
+   "parent": 50,
+   "pos": [
+    0.00169,
+    -0.000303,
+    -0.0985
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 52,
+   "name": "fly/rf_tarsus5",
+   "parent": 51,
+   "pos": [
+    0.00171,
+    0.000216,
+    -0.087
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 53,
+   "name": "fly/rm_coxa",
+   "parent": 1,
+   "pos": [
+    -0.557,
+    -0.125,
+    -0.482
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 54,
+   "name": "fly/rm_trochanterfemur",
+   "parent": 53,
+   "pos": [
+    -0.000216,
+    -0.000149,
+    -0.181
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 55,
+   "name": "fly/rm_tibia",
+   "parent": 54,
+   "pos": [
+    -0.000971,
+    -5.52e-05,
+    -0.784
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 56,
+   "name": "fly/rm_tarsus1",
+   "parent": 55,
+   "pos": [
+    6.58e-05,
+    0.00037,
+    -0.667
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 57,
+   "name": "fly/rm_tarsus2",
+   "parent": 56,
+   "pos": [
+    0.000512,
+    9.8e-05,
+    -0.292
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 58,
+   "name": "fly/rm_tarsus3",
+   "parent": 57,
+   "pos": [
+    -2.81e-05,
+    0.000153,
+    -0.16
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 59,
+   "name": "fly/rm_tarsus4",
+   "parent": 58,
+   "pos": [
+    -0.000126,
+    0.000191,
+    -0.0911
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 60,
+   "name": "fly/rm_tarsus5",
+   "parent": 59,
+   "pos": [
+    0.000902,
+    -9.86e-05,
+    -0.0635
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 61,
+   "name": "fly/rh_coxa",
+   "parent": 1,
+   "pos": [
+    -0.784,
+    -0.087,
+    -0.497
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 62,
+   "name": "fly/rh_trochanterfemur",
+   "parent": 61,
+   "pos": [
+    -0.000177,
+    0.000227,
+    -0.199
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 63,
+   "name": "fly/rh_tibia",
+   "parent": 62,
+   "pos": [
+    0.000108,
+    -0.000294,
+    -0.836
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 64,
+   "name": "fly/rh_tarsus1",
+   "parent": 63,
+   "pos": [
+    -8.94e-07,
+    0.000324,
+    -0.684
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 65,
+   "name": "fly/rh_tarsus2",
+   "parent": 64,
+   "pos": [
+    9.69e-05,
+    -0.00051,
+    -0.353
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 66,
+   "name": "fly/rh_tarsus3",
+   "parent": 65,
+   "pos": [
+    0.000123,
+    0.000255,
+    -0.175
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 67,
+   "name": "fly/rh_tarsus4",
+   "parent": 66,
+   "pos": [
+    -0.000256,
+    -0.000331,
+    -0.0967
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "index": 68,
+   "name": "fly/rh_tarsus5",
+   "parent": 67,
+   "pos": [
+    0.000214,
+    -5.86e-05,
+    -0.0733
+   ],
+   "quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ ]
+}

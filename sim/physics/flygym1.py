@@ -34,6 +34,9 @@ class FlyGym1Adapter:
         self.arena = None
         self._obs = None
         self._passo = 0
+        self._estimulo = None
+        self._dist_estimulo = None
+        self._nomes_seg = None
 
     def _monta_arena(self):
         if self.arena_tipo != "looming":
@@ -67,10 +70,22 @@ class FlyGym1Adapter:
         return self._quadro(True)
 
     def antes_do_passo(self, t_s: float, dist_mm: float | None = None) -> None:
-        if self.arena_tipo != "looming" or dist_mm is None:
+        """
+        Move a esfera de looming.
+
+        A regra de distancia vem de `looming_world.Estimulo`, a MESMA que o
+        adaptador 2.x usa. Escrever a geometria do experimento duas vezes seria
+        o jeito mais facil de os dois caminhos deixarem de rodar a mesma coisa
+        sem ninguem notar.
+        """
+        if self.arena_tipo != "looming":
             return
+        if self._estimulo is None:
+            from .looming_world import Estimulo
+            self._estimulo = Estimulo()
         pos = np.asarray(self._obs["fly"][0])
-        alvo = np.array([pos[0] + dist_mm, pos[1], 2.5], dtype="float32")
+        alvo = self._estimulo.posicao(t_s, pos)
+        self._dist_estimulo = float(self._estimulo.distancia(t_s))
         self.arena.ball_pos = alvo
         self.sim.physics.bind(self.arena.object_body).mocap_pos = alvo
 
@@ -98,6 +113,18 @@ class FlyGym1Adapter:
     @property
     def n_pares_colisao(self) -> int:
         return int(self.sim.physics.model.ptr.npair) if self.sim else 0
+
+    def pose_corpo(self):
+        """Pose de todos os corpos do modelo, direto do mjData."""
+        import mujoco
+        m = self.sim.physics.model.ptr
+        d = self.sim.physics.data.ptr
+        if self._nomes_seg is None:
+            self._nomes_seg = [
+                (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, i) or f"body{i}")
+                .replace("0/", "")
+                for i in range(m.nbody)]
+        return self._nomes_seg, d.xpos.copy(), d.xquat.copy()
 
     def resumo(self) -> dict:
         m = self.sim.physics.model.ptr if self.sim else None
