@@ -1,0 +1,139 @@
+// Propagacao sinaptica esparsa sobre o conectoma real, na GPU.
+//
+// Pergunta que estes kernels existem pra responder:
+// "da pra propagar atividade por 25,5M arestas em tempo util?"
+//
+// Grafo: Male CNS v1.0, 164.451 neuronios, 25.550.583 arestas dirigidas
+// (= 123.967.037 sinapses agregadas por par, 4,85 por aresta). CSR construido
+// por benchmarks/neural/build_csr.py, com o peso JA com sinal pela regra de
+// Dale -- a mesma de sim/connectome_model.py.
+//
+// ## Duas estrategias, medidas de verdade
+//
+// A) DENSE_SCAN   -- um thread por neuronio; quem disparou percorre suas arestas.
+//                    Simples, sem passo extra, mas lanca 164k threads mesmo
+//                    quando 200 dispararam.
+// B) FRONTIER     -- compacta primeiro a lista de quem disparou, depois so esses
+//                    percorrem. Custa um kernel a mais e um contador atomico, e
+//                    ganha quando a atividade e esparsa -- que e o regime
+//                    fisiologico.
+//
+// Qual vence depende da taxa de disparo, e por isso os dois existem aqui em vez
+// de um palpite.
+//
+// ## Nada volta pra CPU entre etapas
+//
+// spike mask, frontier, contador e args de dispatch ficam todos na GPU. O
+// tamanho da frontier nunca e lido pela CPU: o kernel de scatter e lancado por
+// DispatchIndirect a partir de um buffer que o proprio kernel de compactacao
+// escreveu. Ler o contador por timestep seria uma sincronizacao GPU->CPU por
+// passo neural, que e exatamente o que mata este desenho.
+//
+// ## Atomics
+//
+// InterlockedAdd em float NAO existe em HLSL SM 5.0. Acumulamos a conductancia
+// em ponto fixo inteiro (mV * ESCALA) com InterlockedAdd em int, e convertemos
+// na atualizacao LIF. A escala e grande o bastante pra que o erro de quantizacao
+// fique abaixo do erro de fp32 que ja aceitamos (ver o teste de equivalencia).
+
+#pragma kernel LimpaAcum
+#pragma kernel CompactaSpikes
+#pragma kernel ScatterFrontier
+#pragma kernel ScatterDenso
+
+// ---- CSR (estatico, sobe uma vez) ----
+StructuredBuffer<int>   _RowOffsets;   // N+1
+StructuredBuffer<int>   _Targets;      // E
+StructuredBuffer<float> _Weights;      // E, ja com sinal
+
+// ---- estado ----
+StructuredBuffer<uint>   _Spike;       // 1 se disparou neste passo
+RWStructuredBuffer<int>  _GAcum;       // conductancia que chega, ponto fixo
+RWStructuredBuffer<uint> _Frontier;    // ids de quem disparou
+RWStructuredBuffer<uint> _Contador;    // [0] = tamanho da frontier
+RWStructuredBuffer<uint> _DispatchArgs; // [0]=x [1]=y [2]=z pra DispatchIndirect
+
+cbuffer Params
+{
+    uint _N;            // neuronios
+    float _Escala;      // mV -> ponto fixo
+    uint _GrupoScatter; // threads por grupo no scatter (pro calculo dos args)
+    uint _Pad;
+};
+
+#define GRUPO 64
+
+[numthreads(GRUPO, 1, 1)]
+void LimpaAcum(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i < _N) _GAcum[i] = 0;
+    // _DispatchArgs[0] TEM que voltar a zero: CompactaSpikes o eleva com
+    // InterlockedMax, entao sem o reset ele guarda o maior valor de todos os
+    // passos anteriores e o scatter passa a lancar grupos a mais pra sempre --
+    // inclusive entre medicoes de taxas diferentes, que compartilham o buffer.
+    if (i == 0)
+    {
+        _Contador[0] = 0;
+        _DispatchArgs[0] = 0;
+        _DispatchArgs[1] = 1;
+        _DispatchArgs[2] = 1;
+    }
+}
+
+// B, etapa 1: lista compactada de quem disparou.
+// O contador atomico aqui e sobre UM inteiro -- e contencao alta, mas so uma vez
+// por neuronio que disparou, nao por aresta.
+[numthreads(GRUPO, 1, 1)]
+void CompactaSpikes(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    if (_Spike[i] == 0) return;
+    uint slot;
+    InterlockedAdd(_Contador[0], 1, slot);
+    _Frontier[slot] = i;
+    // args do DispatchIndirect: teto da divisao, sem a CPU saber o tamanho
+    uint grupos = (slot + 1 + _GrupoScatter - 1) / _GrupoScatter;
+    InterlockedMax(_DispatchArgs[0], grupos);
+}
+
+// B, etapa 2: um thread por entrada da frontier; cada um percorre as arestas do
+// seu neuronio. Desbalanceia (out-degree vai de 0 a 11.203), e e o custo que a
+// medicao tem que mostrar.
+[numthreads(GRUPO, 1, 1)]
+void ScatterFrontier(uint3 id : SV_DispatchThreadID)
+{
+    uint f = id.x;
+    if (f >= _Contador[0]) return;
+    uint i = _Frontier[f];
+
+    int ini = _RowOffsets[i];
+    int fim = _RowOffsets[i + 1];
+    for (int e = ini; e < fim; e++)
+    {
+        int alvo = _Targets[e];
+        int inc = (int)(_Weights[e] * _Escala);
+        InterlockedAdd(_GAcum[alvo], inc);
+    }
+}
+
+// A: sem compactacao. Um thread por NEURONIO; quem nao disparou sai na hora.
+// Lanca 164k threads sempre, mas nao paga o kernel de compactacao nem o
+// contador atomico.
+[numthreads(GRUPO, 1, 1)]
+void ScatterDenso(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    if (_Spike[i] == 0) return;
+
+    int ini = _RowOffsets[i];
+    int fim = _RowOffsets[i + 1];
+    for (int e = ini; e < fim; e++)
+    {
+        int alvo = _Targets[e];
+        int inc = (int)(_Weights[e] * _Escala);
+        InterlockedAdd(_GAcum[alvo], inc);
+    }
+}

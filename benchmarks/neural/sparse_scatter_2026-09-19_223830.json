@@ -1,0 +1,16 @@
+{
+  "probed_at": "2026-09-19T22:38:30",
+  "backend": "unity_computeshader_d3d12",
+  "device": "AMD Radeon RX 6700 XT",
+  "neurons": 164451, "edges": 25550583,
+  "graph_vram_mib": 198.1,
+  "steps_per_measurement": 200,
+  "results": [
+    {"rate": 0.001, "active": 152, "edges_touched": 22508, "frontier_us": 142.95, "dense_us": 66.93, "events_per_s": 336279087},
+    {"rate": 0.005, "active": 807, "edges_touched": 128932, "frontier_us": 410.02, "dense_us": 358.72, "events_per_s": 359417882},
+    {"rate": 0.01, "active": 1593, "edges_touched": 254305, "frontier_us": 412.60, "dense_us": 352.85, "events_per_s": 720724168},
+    {"rate": 0.05, "active": 8108, "edges_touched": 1257459, "frontier_us": 542.25, "dense_us": 442.72, "events_per_s": 2840287087},
+    {"rate": 0.1, "active": 16426, "edges_touched": 2542246, "frontier_us": 1193.01, "dense_us": 952.37, "events_per_s": 2669387597},
+    {"rate": 1, "active": 164451, "edges_touched": 25550583, "frontier_us": 6619.46, "dense_us": 6474.29, "events_per_s": 3946468725}
+  ]
+}

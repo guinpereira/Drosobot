@@ -1,0 +1,25 @@
+{
+  "probed_at": "2026-09-19T22:49:15",
+  "backend": "unity_computeshader_d3d12",
+  "device": "AMD Radeon RX 6700 XT",
+  "neurons": 164451, "edges": 25550583,
+  "graph_vram_mib": 198.1,
+  "steps_per_measurement": 100,
+  "results": [
+    {"rate": 0.001, "active": 146, "edges_touched": 21130, "frontier_us": 223.02, "dense_us": 79.80, "events_per_s": 264786967},
+    {"rate": 0.005, "active": 804, "edges_touched": 132308, "frontier_us": 572.93, "dense_us": 526.97, "events_per_s": 251072640},
+    {"rate": 0.01, "active": 1657, "edges_touched": 259452, "frontier_us": 392.07, "dense_us": 305.54, "events_per_s": 849156087},
+    {"rate": 0.05, "active": 8183, "edges_touched": 1221782, "frontier_us": 763.00, "dense_us": 591.71, "events_per_s": 2064846393},
+    {"rate": 0.1, "active": 16496, "edges_touched": 2595878, "frontier_us": 1366.37, "dense_us": 1101.17, "events_per_s": 2357373131},
+    {"rate": 1, "active": 164451, "edges_touched": 25550583, "frontier_us": 6769.32, "dense_us": 6476.56, "events_per_s": 3945088554},
+    {"rate": 0.001, "active": 146, "edges_touched": 21130, "frontier_us": 200.80, "dense_us": 76.61, "events_per_s": 275805357},
+    {"rate": 0.01, "active": 1657, "edges_touched": 259452, "frontier_us": 431.80, "dense_us": 324.70, "events_per_s": 799061276},
+    {"rate": 0.1, "active": 16496, "edges_touched": 2595878, "frontier_us": 1332.38, "dense_us": 1084.08, "events_per_s": 2394540265},
+    {"rate": 0.001, "active": 146, "edges_touched": 21130, "frontier_us": 195.81, "dense_us": 78.28, "events_per_s": 269938807},
+    {"rate": 0.01, "active": 1657, "edges_touched": 259452, "frontier_us": 380.02, "dense_us": 300.14, "events_per_s": 864425076},
+    {"rate": 0.1, "active": 16496, "edges_touched": 2595878, "frontier_us": 1286.38, "dense_us": 1034.08, "events_per_s": 2510321232},
+    {"rate": 0.001, "active": 146, "edges_touched": 21130, "frontier_us": 131.70, "dense_us": 70.85, "events_per_s": 298244128},
+    {"rate": 0.01, "active": 1657, "edges_touched": 259452, "frontier_us": 360.21, "dense_us": 293.44, "events_per_s": 884173937},
+    {"rate": 0.1, "active": 16496, "edges_touched": 2595878, "frontier_us": 1305.80, "dense_us": 1036.58, "events_per_s": 2504276572}
+  ]
+}

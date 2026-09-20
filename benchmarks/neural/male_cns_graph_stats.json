@@ -1,0 +1,42 @@
+{
+  "gerado_em": "2026-09-19T22:26:11",
+  "fonte": "connectome-weights-male-cns-v1.0-minconf-0.5.feather",
+  "segment_graph": {
+    "bodies": 88384522,
+    "edges": 151856684,
+    "synapses": 311833243
+  },
+  "neurons": 164249,
+  "edges": 25550583,
+  "synapses": 123967037,
+  "synapses_per_edge": 4.852,
+  "out_degree": {
+    "mean": 155.5600521159946,
+    "median": 114.0,
+    "p95": 408.0,
+    "p99": 798.0,
+    "max": 11203
+  },
+  "in_degree": {
+    "mean": 155.5600521159946,
+    "median": 100.0,
+    "p95": 456.0,
+    "p99": 862.0,
+    "max": 11526
+  },
+  "weight": {
+    "mean": 4.851828116798744,
+    "median": 2.0,
+    "p99": 46.0,
+    "max": 2591,
+    "frac_weight_1": 0.4026380533078247
+  },
+  "csr_memory_mib": {
+    "row_offsets": 0.63,
+    "targets": 97.47,
+    "weights": 97.47,
+    "static_total": 195.56,
+    "dynamic_state": 1.88,
+    "total": 197.46
+  }
+}

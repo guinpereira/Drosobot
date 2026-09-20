@@ -41,3 +41,8 @@ unity/**/*.user
 unity/DrosobotLab/Assets/Resources/CNS/
 unity/DrosobotLab/Assets/Resources/CNS.meta
 unity_assets/
+
+# Dados do Male CNS: 1 GB de feather + 200 MB de CSR derivado.
+# Reconstroi com benchmarks/neural/build_csr.py a partir dos downloads
+# listados em docs/research/WHOLE_CNS_GPU_FEASIBILITY.md.
+data/male-cns/
