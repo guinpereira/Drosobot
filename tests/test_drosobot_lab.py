@@ -37,8 +37,13 @@ sys.path.insert(0, str(RAIZ / "sim"))
 import drosobot_lab as lab  # noqa: E402
 from profiler import Profiler  # noqa: E402
 
-ARENAS = {"looming", "flat"}
-ESCOPOS = {"whole", "circuit"}
+# Lidas da receita, nao copiadas. A copia daqui envelheceu: `optomotor` e
+# `obstaculos` entraram no catalogo e este conjunto ficou com duas arenas,
+# reprovando um catalogo correto.
+from lab.receita import ARENAS as _ARENAS, ESCOPOS as _ESCOPOS  # noqa: E402
+
+ARENAS = set(_ARENAS)
+ESCOPOS = set(_ESCOPOS)
 
 
 # --------------------------------------------------------------- catalogo

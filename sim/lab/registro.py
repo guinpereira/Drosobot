@@ -61,8 +61,8 @@ class Registro:
         marca = datetime.now().strftime("%Y-%m-%d_%H%M%S_") if carimbo else ""
         self.pasta = (raiz or RAIZ_RUNS) / f"{marca}{id_corrida}"
         self.pasta.mkdir(parents=True, exist_ok=True)
-        (self.pasta / "metadata.json").write_text(
-            json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.metadata = metadata
+        self._grava_metadata()
 
         self._f_ts = (self.pasta / "timeseries.csv").open(
             "w", encoding="utf-8", newline="")
@@ -72,6 +72,23 @@ class Registro:
         self._f_ev = (self.pasta / "events.jsonl").open("w", encoding="utf-8")
         self.n_linhas = 0
         self.n_eventos = 0
+
+    def _grava_metadata(self) -> None:
+        (self.pasta / "metadata.json").write_text(
+            json.dumps(self.metadata, indent=2, ensure_ascii=False),
+            encoding="utf-8")
+
+    def completa_metadata(self, bloco: dict, chave: str) -> None:
+        """
+        Reescreve o metadata com o que so existe depois de montar o corpo.
+
+        O `physics_model_hash`, o device e a precisao dependem do `mjModel`
+        compilado, que nasce no `reset` do adaptador -- depois de a pasta da
+        corrida ja existir. Ou o metadata sai incompleto, ou ele e reescrito
+        uma vez. A segunda opcao e a que permite comparar dois backends.
+        """
+        self.metadata[chave] = bloco
+        self._grava_metadata()
 
     def linha(self, **campos) -> None:
         faltando = set(COLUNAS) - set(campos)

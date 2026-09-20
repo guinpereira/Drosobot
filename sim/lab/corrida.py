@@ -27,7 +27,7 @@ import numpy as np
 RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ / "sim"))
 
-from .receita import Receita, metadata          # noqa: E402
+from .receita import Receita, backend_fisico, metadata   # noqa: E402
 from .registro import Registro                  # noqa: E402
 
 
@@ -101,6 +101,10 @@ def roda(receita: Receita, raiz: Path | None = None,
     try:
         if not laboratorio.monta(exp_id, receita.seed):
             raise RuntimeError(f"nao foi possivel montar {exp_id}")
+        # O corpo so existe agora: e daqui que saem o hash do modelo fisico, o
+        # solver, o integrador e -- se houver -- o device e a precisao.
+        registro.completa_metadata(
+            backend_fisico(receita, laboratorio.corpo), "backend_fisico")
         n_passos = int(receita.duracao_s / lab.DT)
         while laboratorio.passo_atual < n_passos:
             laboratorio.passo()
@@ -188,7 +192,8 @@ def _resumo(lab_obj, receita: Receita, parede_s: float, exp_id: str) -> dict:
             },
         },
         "runtime": {
-            "physics_backend": rc.get("physics_backend"),
+            "physics_backend": receita.physics,
+            "physics_adapter": rc.get("physics_backend"),
             "neural_backend": r.get("backend"),
             "neural_device": r.get("device"),
             "neurons_simulated": r.get("neurons_simulated"),

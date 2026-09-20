@@ -1,0 +1,132 @@
+{
+ "gerado_em": "2026-09-20T16:11:19",
+ "mujoco": "3.9.0",
+ "benchmark_upstream": {
+  "caminho": "flygym.warp.GPUSimulation (NVIDIA Warp -> CUDA)",
+  "warp_import": "ModuleNotFoundError: No module named 'warp'",
+  "check_gpu": "ModuleNotFoundError: No module named 'warp'",
+  "conclusao": "o benchmark oficial exige CUDA; nao ha backend HIP/Vulkan/OpenCL no Warp upstream, e a RX 6700 XT nao o executa. A comparacao possivel no mesmo PC e de um mundo so, que e o que este script mede."
+ },
+ "um_mundo": {
+  "looming": {
+   "arena": "looming",
+   "nv": 72,
+   "npair": 55,
+   "ncon_final": 6,
+   "dt_s": 0.0001,
+   "fisica_pura_us_por_passo": 108.14,
+   "passo_do_experimento_us": 190.01,
+   "overhead_python_us": 81.87,
+   "rtf_fisica_pura": 0.9247,
+   "rtf_passo_do_experimento": 0.5263
+  },
+  "obstaculos": {
+   "arena": "obstaculos",
+   "nv": 72,
+   "npair": 110,
+   "ncon_final": 6,
+   "dt_s": 0.0001,
+   "fisica_pura_us_por_passo": 103.65,
+   "passo_do_experimento_us": 180.05,
+   "overhead_python_us": 76.4,
+   "rtf_fisica_pura": 0.9648,
+   "rtf_passo_do_experimento": 0.5554
+  }
+ },
+ "vertical_completo_gravado": {
+  "n": 7,
+  "corridas": [
+   {
+    "corrida": "2026-09-20_151010_looming_circuit_centro_seed0",
+    "escopo": "circuit",
+    "arena": "looming",
+    "rtf": 0.1992,
+    "ms_por_seg_simulado": {
+     "physics": 3527.9,
+     "vision": 10.7,
+     "neural": 654.6,
+     "leitura": 237.1,
+     "telemetry": 316.8
+    }
+   },
+   {
+    "corrida": "2026-09-20_151038_looming_whole_centro_seed0",
+    "escopo": "whole",
+    "arena": "looming",
+    "rtf": 0.1913,
+    "ms_por_seg_simulado": {
+     "physics": 3531.7,
+     "vision": 16.0,
+     "neural": 874.9,
+     "leitura": 221.9,
+     "telemetry": 311.4
+    }
+   },
+   {
+    "corrida": "2026-09-20_151236_rapida_circuit_centro_seed0",
+    "escopo": "circuit",
+    "arena": "looming",
+    "rtf": 0.1954,
+    "ms_por_seg_simulado": {
+     "physics": 3643.5,
+     "vision": 9.2,
+     "neural": 640.0,
+     "leitura": 246.1,
+     "telemetry": 312.4
+    }
+   },
+   {
+    "corrida": "2026-09-20_151247_rapida_whole_centro_seed0",
+    "escopo": "whole",
+    "arena": "looming",
+    "rtf": 0.1864,
+    "ms_por_seg_simulado": {
+     "physics": 3510.3,
+     "vision": 15.6,
+     "neural": 858.8,
+     "leitura": 229.7,
+     "telemetry": 455.7
+    }
+   },
+   {
+    "corrida": "2026-09-20_152222_obst_circuit_centro_seed0",
+    "escopo": "circuit",
+    "arena": "obstaculos",
+    "rtf": 0.2326,
+    "ms_por_seg_simulado": {
+     "physics": 3049.9,
+     "vision": 8.9,
+     "neural": 614.9,
+     "leitura": 215.3,
+     "telemetry": 289.7
+    }
+   },
+   {
+    "corrida": "2026-09-20_152834_opto_circuit_dir_esq_seed0",
+    "escopo": "circuit",
+    "arena": "optomotor",
+    "rtf": 0.199,
+    "ms_por_seg_simulado": {
+     "physics": 3764.4,
+     "vision": 21.3,
+     "neural": 705.8,
+     "leitura": 115.1,
+     "telemetry": 0.1
+    }
+   },
+   {
+    "corrida": "2026-09-20_152849_opto_circuit_esq_dir_seed0",
+    "escopo": "circuit",
+    "arena": "optomotor",
+    "rtf": 0.1776,
+    "ms_por_seg_simulado": {
+     "physics": 4084.1,
+     "vision": 20.3,
+     "neural": 968.2,
+     "leitura": 132.3,
+     "telemetry": 0.1
+    }
+   }
+  ]
+ }
+}

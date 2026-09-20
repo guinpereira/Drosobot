@@ -31,7 +31,8 @@ de cada corrida, junto com o ambiente medido e o commit do repositório.
 | `nome`, `versao` | identificam o experimento |
 | `condicao` | o ponto dentro dele (`esquerda`, `rapido`…) |
 | `seed` | semente do experimento — a realização de Poisson |
-| `physics`, `neural` | backends |
+| `physics` | o **backend físico**: `flygym2-mujoco` (referência), `flygym1`, `drosobot-gpu`. `flygym2` continua aceito e vira `flygym2-mujoco` |
+| `neural` | backend do motor neural |
 | `escopo` | `whole` ou `circuit` |
 | `duracao_s` | segundos de mosca |
 | `arena` | `looming`, `optomotor`, `obstaculos`, `flat` |
@@ -54,6 +55,21 @@ transdução retina → taxa. É **lido do código**, não copiado — mudar `V_
 Duas corridas com hashes diferentes **não são comparáveis**, e a análise recusa
 compará-las. O backend não entra: trocar de GPU não muda resultado, e a
 equivalência CPU/OpenCL é verificada em outro teste.
+
+### O hash do corpo
+
+`physics_model_hash` é o par dele para a outra metade do problema. O hash da
+ciência cobre o cérebro; este cobre o corpo — massas, inércias, juntas, damping,
+atrito, pares de contato, solver, integrador. É derivado do `mjModel` compilado,
+não escrito à mão: trocar uma malha ou um `<pair>` muda o valor sem ninguém
+lembrar de atualizar nada; trocar a cor de um geom não muda.
+
+Trocar de motor físico **não** pode mexer no hash da ciência — há teste para
+isso. O que muda é o bloco `backend_fisico` do metadata: backend, versão,
+solver, integrador, precisão, device e o hash do corpo. É o que permite dizer
+que dois motores rodaram a mesma ciência sobre o mesmo corpo, e explicar uma
+divergência numérica entre eles. Ver
+[GPU_PHYSICS.md](GPU_PHYSICS.md).
 
 ---
 

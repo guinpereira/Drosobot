@@ -1,5 +1,5 @@
 {
- "gerado_em": "2026-09-20T15:41:24",
+ "gerado_em": "2026-09-20T16:10:56",
  "mujoco": "3.9.0",
  "arenas": {
   "looming": {
@@ -10,52 +10,52 @@
    "npair": 55,
    "ncon_final": 8,
    "nefc_final": 32,
-   "us_por_passo_mj_step": 94.17,
-   "us_por_passo_ciclo_completo": 190.87,
+   "us_por_passo_mj_step": 116.87,
+   "us_por_passo_ciclo_completo": 205.48,
    "etapas": {
     "solver": {
-     "pct": 39.84,
-     "us_por_passo": 37.518
+     "pct": 39.08,
+     "us_por_passo": 45.674
     },
     "project_constraint": {
-     "pct": 12.3,
-     "us_por_passo": 11.587
+     "pct": 12.4,
+     "us_por_passo": 14.495
     },
     "colisao": {
-     "pct": 9.33,
-     "us_por_passo": 8.785
+     "pct": 9.11,
+     "us_por_passo": 10.644
     },
     "cinematica": {
-     "pct": 7.69,
-     "us_por_passo": 7.246
+     "pct": 8.37,
+     "us_por_passo": 9.778
     },
     "make_constraint": {
-     "pct": 7.15,
-     "us_por_passo": 6.73
+     "pct": 7.25,
+     "us_por_passo": 8.468
     },
     "resto_do_passo": {
-     "pct": 6.66,
-     "us_por_passo": 6.272
+     "pct": 6.64,
+     "us_por_passo": 7.765
     },
     "inercia": {
-     "pct": 5.42,
-     "us_por_passo": 5.105
+     "pct": 5.57,
+     "us_por_passo": 6.509
     },
     "integracao": {
-     "pct": 4.8,
-     "us_por_passo": 4.516
+     "pct": 4.82,
+     "us_por_passo": 5.636
     },
     "velocidade": {
-     "pct": 3.9,
-     "us_por_passo": 3.676
+     "pct": 3.88,
+     "us_por_passo": 4.539
     },
     "posicao_outros": {
-     "pct": 1.63,
-     "us_por_passo": 1.539
+     "pct": 1.61,
+     "us_por_passo": 1.883
     },
     "atuacao": {
      "pct": 1.27,
-     "us_por_passo": 1.194
+     "us_por_passo": 1.483
     }
    },
    "nota_timers": "proporcao medida com mjcb_time instalado; o absoluto vem da passada limpa, sem callback"
@@ -68,52 +68,52 @@
    "npair": 110,
    "ncon_final": 7,
    "nefc_final": 28,
-   "us_por_passo_mj_step": 107.06,
-   "us_por_passo_ciclo_completo": 234.78,
+   "us_por_passo_mj_step": 121.53,
+   "us_por_passo_ciclo_completo": 213.97,
    "etapas": {
     "solver": {
-     "pct": 38.29,
-     "us_por_passo": 40.987
+     "pct": 38.58,
+     "us_por_passo": 46.886
     },
     "project_constraint": {
-     "pct": 12.68,
-     "us_por_passo": 13.575
+     "pct": 12.76,
+     "us_por_passo": 15.507
     },
     "colisao": {
-     "pct": 9.76,
-     "us_por_passo": 10.448
+     "pct": 9.6,
+     "us_por_passo": 11.671
     },
     "cinematica": {
-     "pct": 7.92,
-     "us_por_passo": 8.476
+     "pct": 7.9,
+     "us_por_passo": 9.605
     },
     "make_constraint": {
-     "pct": 7.26,
-     "us_por_passo": 7.772
+     "pct": 7.24,
+     "us_por_passo": 8.797
     },
     "resto_do_passo": {
-     "pct": 6.57,
-     "us_por_passo": 7.032
+     "pct": 6.5,
+     "us_por_passo": 7.893
     },
     "inercia": {
-     "pct": 5.71,
-     "us_por_passo": 6.117
+     "pct": 5.73,
+     "us_por_passo": 6.962
     },
     "integracao": {
-     "pct": 4.94,
-     "us_por_passo": 5.286
+     "pct": 4.88,
+     "us_por_passo": 5.929
     },
     "velocidade": {
-     "pct": 3.83,
-     "us_por_passo": 4.101
+     "pct": 3.86,
+     "us_por_passo": 4.691
     },
     "posicao_outros": {
-     "pct": 1.73,
-     "us_por_passo": 1.853
+     "pct": 1.66,
+     "us_por_passo": 2.023
     },
     "atuacao": {
-     "pct": 1.32,
-     "us_por_passo": 1.41
+     "pct": 1.29,
+     "us_por_passo": 1.563
     }
    },
    "nota_timers": "proporcao medida com mjcb_time instalado; o absoluto vem da passada limpa, sem callback"

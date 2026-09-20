@@ -44,7 +44,7 @@ class Receita:
     nome: str
     versao: str = "1"
     seed: int = 0
-    physics: str = "flygym2"
+    physics: str = "flygym2-mujoco"
     neural: str = "opencl"
     escopo: str = "whole"
     duracao_s: float = 2.0
@@ -63,6 +63,12 @@ class Receita:
     def __post_init__(self):
         if self.arena not in ARENAS:
             raise ValueError(f"arena desconhecida: {self.arena!r} (de {ARENAS})")
+        # `physics` nomeia o BACKEND FISICO, nao so o adaptador. Recusar aqui um
+        # nome errado e melhor que descobrir na decima corrida de uma bateria.
+        sys.path.insert(0, str(RAIZ / "sim"))
+        from physics.backends import canonico
+
+        object.__setattr__(self, "physics", canonico(self.physics))
         if self.escopo not in ESCOPOS:
             raise ValueError(f"escopo desconhecido: {self.escopo!r}")
         if self.duracao_s <= 0:
@@ -183,13 +189,29 @@ def ambiente() -> dict:
     }
 
 
-def metadata(receita: Receita, runtime: dict | None = None) -> dict:
+def backend_fisico(receita: Receita, corpo=None) -> dict:
+    """
+    O que rodou a dinamica: nome, familia, versao, solver, device, precisao.
+
+    Separado de `hash_ciencia` de proposito. Trocar de motor fisico NAO e
+    mudanca cientifica -- o corpo, o timestep e o conectoma continuam os
+    mesmos -- entao o hash da ciencia nao pode mexer. O que muda e isto aqui, e
+    e por isto que se explica uma divergencia numerica entre dois motores.
+    """
+    sys.path.insert(0, str(RAIZ / "sim"))
+    from physics.backends import completa, descreve
+
+    return completa(descreve(receita.physics), corpo)
+
+
+def metadata(receita: Receita, runtime: dict | None = None, corpo=None) -> dict:
     """O `metadata.json` completo de uma corrida."""
     return {
         "receita": receita.para_dict(),
         "ambiente": ambiente(),
         "conectoma": versao_conectoma(),
         "hash_ciencia": hash_ciencia(),
+        "backend_fisico": backend_fisico(receita, corpo),
         "parametros_cientificos": parametros_cientificos(),
         "runtime": runtime or {},
         "escopo_declarado": {

@@ -71,6 +71,37 @@ def _adaptador(arena: str, estimulo: dict):
     return ad, MotorFrame(drive=np.ones(2))
 
 
+class _CronometraStep:
+    """
+    Mede `sim.step()` DENTRO do laco real, sem tirar o controlador do caminho.
+
+    A alternativa obvia -- rodar `mj_step` num laco apertado depois de
+    aquecer -- mede outra fisica: sem o controlador reescrevendo `ctrl` a cada
+    passo, os atuadores congelam, a mosca desaba no chao, `ncon` sobe e o
+    solver passa a trabalhar mais. Na pratica isso inflou a medida de 94 us
+    para 149 us sem que nada no modelo tivesse mudado.
+    """
+
+    def __init__(self, sim):
+        self._sim = sim
+        self._orig = sim.step
+        self.ns = 0
+        self.n = 0
+        sim.step = self._step
+
+    def _step(self, *a, **kw):
+        t0 = time.perf_counter_ns()
+        r = self._orig(*a, **kw)
+        self.ns += time.perf_counter_ns() - t0
+        self.n += 1
+        return r
+
+    def solta(self) -> float:
+        """Devolve us por `mj_step` e restaura o metodo original."""
+        self._sim.step = self._orig
+        return (self.ns / self.n / 1000.0) if self.n else 0.0
+
+
 def _avanca(ad, motor, n: int) -> None:
     """Passos completos do experimento: controlador + atuadores + mj_step."""
     for _ in range(n):
@@ -83,16 +114,14 @@ def mede(arena: str, estimulo: dict) -> dict:
     _avanca(ad, motor, AQUECE)
 
     # --- passada limpa: quanto custa o passo de verdade -------------------
+    # `sim.step()` e cronometrado POR DENTRO do laco real. Um laco apartado de
+    # `mj_step` mediria a mosca desabada, com mais contato e mais solver.
     mj.set_mjcb_time(None)
+    crono = _CronometraStep(ad.sim)
     t0 = time.perf_counter_ns()
     _avanca(ad, motor, PASSOS)
     parede_ns = time.perf_counter_ns() - t0
-
-    # so o mj_step, sem controlador nem atuadores
-    t0 = time.perf_counter_ns()
-    for _ in range(PASSOS):
-        mj.mj_step(m, d)
-    mj_step_ns = time.perf_counter_ns() - t0
+    us_passo_mj = crono.solta()
 
     # --- passada instrumentada: onde o tempo se distribui -----------------
     ad, motor = _adaptador(arena, estimulo)
@@ -123,7 +152,6 @@ def mede(arena: str, estimulo: dict) -> dict:
         bruto["resto_do_passo"] = resto
         soma += resto
 
-    us_passo_mj = mj_step_ns / PASSOS / 1000.0
     etapas = {
         r: {
             "pct": round(100.0 * v / soma, 2) if soma else 0.0,

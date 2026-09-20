@@ -1,7 +1,21 @@
 // Cinematica direta do NeuroMechFly, um nivel da arvore por vez.
 //
-// Porte do `mj_kinematics1`/`mj_kinematics2` do MuJoCo (Apache-2.0, ver
-// THIRD_PARTY_NOTICES.md). A ordem das operacoes de ponto flutuante segue o
+// OBRA DERIVADA. Traducao de C para OpenCL de:
+//     MuJoCo, src/engine/engine_core_smooth.c   mj_kinematics1, mj_kinematics2
+//     MuJoCo, src/engine/engine_util_spatial.c  mju_mulQuat, mju_rotVecQuat,
+//                                               mju_quat2Mat, mju_axisAngle2Quat
+//     MuJoCo, src/engine/engine_util_blas.c     mju_normalize4, mju_mulMatVec3
+// Copyright 2021 DeepMind Technologies Limited. Licenciado sob a Apache License,
+// Version 2.0 <https://www.apache.org/licenses/LICENSE-2.0>.
+//
+// MUDANCAS em relacao ao original, como a licenca pede que se declare:
+//   * percurso serial da arvore substituido por percurso em NIVEIS paralelos
+//   * quadros dos corpos mantidos em `__local` durante a arvore inteira
+//   * laco residente num unico work-group, com barreiras em vez de despachos
+//   * `mjtNum` vira `real`, escolhido em tempo de compilacao (fp64 ou fp32)
+// Nada disso existe no original, que e serial por construcao. Ver
+// THIRD_PARTY_NOTICES.md.
+// A ordem das operacoes de ponto flutuante segue o
 // original de proposito: `mju_mulQuat`, `mju_rotVecQuat` e `mju_quat2Mat` estao
 // reproduzidos termo a termo, com os mesmos atalhos para quaternio identidade e
 // vetor nulo. Mudar a ordem daria o mesmo resultado matematico e um resultado

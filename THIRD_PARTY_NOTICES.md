@@ -3,11 +3,14 @@
 O Drosobot usa e estuda software de terceiros. Este arquivo registra o que e de
 quem, e o que derivamos de quem.
 
-Nenhum codigo upstream foi copiado para este repositorio. Os clones usados na
-pesquisa ficam em `research/upstream/`, que **nao e versionado** (ver
-`research/upstream/.gitignore`); os commits exatos estao em
+Os clones usados na pesquisa ficam em `research/upstream/`, que **nao e
+versionado** (ver `research/upstream/.gitignore`); os commits exatos estao em
 `research/UPSTREAM_LOCK.md` e podem ser reconstruidos com
 `research/clone_upstream.sh`.
+
+Um arquivo deste repositorio **e obra derivada** de codigo upstream: o kernel de
+cinematica do backend GPU. Ver [Obra derivada](#obra-derivada). Todo o resto e
+descricao, medicao ou implementacao independente.
 
 ---
 
@@ -41,6 +44,32 @@ linha foi copiada.** O que produzimos sao descricoes e medicoes.
 | [MuJoCo](https://github.com/google-deepmind/mujoco) | Apache-2.0 | perfil interno do passo, pares de colisao, MJX |
 | [MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp) | Apache-2.0 | estrategia de paralelizacao por `worldid`; fusao de kernel, reducao em tile, especializacao em tempo de compilacao |
 | [NVIDIA Warp](https://github.com/NVIDIA/warp) | Apache-2.0 | modelo de device (CPU/CUDA apenas) |
+
+## Obra derivada
+
+| arquivo | deriva de | licenca |
+|---|---|---|
+| `sim/gpu_physics/kernels/cinematica.cl` | MuJoCo `src/engine/engine_core_smooth.c` (`mj_kinematics1`, `mj_kinematics2`) e `src/engine/engine_util_spatial.c` (`mju_mulQuat`, `mju_rotVecQuat`, `mju_quat2Mat`, `mju_axisAngle2Quat`, `mju_normalize4`) | Apache-2.0, (c) DeepMind Technologies Limited |
+
+Nao e inspiracao: e traducao de C para OpenCL C, **termo a termo**, preservando
+a ordem das operacoes de ponto flutuante e os atalhos para quaternio identidade
+e vetor nulo. A preservacao e deliberada -- sem ela, a comparacao com o `mjData`
+mediria o porte em vez da fisica -- e torna o parentesco explicito em vez de
+acidental.
+
+O que e nosso no arquivo: a reorganizacao do percurso serial da arvore em
+niveis paralelos (`sim/gpu_physics/estrutura.py`), o estado em `__local` e o
+laco residente. Nada disso existe no original, que e serial por construcao.
+
+A licenca Apache-2.0 exige preservar avisos e declarar mudancas; o cabecalho do
+`.cl` nomeia a origem, e esta tabela e o aviso. A licenca completa esta em
+`research/upstream/mujoco/LICENSE` e em
+<https://www.apache.org/licenses/LICENSE-2.0>.
+
+Nada do runtime do NVIDIA Warp foi portado. Os kernels do MuJoCo Warp sao
+escritos no DSL do Warp e o CUDA e gerado em tempo de execucao -- nao existem
+`.cu` para traduzir, entao ele so podia ser lido como referencia de engenharia,
+e foi.
 
 ### Sobre derivacao conceitual
 

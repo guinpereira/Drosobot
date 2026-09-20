@@ -523,6 +523,9 @@ contribuição no Giant Fiber quebrada por população pré-sináptica.
 Arquitetura, protocolo e procedência DATA/MODEL/ASSUMPTION em
 **[docs/DROSOBOT_LAB.md](docs/DROSOBOT_LAB.md)**. Coordenadas e montagem da
 mosca 3D em **[docs/UNITY_BODY_COORDINATES.md](docs/UNITY_BODY_COORDINATES.md)**.
+O backend físico — subconjunto MJCF suportado, `physics_model_hash`, perfil do
+`mj_step` e o que a medição refuta sobre GPU — em
+**[docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)**.
 
 ### O que isto NÃO é
 
@@ -757,7 +760,18 @@ CNS, os `_pylibs/` e `skeletons/` do Blender, os clones em `research/upstream/`.
 - [x] Mosca 3D do NeuroMechFly na Unity, validada contra o `xpos` do MuJoCo
 - [x] Tabela 4-vias com arenas equivalentes (FlyGym 1/2 x circuito/whole)
 - [ ] Vulkan compute: a interface esta pronta, a implementacao nao
-- [ ] Reduzir o custo da fisica, que e 79-86% do relogio
+- [x] Abrir a caixa-preta do `mj_step`: 117 us/passo, e o gargalo e o SOLVER de
+      restricao (39%), nao a colisao (9%). Os timers internos do MuJoCo sairam
+      zerados ate instalarmos `mjcb_time`
+- [x] Drosobot GPU Physics: compilador de subconjunto MJCF, `physics_model_hash`,
+      backend na receita, e a cinematica direta portada e validada (6,7e-16 em
+      fp64 contra o `mjData`)
+- [x] Medir antes de prometer: com `nv=72` e um mundo, a GPU PERDE em todos os
+      estagios medidos -- 84 us por despacho sincrono, 40 us por Cholesky 72x72,
+      12,3 us de cinematica contra 6,3 us da CPU, e o tempo e plano de 16 a 256
+      threads. Ver [docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)
+- [ ] Cortar os 82 us/passo de Python em volta da fisica -- hoje valem mais que
+      qualquer ganho disponivel dentro do `mj_step`
 
 ## Referencias
 

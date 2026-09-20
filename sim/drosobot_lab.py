@@ -2,7 +2,7 @@
 Drosobot Lab: um comando, o laboratorio inteiro.
 
     .venv-flygym2\\Scripts\\python sim\\drosobot_lab.py ^
-        --physics flygym2 --neural opencl --cns whole ^
+        --physics flygym2-mujoco --neural opencl --cns whole ^
         --experiment looming --telemetry --duracao 600
 
     python sim/drosobot_lab.py --info          # so imprime o que seria montado
@@ -956,7 +956,9 @@ def _resolve_experimento(args) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description="Drosobot Lab")
-    ap.add_argument("--physics", choices=["flygym1", "flygym2"], default="flygym2",
+    ap.add_argument("--physics", choices=["flygym1", "flygym2",
+                                          "flygym2-mujoco", "drosobot-gpu"],
+                    default="flygym2-mujoco",
                     help="flygym2 e o caminho principal; flygym1 e a referencia")
     ap.add_argument("--neural", default="auto", help="auto | opencl | cpu | d3d12")
     ap.add_argument("--cns", choices=["whole", "circuit"], default="whole")
