@@ -37,7 +37,8 @@ import numpy as np
 from . import estrutura
 from .device import Device
 
-ARQUIVOS = ("cinematica.cl", "dinamica.cl", "colisao.cl")
+ARQUIVOS = ("cinematica.cl", "dinamica.cl", "colisao.cl",
+            "restricao.cl", "solver.cl")
 
 # Arrays do modelo, por tipo de destino no device.
 INTEIROS = (
@@ -45,7 +46,7 @@ INTEIROS = (
     "body_sameframe", "body_dofadr", "body_dofnum", "body_geomadr",
     "body_geomnum",
     "jnt_type", "jnt_qposadr", "jnt_dofadr", "jnt_bodyid",
-    "dof_bodyid", "dof_jntid", "dof_parentid", "dof_Madr",
+    "dof_bodyid", "dof_jntid", "dof_parentid", "dof_Madr", "body_weldid",
     "M_rownnz", "M_rowadr", "M_colind",
     "geom_bodyid", "geom_sameframe", "geom_type", "geom_dataid",
     "pair_geom1", "pair_geom2", "pair_dim",
@@ -63,7 +64,7 @@ REAIS = (
     "actuator_gainprm", "actuator_biasprm", "actuator_gear",
     "actuator_ctrlrange", "actuator_forcerange",
     "geom_rbound", "pair_margin", "pair_friction", "pair_solref",
-    "pair_solimp", "pair_gap",
+    "pair_solimp", "pair_gap", "body_invweight0",
 )
 
 # `mesh_vert` e float32 no mjModel e fica float32 no device de proposito: a
@@ -107,6 +108,10 @@ class MotorFisicoGPU:
             self.b[nome] = d.sobe(
                 np.asarray(mod.arrays[nome]).ravel().astype(np.float32))
         self.npair = int(dims["npair"])
+        # tetos estaticos: 3 contatos por par (maxplanemesh) e 4 linhas por
+        # contato (piramidal com condim=3). Sem alocacao dinamica no laco.
+        self.ncon_max = max(1, MAX_CON_POR_PAR * self.npair)
+        self.nefc_max = 4 * self.ncon_max
         # indice do vertice no GRAFO de hull, por vertice global da malha.
         # O 3.9.0 varre os vizinhos do vertice de suporte pelo grafo, e o
         # `obj.meshindex` dele e um indice local; aqui a traducao e uma tabela
@@ -135,11 +140,15 @@ class MotorFisicoGPU:
             "cvel": 6 * self.nbody, "cdof_dot": 6 * self.nv,
             "cacc": 6 * self.nbody, "cfrc_body": 6 * self.nbody,
             "M": self.nC, "qLD": self.nC, "qLDiagInv": self.nv,
-            "qH": self.nC, "qHDiagInv": self.nv,
+            # `qH_in` existe porque passar o MESMO buffer como entrada `const`
+            # e como saida de `factor_M` e aliasing, e o compilador tem licenca
+            # para supor que nao ha. Custou um passo divergindo para 1e71.
+            "qH": self.nC, "qH_in": self.nC, "qHDiagInv": self.nv,
             "qfrc_passive": self.nv, "qfrc_bias": self.nv,
             "qfrc_actuator": self.nv, "qfrc_smooth": self.nv,
             "qfrc_constraint": self.nv,
             "qacc_smooth": self.nv, "qacc": self.nv, "rhs": self.nv,
+            "qacc_warmstart": self.nv,
             "actuator_length": self.nu, "actuator_velocity": self.nu,
             "actuator_force": self.nu,
             # colisao: ranhuras fixas por par, depois compactadas em ordem
@@ -150,11 +159,33 @@ class MotorFisicoGPU:
             "con_dist": max(1, MAX_CON_POR_PAR * self.npair),
             "con_pos": max(1, 3 * MAX_CON_POR_PAR * self.npair),
             "con_normal": max(1, 3 * MAX_CON_POR_PAR * self.npair),
+            "con_frame": max(1, 9 * MAX_CON_POR_PAR * self.npair),
+            "con_includemargin": max(1, MAX_CON_POR_PAR * self.npair),
+            "con_mu": max(1, MAX_CON_POR_PAR * self.npair),
+            # restricoes: Jacobiana DENSA nefc x nv
+            "efc_J": max(1, self.nefc_max * self.nv),
+            "efc_pos": max(1, self.nefc_max),
+            "efc_margin": max(1, self.nefc_max),
+            "efc_diagApprox": max(1, self.nefc_max),
+            "efc_R": max(1, self.nefc_max),
+            "efc_D": max(1, self.nefc_max),
+            "efc_KBIP": max(1, 4 * self.nefc_max),
+            "efc_vel": max(1, self.nefc_max),
+            "efc_aref": max(1, self.nefc_max),
+            "efc_force": max(1, self.nefc_max),
+            "efc_jar": max(1, self.nefc_max),
+            # M densa: o Hessiano `M + J'DJ` preenche tudo, entao nao ha
+            # esparsidade a preservar dentro do solver
+            "Md": self.nv * self.nv,
         }
         for nome, n in derivados.items():
             self.tam[nome] = n
             self.b[nome] = d.vazio(n, self.real)
-        for nome, n in (("sup_vert", max(1, self.npair)),
+        for nome, n in (("efc_id", max(1, self.nefc_max)),
+                        ("nefc", 1), ("solver_iters", 1),
+                        ("con_exclude", max(1, self.ncon_max)),
+                        ("con_efcadr", max(1, self.ncon_max)),
+                        ("sup_vert", max(1, self.npair)),
                         ("n_por_par", max(1, self.npair)),
                         ("con_geom", max(1, 2 * MAX_CON_POR_PAR * self.npair)),
                         ("con_pair", max(1, MAX_CON_POR_PAR * self.npair)),
@@ -168,6 +199,7 @@ class MotorFisicoGPU:
             ("NQ", self.nq), ("NV", self.nv), ("NC", self.nC), ("NU", self.nu),
             ("NPAIR_MAX", max(1, self.npair)),
             ("MAX_CON_POR_PAR", MAX_CON_POR_PAR),
+            ("NCON_MAX", self.ncon_max), ("NEFC_MAX", self.nefc_max),
         )
         self.k = {nome: d.kernel(ARQUIVOS, nome, self.fp64, self._defines)
                   for nome in (
@@ -182,9 +214,21 @@ class MotorFisicoGPU:
                       "euler_copia_M", "euler_diag_MhD", "euler_rhs",
                       "euler_qvel", "euler_qpos",
                       "suporte_plano_malha", "contatos_plano_malha",
-                      "compacta_contatos")}
+                      "compacta_contatos",
+                      "contato_quadro", "contato_jacobiana",
+                      "restricao_impedancia", "restricao_aref",
+                      "contato_enderecos",
+                      "M_densa", "M_simetriza", "solver_newton")}
         self.usa_registradores = self.grupo >= max(self.nbody, self.ngeom)
         self.dt = self.real(mod.opcoes["timestep"])
+        self.tolerancia = float(mod.opcoes["tolerance"])
+        # `meaninertia` normaliza o criterio de parada do solver, como no
+        # mj_solveNewton. O MuJoCo o calcula em `mj_setConst`; aqui vem do
+        # mesmo lugar: a media de `dof_M0`.
+        self.meaninertia = float(np.mean(np.asarray(mod.arrays["dof_M0"])))
+        # Ligado por padrao, como no MuJoCo. Desligar isola o solver do
+        # historico, que e util para depurar um passo isolado.
+        self.warmstart = True
         self.gravidade = np.asarray(mod.opcoes["gravity"], dtype=float)
         d.espera()
 
@@ -383,6 +427,82 @@ class MotorFisicoGPU:
                     b["con_normal"], b["con_geom"], b["con_pair"], b["ncon"]),
                    1)
 
+    def solver(self) -> None:
+        """
+        Newton projetado: `qacc` e `qfrc_constraint` a partir de `qacc_smooth`.
+
+        Um dispatch. O objetivo e o do MuJoCo 3.9.0 para o subconjunto
+        piramidal; como ele e estritamente convexo, a solucao e unica e os
+        dois convergem para ela. Ver o cabecalho de `kernels/solver.cl`.
+        """
+        b = self.b
+        self._roda("M_densa", self.nv,
+                   (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["M"],
+                    b["Md"]))
+        self._roda("M_simetriza", self.nv, (b["Md"],))
+        self._roda("solver_newton", self.grupo,
+                   (b["nefc"], b["efc_J"], b["efc_D"], b["efc_aref"], b["Md"],
+                    b["qacc_smooth"], self.real(self.tolerancia),
+                    self.real(self.meaninertia), b["qacc_warmstart"],
+                    np.int32(1 if self.warmstart else 0),
+                    b["qacc"], b["efc_force"],
+                    b["qfrc_constraint"], b["efc_jar"], b["solver_iters"]),
+                   self.grupo)
+
+    def restricoes(self) -> None:
+        """
+        Contatos -> linhas de restricao: J, pos, margin, R, D, KBIP, aref.
+
+        Quatro despachos, na ordem de dependencia do `mj_makeConstraint`:
+        quadro do contato, Jacobiana (uma thread por contato x dof),
+        impedancia (uma thread por contato, porque as quatro linhas dele
+        compartilham `imp` e o ajuste piramidal de R) e a referencia.
+        """
+        b = self.b
+        if not self.npair:
+            return
+        self._roda("contato_quadro", self.ncon_max,
+                   (b["ncon"], b["con_normal"], b["con_pair"], b["pair_margin"],
+                    b["pair_gap"], b["con_dist"], b["con_frame"],
+                    b["con_includemargin"], b["con_exclude"]))
+        self._roda("contato_enderecos", 1,
+                   (b["ncon"], b["con_exclude"], b["con_efcadr"], b["nefc"]), 1)
+        self._roda("contato_jacobiana", self.ncon_max * self.nv,
+                   (b["ncon"], b["con_geom"], b["con_pos"], b["con_frame"],
+                    b["con_dist"], b["con_includemargin"], b["con_pair"],
+                    b["pair_friction"], b["con_efcadr"], b["geom_bodyid"],
+                    b["body_rootid"], b["body_weldid"], b["body_dofadr"],
+                    b["body_dofnum"], b["dof_parentid"], b["subtree_com"],
+                    b["cdof"], b["efc_J"], b["efc_pos"], b["efc_margin"],
+                    b["efc_id"]))
+        self._roda("restricao_impedancia", self.ncon_max,
+                   (b["ncon"], self.real(self.mod.opcoes["impratio"]),
+                    b["con_efcadr"],
+                    b["con_geom"], b["con_pair"], b["con_dist"],
+                    b["con_includemargin"], b["pair_friction"],
+                    b["pair_solref"], b["pair_solimp"], b["geom_bodyid"],
+                    b["body_invweight0"], b["efc_diagApprox"], b["efc_R"],
+                    b["efc_D"], b["efc_KBIP"], b["con_mu"]))
+        self._roda("restricao_aref", self.nefc_max,
+                   (b["nefc"], b["efc_J"], b["qvel"], b["efc_KBIP"],
+                    b["efc_pos"], b["efc_margin"], b["efc_vel"], b["efc_aref"]))
+
+    def efc(self) -> dict:
+        """As linhas de restricao como o teste as compara."""
+        n = int(self.le_int("nefc")[0])
+        return {
+            "nefc": n,
+            "J": self.le("efc_J")[:n * self.nv].reshape(n, self.nv),
+            "pos": self.le("efc_pos")[:n],
+            "margin": self.le("efc_margin")[:n],
+            "diagApprox": self.le("efc_diagApprox")[:n],
+            "R": self.le("efc_R")[:n],
+            "D": self.le("efc_D")[:n],
+            "aref": self.le("efc_aref")[:n],
+            "vel": self.le("efc_vel")[:n],
+            "id": self.le_int("efc_id")[:n],
+        }
+
     def le_int(self, nome: str) -> np.ndarray:
         self.dev.espera()
         return self.dev.le(self.b[nome], self.tam[nome], np.int32)
@@ -457,12 +577,12 @@ class MotorFisicoGPU:
     def euler(self) -> None:
         """`mj_Euler` com amortecimento implicito e integracao semi-implicita."""
         b = self.b
-        self._roda("euler_copia_M", self.nC, (b["M"], b["qH"]))
+        self._roda("euler_copia_M", self.nC, (b["M"], b["qH_in"]))
         self._roda("euler_diag_MhD", self.nv,
                    (self.dt, b["M_rownnz"], b["M_rowadr"], b["dof_damping"],
-                    b["qH"]))
+                    b["qH_in"]))
         self._roda("factor_M", self.grupo,
-                   (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["qH"],
+                   (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["qH_in"],
                     b["qH"], b["qHDiagInv"]), self.grupo)
         self._roda("euler_rhs", self.nv,
                    (b["qfrc_smooth"], b["qfrc_constraint"], b["rhs"]))
@@ -484,6 +604,7 @@ class MotorFisicoGPU:
         self.massa()
         self.com_vel()
         self.colisao()
+        self.restricoes()
         self.passivo()
         self.bias()
         self.atuacao()
@@ -491,15 +612,21 @@ class MotorFisicoGPU:
         if esperar:
             self.dev.espera()
 
+    def forward(self, esperar: bool = True) -> None:
+        """`mj_forward` completo: dinamica suave + solver de restricao."""
+        self.forward_smooth(esperar=False)
+        self.solver()
+        if esperar:
+            self.dev.espera()
+
     def passo(self, esperar: bool = True) -> None:
         """
-        Um passo completo -- SEM restricao.
+        Um passo completo: `state(t)` -> `state(t + dt)`, so na GPU.
 
-        `qfrc_constraint` fica zerado enquanto contato e solver nao existirem.
-        Com a mosca no ar isto e a fisica inteira; com ela no chao, falta a
-        forca que a impede de atravessar.
+        `mj_forward` (cinematica, inercia, colisao, restricoes, solver) mais
+        `mj_Euler`. O MuJoCo nao executa nenhuma etapa dinamica aqui.
         """
-        self.forward_smooth(esperar=False)
+        self.forward(esperar=False)
         self.euler()
         if esperar:
             self.dev.espera()

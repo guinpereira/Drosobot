@@ -289,9 +289,14 @@ __kernel void crb_monta_M(
     real cd[6];
     for (int k = 0; k < 6; ++k) cd[k] = cdof[6*i+k];
     mul_inert_vec(buf, inert, cd);
-    M[madr] = dof_armature[i];
+    // O original zera M antes e depois acumula; aqui a linha e ESCRITA, porque
+    // cada thread e dona da linha inteira e nao ha passada de zeragem. Com `+=`
+    // sobre um buffer residente, o segundo passo somaria sobre o primeiro -- foi
+    // exatamente assim que a trajetoria divergiu para 1e71 no passo 2.
+    real extra = dof_armature[i];
     for (int j = i; j >= 0; j = dof_parentid[j]) {
-        M[madr--] += dot6(cdof + 6*j, buf);
+        M[madr--] = extra + dot6(cdof + 6*j, buf);
+        extra = REAL_ZERO;
     }
 }
 
