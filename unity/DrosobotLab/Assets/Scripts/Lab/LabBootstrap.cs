@@ -31,6 +31,9 @@ namespace Drosobot.Lab
         [Header("Telemetria")]
         public string host = "127.0.0.1";
         public int port = 8765;
+        [Tooltip("Canal de controle: e por onde a interface escolhe o experimento. " +
+                 "Socket separado do de telemetria de proposito -- ver ControlClient.cs.")]
+        public int controlPort = 8766;
 
         [Header("CNS")]
         [Tooltip("Caminho dentro de Assets/Resources (sem extensao)")]
@@ -44,6 +47,8 @@ namespace Drosobot.Lab
         public bool showShell;
 
         private TelemetryClient _tel;
+        private ControlClient _ctl;
+        private ExperimentSelector _seletor;
         private BrainActivity _brain;
         private Transform _cnsRoot;
         private Transform _fly;
@@ -95,6 +100,12 @@ namespace Drosobot.Lab
             _tel.port = port;
             _tel.OnMessage += OnTelemetry;
 
+            _ctl = gameObject.AddComponent<ControlClient>();
+            _ctl.host = host;
+            _ctl.port = controlPort;
+            _seletor = gameObject.AddComponent<ExperimentSelector>();
+            _seletor.Ligar(_ctl);
+
             yield return StartCoroutine(LoadCns());
         }
 
@@ -109,7 +120,7 @@ namespace Drosobot.Lab
             _camBrain = camGo.AddComponent<Camera>();
             _camBrain.clearFlags = CameraClearFlags.SolidColor;
             _camBrain.backgroundColor = new Color(0.055f, 0.06f, 0.075f);
-            _camBrain.transform.position = new Vector3(0f, 2f, -18f);
+            _camBrain.transform.position = new Vector3(0f, 2f, -15.5f);
             _camBrain.transform.LookAt(Vector3.zero);
             camGo.AddComponent<OrbitCamera>();
 
@@ -244,6 +255,8 @@ namespace Drosobot.Lab
             try { msg = JObject.Parse(linha); }
             catch { return; }
 
+            if (_seletor != null) _seletor.AoReceber(msg);
+
             switch ((string)msg["type"])
             {
                 case "experiment_info":
@@ -324,7 +337,9 @@ namespace Drosobot.Lab
 
                 case "event":
                     _eventos.Insert(0, $"{(double)msg["sim_time"]:F2}s  {(string)msg["kind"]}");
-                    if (_eventos.Count > 8) _eventos.RemoveAt(_eventos.Count - 1);
+                    // so os mais recentes: a lista alimenta um painel de altura
+                    // medida, entao cada evento a mais empurra o resto pra baixo
+                    if (_eventos.Count > 5) _eventos.RemoveAt(_eventos.Count - 1);
                     break;
             }
         }
@@ -336,6 +351,25 @@ namespace Drosobot.Lab
 
         private GUIStyle _titulo, _rotulo, _mono;
 
+        // Colunas do HUD. A posicao de cada painel sai daqui, nao de coordenada
+        // escrita a mao -- ver LabLayout.cs pro motivo (duas caixas chegaram a se
+        // sobrepor porque um x fixo nao acompanhou a largura do vizinho).
+        // Tres colunas, nao quatro. A do meio saiu de proposito: o CNS pode ser
+        // girado e ampliado com o mouse, e painel no centro da tela disputa
+        // espaco justamente com o objeto que o usuario esta manipulando.
+        //
+        //    esquerda   estado e sinais
+        //    centro     o cerebro, sem nada por cima
+        //    direita    inspecao e controles
+        private Coluna _colEsquerda, _colDireita, _colRodape;
+        private readonly Painel _pPrincipal = new Painel("principal");
+        private readonly Painel _pExperimento = new Painel("experimento");
+        private readonly Painel _pPopulacao = new Painel("populacao");
+        private readonly Painel _pProcedencia = new Painel("procedencia");
+        private readonly Painel _pRetina = new Painel("retina");
+        private readonly Painel _pInspector = new Painel("inspector");
+        private readonly Painel _pSinais = new Painel("sinais");
+
         void OnGUI()
         {
             if (_titulo == null)
@@ -344,189 +378,220 @@ namespace Drosobot.Lab
                 _titulo.normal.textColor = new Color(0.92f, 0.94f, 0.98f);
                 _rotulo = new GUIStyle(GUI.skin.label) { fontSize = 12 };
                 _rotulo.normal.textColor = new Color(0.72f, 0.76f, 0.82f);
-                _mono = new GUIStyle(_rotulo) { fontSize = 12, alignment = TextAnchor.UpperLeft };
+                // wordWrap explicito: e o que faz uma linha longa virar duas em
+                // vez de sumir na borda, e o Painel mede a altura ja com a quebra.
+                _mono = new GUIStyle(_rotulo) { fontSize = 12, alignment = TextAnchor.UpperLeft,
+                                                wordWrap = true };
+                _rotulo.wordWrap = true;
+                _titulo.wordWrap = true;
+            }
+
+            // Guarda propria, e nao a do bloco acima: os estilos sobrevivem ao
+            // recarregamento de dominio da Unity e as colunas, sendo campos
+            // novos, voltam nulas. Compartilhar o `if` deixava OnGUI lancando
+            // NullReference depois de todo hot reload.
+            if (_colEsquerda == null)
+            {
+                // Larguras por coluna. A da direita e a maior porque e onde mora
+                // o texto corrido (procedencia, inspector), que era o que estava
+                // sendo cortado.
+                _colEsquerda = new Coluna(Coluna.Ancora.SuperiorEsquerda, 352f);
+                // A direita e mais larga porque passou a acumular procedencia,
+                // retina, inspector E os controles. Quando nao couber na altura,
+                // a Coluna rola sozinha em vez de comprimir os paineis.
+                _colDireita = new Coluna(Coluna.Ancora.SuperiorDireita, 384f);
+                _colRodape = new Coluna(Coluna.Ancora.InferiorEsquerda, 300f);
             }
 
             GUI.color = new Color(1, 1, 1, 0.93f);
-            GUI.Box(new Rect(10, 10, 360, presentationMode ? 130 : 330), GUIContent.none);
-            GUILayout.BeginArea(new Rect(22, 20, 340, presentationMode ? 115 : 315));
 
-            GUILayout.Label("DROSOBOT LAB", _titulo);
-            GUILayout.Label(_expName, _rotulo);
-            GUILayout.Space(6);
+            MontaPrincipal();
+            _colEsquerda.Limpar();
+            _colEsquerda.Adiciona(_pPrincipal);
+
+            _colDireita.Limpar();
+            _colRodape.Limpar();
+            if (!presentationMode)
+            {
+                // atividade de populacao e sinal, entao mora com os outros
+                // sinais, na esquerda
+                MontaPopulacao();
+                _colEsquerda.Adiciona(_pPopulacao);
+
+                MontaProcedencia();
+                MontaRetina();
+                MontaInspector();
+                MontaExperimento();
+                MontaSinais();
+                // Ordem pedida: da leitura passiva pra acao. O EXPERIMENTO fica
+                // logo abaixo do INSPECTOR pra dar pra olhar o neuronio
+                // selecionado e trocar de corrida sem atravessar a tela.
+                _colDireita.Adiciona(_pProcedencia);
+                _colDireita.Adiciona(_pRetina);
+                _colDireita.Adiciona(_pInspector);
+                _colDireita.Adiciona(_pExperimento);
+                _colRodape.Adiciona(_pSinais);
+            }
+
+            float usadoEsquerda = _colEsquerda.Desenhar();
+            _colDireita.Desenhar();
+            // o rodape so ocupa o que sobra abaixo da coluna de cima
+            _colRodape.Desenhar(0f, usadoEsquerda + Espaco.Vao);
+        }
+
+        // ------------------------------------------------------------ paineis
+
+        private void MontaPrincipal()
+        {
+            _pPrincipal.Limpar();
+            _pPrincipal.Texto("DROSOBOT LAB", _titulo);
+            _pPrincipal.Texto(_expName, _rotulo);
+            _pPrincipal.Espacador(6f);
 
             // SIM/WALL/RTF em destaque: a simulacao roda ~25x abaixo de tempo
             // real e isso NAO e travamento. Deixar explicito evita o mal-entendido.
-            GUILayout.Label($"SIM   {_simTime:F2} s", _mono);
-            GUILayout.Label($"WALL  {_wallTime:F1} s", _mono);
-            GUILayout.Label($"RTF   {_rtf:F3}x   (lento de proposito)", _mono);
-            GUILayout.Label($"conexao: {(_tel != null && _tel.connected ? "ligada" : "aguardando simulacao")}", _mono);
+            _pPrincipal.Texto($"SIM   {_simTime:F2} s", _mono);
+            _pPrincipal.Texto($"WALL  {_wallTime:F1} s", _mono);
+            _pPrincipal.Texto($"RTF   {_rtf:F3}x   (lento de proposito)", _mono);
+            _pPrincipal.Texto($"conexao: {(_tel != null && _tel.connected ? "ligada" : "aguardando simulacao")}", _mono);
+            if (presentationMode) return;
 
-            if (!presentationMode)
+            _pPrincipal.Espacador(8f);
+            _pPrincipal.Texto("ATIVIDADE (spikes na janela)", _rotulo);
+            foreach (var kv in _spikesPorCamada)
             {
-                GUILayout.Space(8);
-                GUILayout.Label("ATIVIDADE (spikes na janela)", _rotulo);
-                foreach (var kv in _spikesPorCamada)
-                {
-                    int total = 0, semGeo = 0;
-                    _brain.TotalPorCamada.TryGetValue(kv.Key, out total);
-                    _brain.SemGeometriaPorCamada.TryGetValue(kv.Key, out semGeo);
-                    int comGeo = System.Math.Max(0, total - semGeo);
-                    // Dizer so "LC4/LPLC2 67" daria a entender que sao todos os
-                    // que aparecem no cerebro. Mostramos quantos sao simulados e
-                    // quantos tem morfologia individual.
-                    string sufixo = semGeo > 0
-                        ? $"   {total} sim / {comGeo} com morfologia"
-                        : "";
-                    GUILayout.Label($"  {kv.Key,-10} {kv.Value,4}{sufixo}", _mono);
-                }
-
-                if (_retinaDerivadaL != null)
-                {
-                    GUILayout.Space(6);
-                    GUILayout.Label($"VISAO ({_retinaLabel})", _rotulo);
-                    GUILayout.Label($"  L {_retinaDerivadaL[0],7:F1}   R {_retinaDerivadaR[0],7:F1}", _mono);
-                }
-
-                GUILayout.Space(6);
-                GUILayout.Label("EVENTOS", _rotulo);
-                foreach (var e in _eventos) GUILayout.Label("  " + e, _mono);
-                GUILayout.Space(6);
-                GUILayout.Label("B casca  N neuronios  P apresentacao", _mono);
-                GUILayout.Label("botao direito seleciona  ESC limpa", _mono);
-                if (_grafo != null)
-                {
-                    string estado = _grafo.show
-                        ? _grafo.visibleEdges + "/" + _grafo.edgeCount
-                        : "off";
-                    GUILayout.Label($"C conexoes ({estado})  F filtro: {_grafo.filtro}", _mono);
-                }
+                int total = 0, semGeo = 0;
+                _brain.TotalPorCamada.TryGetValue(kv.Key, out total);
+                _brain.SemGeometriaPorCamada.TryGetValue(kv.Key, out semGeo);
+                int comGeo = System.Math.Max(0, total - semGeo);
+                // Dizer so "LC4/LPLC2 67" daria a entender que sao todos os
+                // que aparecem no cerebro. Mostramos quantos sao simulados e
+                // quantos tem morfologia individual.
+                string sufixo = semGeo > 0
+                    ? $"   {total} sim / {comGeo} com morfologia"
+                    : "";
+                _pPrincipal.Texto($"  {kv.Key,-10} {kv.Value,4}{sufixo}", _mono);
             }
 
-            GUILayout.EndArea();
-
-            if (!presentationMode)
+            if (_retinaDerivadaL != null)
             {
-                DesenhaLegendaProcedencia();
-                DesenhaPopulacao();
-                DesenhaTimeline();
-                DesenhaRetina();
-                DesenhaInspector();
+                _pPrincipal.Espacador(6f);
+                _pPrincipal.Texto($"VISAO ({_retinaLabel})", _rotulo);
+                _pPrincipal.Texto($"  L {_retinaDerivadaL[0],7:F1}   R {_retinaDerivadaR[0],7:F1}", _mono);
+            }
+
+            _pPrincipal.Espacador(6f);
+            _pPrincipal.Texto("EVENTOS", _rotulo);
+            foreach (var e in _eventos) _pPrincipal.Texto("  " + e, _mono);
+
+            _pPrincipal.Espacador(6f);
+            _pPrincipal.Texto("B casca  N neuronios  P apresentacao", _mono);
+            _pPrincipal.Texto("botao direito seleciona  ESC limpa", _mono);
+            if (_grafo != null)
+            {
+                string estado = _grafo.show
+                    ? _grafo.visibleEdges + "/" + _grafo.edgeCount
+                    : "off";
+                _pPrincipal.Texto($"C conexoes ({estado})  F filtro: {_grafo.filtro}", _mono);
             }
         }
 
-        private void DesenhaLegendaProcedencia()
+        private void MontaExperimento()
+        {
+            _pExperimento.Limpar();
+            if (_seletor != null) _seletor.Preenche(_pExperimento, _rotulo, _mono);
+        }
+
+        private void MontaProcedencia()
         {
             // A separacao DATA / MODEL / ASSUMPTION e uma das razoes de o projeto
             // existir. Fica sempre visivel, nao escondida num menu.
-            var r = new Rect(Screen.width - 250, 10, 240, 92);
-            GUI.Box(r, GUIContent.none);
-            GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
-            GUILayout.Label("PROCEDENCIA", _rotulo);
+            _pProcedencia.Limpar();
+            _pProcedencia.Texto("PROCEDENCIA", _rotulo);
             foreach (Provenance p in new[] { Provenance.Data, Provenance.Model, Provenance.Assumption })
-            {
-                var antes = GUI.color;
-                GUI.color = ProvenanceUtil.Color(p);
-                GUILayout.Label($"  {ProvenanceUtil.Label(p)}  {Explica(p)}", _mono);
-                GUI.color = antes;
-            }
-            GUILayout.EndArea();
+                _pProcedencia.Texto($"  {ProvenanceUtil.Label(p)}  {Explica(p)}", _mono,
+                                    ProvenanceUtil.Color(p));
         }
 
-        private void DesenhaTimeline()
+        private void MontaSinais()
         {
-            float alturaG = 46f, margem = 8f;
-            float h = _graficos.Count * (alturaG + margem) + 30f;
-            var r = new Rect(10, Screen.height - h - 10, 262, h);
-            GUI.Box(r, GUIContent.none);
-            GUILayout.BeginArea(new Rect(r.x + 10, r.y + 6, r.width - 18, r.height - 10));
-            GUILayout.Label("SINAIS (janela rolante)", _rotulo);
+            _pSinais.Limpar();
+            _pSinais.Texto("SINAIS (janela rolante)", _rotulo);
             foreach (var g in _graficos)
             {
-                var antes = GUI.color;
-                GUI.color = ProvenanceUtil.Color(g.procedencia);
-                GUILayout.Label(g.Rotulo, _mono);
-                GUI.color = antes;
-                var tex = g.Desenhar();
-                var rg = GUILayoutUtility.GetRect(240, alturaG - 16);
-                GUI.DrawTexture(rg, tex, ScaleMode.StretchToFill);
+                var grafico = g;   // capturado pelo lambda do desenho
+                _pSinais.Texto(grafico.Rotulo, _mono, ProvenanceUtil.Color(grafico.procedencia));
+                _pSinais.Desenho(34f, r =>
+                    GUI.DrawTexture(new Rect(r.x, r.y + 2f, r.width, r.height - 4f),
+                                    grafico.Desenhar(), ScaleMode.StretchToFill));
+                _pSinais.Espacador(8f);
             }
-            GUILayout.EndArea();
         }
 
-        private void DesenhaRetina()
+        private void MontaRetina()
         {
+            _pRetina.Limpar();
             if (_retinaL == null && _retinaR == null) return;
             float lw = _retL.Largura, lh = _retL.Altura;
-            var r = new Rect(Screen.width - 250, 112, 240, lh * 2 + 76);
-            GUI.Box(r, GUIContent.none);
-            GUILayout.BeginArea(new Rect(r.x + 10, r.y + 6, r.width - 18, r.height - 10));
-            GUILayout.Label("VISAO  (721 omatideos/olho)", _rotulo);
-            GUILayout.Label("LEFT EYE", _mono);
-            GUI.DrawTexture(GUILayoutUtility.GetRect(lw, lh), _retL.Desenhar(_retinaL),
-                            ScaleMode.StretchToFill);
-            GUILayout.Label("RIGHT EYE", _mono);
-            GUI.DrawTexture(GUILayoutUtility.GetRect(lw, lh), _retR.Desenhar(_retinaR),
-                            ScaleMode.StretchToFill);
-            GUILayout.EndArea();
+            _pRetina.Texto("VISAO  (721 omatideos/olho)", _rotulo);
+            // Intensidade CRUA do omatideo, so limitada a 0-1 -- nao e
+            // renormalizada por quadro. Dizer "normalizado" faria o usuario ler
+            // contraste onde ha brilho absoluto.
+            _pRetina.Texto("escala: 0 escuro -> 1 claro (valor cru, limitado a 0-1)", _mono);
+            _pRetina.Texto("LEFT EYE", _mono);
+            _pRetina.Desenho(lh, r => GUI.DrawTexture(new Rect(r.x, r.y, lw, lh),
+                                                      _retL.Desenhar(_retinaL),
+                                                      ScaleMode.StretchToFill));
+            _pRetina.Texto("RIGHT EYE", _mono);
+            _pRetina.Desenho(lh, r => GUI.DrawTexture(new Rect(r.x, r.y, lw, lh),
+                                                      _retR.Desenhar(_retinaR),
+                                                      ScaleMode.StretchToFill));
         }
 
-        private void DesenhaPopulacao()
+        private void MontaPopulacao()
         {
+            _pPopulacao.Limpar();
             if (_brain == null || _brain.AtividadeAgregada.Count == 0) return;
-            var linhas = new List<string>();
+
+            bool algum = false;
             foreach (var kv in _brain.AtividadeAgregada)
             {
                 if (!_brain.SemGeometriaPorCamada.TryGetValue(kv.Key, out int semGeo) || semGeo <= 0)
                     continue;
-                linhas.Add(kv.Key + "|" + kv.Value.ToString("F0") + "|" + semGeo);
-            }
-            if (linhas.Count == 0) return;
-
-            var r = new Rect(290, 10, 330, 34 + linhas.Count * 40);
-            GUI.Box(r, GUIContent.none);
-            GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
-            GUILayout.Label("ATIVIDADE DE POPULACAO", _rotulo);
-            foreach (var linha in linhas)
-            {
-                var partes = linha.Split('|');
-                float v = float.Parse(partes[1]);
+                if (!algum) { _pPopulacao.Texto("ATIVIDADE DE POPULACAO", _rotulo); algum = true; }
                 // Barra de populacao: os neuronios sem morfologia exportada
                 // contribuem aqui, e NAO num ponto inventado do cerebro.
-                int blocos = Mathf.Clamp(Mathf.RoundToInt(v / 3f), 0, 28);
-                GUILayout.Label($"{partes[0]}  ({partes[2]} sem morfologia individual)", _mono);
-                GUILayout.Label("  " + new string('#', blocos), _mono);
+                int blocos = Mathf.Clamp(Mathf.RoundToInt(kv.Value / 3f), 0, 28);
+                _pPopulacao.Texto($"{kv.Key}  ({semGeo} sem morfologia individual)", _mono);
+                _pPopulacao.Texto("  " + new string('#', blocos), _mono);
             }
-            GUILayout.EndArea();
         }
 
-        private void DesenhaInspector()
+        private void MontaInspector()
         {
+            _pInspector.Limpar();
             long sel = _brain != null ? _brain.SelectedBodyId : -1;
-            var r = new Rect(Screen.width - 340, Screen.height - 232, 330, 222);
-            GUI.Box(r, GUIContent.none);
-            GUILayout.BeginArea(new Rect(r.x + 12, r.y + 8, r.width - 20, r.height - 14));
-            GUILayout.Label("INSPECTOR", _rotulo);
+            _pInspector.Texto("INSPECTOR", _rotulo);
+
             if (sel < 0)
             {
                 // Sem selecao, o espaco vira o aviso de amostragem. Afirmar ou
                 // sugerir que a morfologia mostrada e a populacao toda seria
                 // falso, e este e o lugar onde o usuario olharia.
-                foreach (var c in _brain.Coverage)
-                {
-                    GUILayout.Label(c.group, _mono);
-                    GUILayout.Label($"  Simulated: {c.total_simulated} neurons", _mono);
-                    GUILayout.Label($"  3D morphology shown: {c.total_visualized} representative", _mono);
-                    GUILayout.Label($"  Synaptic-weight coverage: {c.fraction_weight_covered * 100f:F0}%", _mono);
-                    var antes = GUI.color;
-                    GUI.color = ProvenanceUtil.Color(Provenance.Data);
-                    GUILayout.Label("  DATA - morphology subset", _mono);
-                    GUI.color = antes;
-                }
-                GUILayout.Label("botao direito seleciona um neuronio", _mono);
-                GUILayout.EndArea();
+                if (_brain != null)
+                    foreach (var c in _brain.Coverage)
+                    {
+                        _pInspector.Texto(c.group, _mono);
+                        _pInspector.Texto($"  Simulated: {c.total_simulated} neurons", _mono);
+                        _pInspector.Texto($"  3D morphology shown: {c.total_visualized} representative", _mono);
+                        _pInspector.Texto($"  Synaptic-weight coverage: {c.fraction_weight_covered * 100f:F0}%", _mono);
+                        _pInspector.Texto("  DATA - morphology subset", _mono,
+                                          ProvenanceUtil.Color(Provenance.Data));
+                    }
+                _pInspector.Texto("botao direito seleciona um neuronio", _mono);
                 return;
             }
+
             if (sel != _ultimoSelecionado)
             {
                 _ultimoSelecionado = sel;
@@ -534,21 +599,26 @@ namespace Drosobot.Lab
                 _infoSelecionado.Clear();
                 if (d != null) foreach (var kv in d) _infoSelecionado[kv.Key] = kv.Value;
             }
+
             // cada campo com sua procedencia: e o ponto do projeto inteiro
-            Badge.Linha("bodyId", Get("bodyId"), Provenance.Data, _mono);
-            Badge.Linha("type", Get("type"), Provenance.Data, _mono);
-            Badge.Linha("group", Get("group"), Provenance.Data, _mono);
-            Badge.Linha("side", Get("side"), Provenance.Data, _mono);
-            Badge.Linha("neurotransmitter", Get("neurotransmitter"), Provenance.Data, _mono);
-            Badge.Linha("polarity", Get("polarity"), Provenance.Model, _mono);
-            Badge.Linha("atividade", Get("recentActivity"), Provenance.Model, _mono);
+            Campo("bodyId", Get("bodyId"), Provenance.Data);
+            Campo("type", Get("type"), Provenance.Data);
+            Campo("group", Get("group"), Provenance.Data);
+            Campo("side", Get("side"), Provenance.Data);
+            Campo("neurotransmitter", Get("neurotransmitter"), Provenance.Data);
+            Campo("polarity", Get("polarity"), Provenance.Model);
+            Campo("atividade", Get("recentActivity"), Provenance.Model);
             if (_grafo != null)
             {
                 var (entra, sai, nE, nS) = _grafo.Resumo(sel);
-                Badge.Linha("sinapses in", $"{entra} ({nE} parceiros)", Provenance.Data, _mono);
-                Badge.Linha("sinapses out", $"{sai} ({nS} parceiros)", Provenance.Data, _mono);
+                Campo("sinapses in", $"{entra} ({nE} parceiros)", Provenance.Data);
+                Campo("sinapses out", $"{sai} ({nS} parceiros)", Provenance.Data);
             }
-            GUILayout.EndArea();
+        }
+
+        private void Campo(string chave, string valor, Provenance p)
+        {
+            _pInspector.Desenho(17f, r => Badge.Desenha(r, chave, valor, p, _mono));
         }
 
         private string Get(string k) => _infoSelecionado.TryGetValue(k, out var v) ? v : "-";
@@ -592,7 +662,11 @@ namespace Drosobot.Lab
     public class OrbitCamera : MonoBehaviour
     {
         public Vector3 target = Vector3.zero;
-        public float distance = 18f;
+        // 15.5 em vez de 18: com o centro da tela livre de painel, o CNS cabe
+        // ~16% maior. E aproximacao de camera, nao escala do objeto -- a
+        // geometria e as posicoes que o grafo de conectividade calcula ficam
+        // exatamente como estavam.
+        public float distance = 15.5f;
         public float yaw = 0f, pitch = 12f;
 
         void LateUpdate()

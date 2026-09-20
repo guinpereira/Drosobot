@@ -139,17 +139,25 @@ namespace Drosobot.Lab
     /// <summary>Etiqueta DATA / MODEL / ASSUMPTION ao lado de um valor.</summary>
     public static class Badge
     {
-        public static void Linha(string chave, string valor, Provenance p,
-                                 GUIStyle estilo, float larguraChave = 128f)
+        /// <summary>
+        /// Desenha uma linha `chave | etiqueta | valor` dentro de um retangulo.
+        ///
+        /// Recebe o retangulo pronto, em vez de usar GUILayout, porque quem
+        /// posiciona os paineis agora e LabLayout.cs -- ele mede a altura de cada
+        /// bloco antes de desenhar, e GUILayout so sabe a altura depois.
+        /// </summary>
+        public static void Desenha(Rect r, string chave, string valor, Provenance p,
+                                   GUIStyle estilo, float larguraChave = 116f)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(chave, estilo, GUILayout.Width(larguraChave));
+            float larguraEtiqueta = 78f;
+            GUI.Label(new Rect(r.x, r.y, larguraChave, r.height), chave, estilo);
             var antes = GUI.color;
             GUI.color = ProvenanceUtil.Color(p);
-            GUILayout.Label(ProvenanceUtil.Label(p), estilo, GUILayout.Width(84));
+            GUI.Label(new Rect(r.x + larguraChave, r.y, larguraEtiqueta, r.height),
+                      ProvenanceUtil.Label(p), estilo);
             GUI.color = antes;
-            GUILayout.Label(valor, estilo);
-            GUILayout.EndHorizontal();
+            float x = r.x + larguraChave + larguraEtiqueta;
+            GUI.Label(new Rect(x, r.y, Mathf.Max(0f, r.xMax - x), r.height), valor, estilo);
         }
     }
 }
