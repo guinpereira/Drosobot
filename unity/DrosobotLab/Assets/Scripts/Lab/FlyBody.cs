@@ -59,6 +59,9 @@ namespace Drosobot.Lab
         public float suavizacao = 60f;
         [Tooltip("Comprimento dos eixos locais no modo Eixos, em mm.")]
         public float tamanhoEixo = 0.35f;
+        [Tooltip("Esquema de cor. O modelo NAO traz cor -- os 69 geoms sao " +
+                 "cinza 0,5. `Realista` e invencao nossa; ver FlyAppearance.cs.")]
+        public Aparencia aparencia = Aparencia.Realista;
 
         private class Seg
         {
@@ -74,7 +77,11 @@ namespace Drosobot.Lab
         private readonly Dictionary<string, Seg> _porNome = new Dictionary<string, Seg>();
         private readonly List<Seg> _ordem = new List<Seg>();
         private Transform _raiz;
-        private Material _mat;
+        // um renderer por geom, com o nome do segmento: e o que permite trocar
+        // o esquema de cor sem remontar a mosca
+        private readonly List<KeyValuePair<string, Renderer>> _pintura =
+            new List<KeyValuePair<string, Renderer>>();
+        private Aparencia _aparenciaAplicada = (Aparencia)(-1);
         private GameObject _eixos;
         private bool _avisouRaiz;
 
@@ -93,9 +100,6 @@ namespace Drosobot.Lab
             var raizGo = new GameObject("NeuroMechFly");
             raizGo.transform.SetParent(transform, false);
             _raiz = raizGo.transform;
-
-            var sh = Shader.Find("Standard") ?? Shader.Find("Diffuse");
-            _mat = new Material(sh) { color = new Color(0.72f, 0.66f, 0.52f) };
 
             var doc = JObject.Parse(meta.text);
             foreach (var g in doc["geoms"])
@@ -125,13 +129,14 @@ namespace Drosobot.Lab
                 var mf = filho.AddComponent<MeshFilter>();
                 mf.sharedMesh = malha;
                 var mr = filho.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = _mat;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                _pintura.Add(new KeyValuePair<string, Renderer>(body, mr));
 
                 filho.transform.localPosition = MujocoFrame.Pos(Tres(g["pos"]));
                 filho.transform.localRotation = MujocoFrame.Quat(Quatro(g["quat_wxyz"]));
             }
 
+            AplicaAparencia();
             LeBindPose(doc["pose_repouso"] as JObject);
             AplicaBindPose();   // nasce em repouso; a telemetria assume depois
 
@@ -225,8 +230,34 @@ namespace Drosobot.Lab
             poseRecebida = casou > 0;
         }
 
+        /// <summary>
+        /// Pinta cada geom pelo nome do segmento. E APARENCIA: o modelo nao
+        /// traz cor e nenhuma destas cores codifica grandeza. Ver
+        /// FlyAppearance.cs.
+        /// </summary>
+        public void AplicaAparencia()
+        {
+            if (_aparenciaAplicada == aparencia) return;
+            _aparenciaAplicada = aparencia;
+            // um material por CATEGORIA, nao por geom: sao 69 geoms e oito
+            // categorias, e 69 materiais iguais so gastariam draw call
+            var cache = new Dictionary<string, Material>();
+            foreach (var kv in _pintura)
+            {
+                string cat = FlyAppearance.Categoria(kv.Key);
+                if (!cache.TryGetValue(cat, out var mat))
+                {
+                    mat = FlyAppearance.Material(kv.Key, aparencia);
+                    cache[cat] = mat;
+                }
+                kv.Value.sharedMaterial = mat;
+            }
+        }
+
         void Update()
         {
+            AplicaAparencia();   // barato: sai na primeira linha se nao mudou
+
             // A pose que chega e de MUNDO. Se alguem mover a raiz, cada
             // segmento sai deslocado pelo valor dela -- o bug do offset
             // duplicado. Avisa uma vez, alto, em vez de deixar a mosca

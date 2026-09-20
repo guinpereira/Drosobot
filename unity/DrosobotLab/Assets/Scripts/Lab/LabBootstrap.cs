@@ -790,6 +790,33 @@ namespace Drosobot.Lab
                     orb.Focar(_mosca.Extensao());
             });
             _pCorpo.Texto("arrastar gira   scroll aproxima   meio empurra", _mono);
+
+            // --- aparencia ---
+            // O modelo nao traz cor: os 69 geoms sao cinza 0,5. O esquema
+            // realista e invencao nossa e tem que aparecer como tal, senao uma
+            // captura de tela vira "foto" de uma coisa que ninguem mediu.
+            _pCorpo.Espacador();
+            _pCorpo.Desenho(24f, r =>
+            {
+                float w = (r.width - 2f) / 2f;
+                for (int i = 0; i < 2; i++)
+                {
+                    var b = new Rect(r.x + i * (w + 2f), r.y, w, 22f);
+                    var antes = GUI.color;
+                    GUI.color = (int)_mosca.aparencia == i
+                        ? new Color(0.45f, 0.80f, 1.00f)
+                        : new Color(0.78f, 0.80f, 0.84f);
+                    if (GUI.Button(b, i == 0 ? "Cor do modelo" : "Cor realista"))
+                        _mosca.aparencia = (Aparencia)i;
+                    GUI.color = antes;
+                }
+            });
+            _pCorpo.Texto(_mosca.aparencia == Aparencia.Modelo
+                    ? "  cinza 0,5 -- a unica cor que o modelo carrega"
+                    : "  cor inventada por nos; nao codifica grandeza nenhuma",
+                _mono,
+                ProvenanceUtil.Color(_mosca.aparencia == Aparencia.Modelo
+                                     ? Provenance.Data : Provenance.Assumption));
             _pCorpo.Texto($"{_mosca.segmentosMontados} segmentos   " +
                           $"{_mosca.segmentosRecebidos} na pose", _mono);
         }

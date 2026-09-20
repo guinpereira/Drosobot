@@ -192,8 +192,20 @@ Saída em `docs/images/fly_bindpose_{perspectiva,lateral,topo,frente}.png`. A
 referência de comparação é o render do próprio MuJoCo pelo `mujoco.Renderer`, do
 mesmo modelo compilado.
 
-O facetado que aparece nas imagens é esperado: o OBJ leva só vértices e faces,
-sem normais, então a Unity calcula normais planas por face.
+O OBJ leva normais por vértice, calculadas na exportação por média das faces
+ponderada pela área. Sem elas a Unity deduz normais com um ângulo de suavização
+fixo e, como as malhas do NeuroMechFly são decimadas (~2.000 faces por peça), o
+resultado ficava facetado. A normal vem da **geometria**, não é aparência
+inventada — é a mesma superfície que a física usa, só sombreada direito.
+
+### Cor é outra coisa
+
+O modelo **não traz cor**: os 69 geoms têm `rgba` (0,5 0,5 0,5 1), cinza
+uniforme. O esquema realista das imagens (cutícula âmbar, olhos vermelhos, asas
+translúcidas) é invenção nossa, mora em `FlyAppearance.cs` e está marcado como
+ASSUMPTION no painel CORPO, que também tem o botão pra voltar ao cinza do
+modelo. Nenhuma dessas cores codifica grandeza: não há contato, ativação nem
+força sendo pintada no corpo.
 
 ## Eixos desenhados no modo Eixos
 
