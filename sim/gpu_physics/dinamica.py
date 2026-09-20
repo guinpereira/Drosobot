@@ -149,6 +149,12 @@ class MotorFisicoGPU:
             "qfrc_constraint": self.nv,
             "qacc_smooth": self.nv, "qacc": self.nv, "rhs": self.nv,
             "qacc_warmstart": self.nv,
+            # `mj_Euler` resolve uma aceleracao PROPRIA, com `M + h*D`, e a usa
+            # so para integrar; o `d.qacc` do MuJoCo continua sendo a do
+            # solver. Escrever a do Euler por cima faria o trace registrar a
+            # grandeza errada -- e foi assim que um diagnostico de
+            # estacionariedade leu 1e+02 onde havia 1e-13.
+            "qacc_euler": self.nv,
             "actuator_length": self.nu, "actuator_velocity": self.nu,
             "actuator_force": self.nu,
             # colisao: ranhuras fixas por par, depois compactadas em ordem
@@ -596,8 +602,8 @@ class MotorFisicoGPU:
                    (b["qfrc_smooth"], b["qfrc_constraint"], b["rhs"]))
         self._roda("solve_M", 1,
                    (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["qH"],
-                    b["qHDiagInv"], b["rhs"], b["qacc"]), 1)
-        self._roda("euler_qvel", self.nv, (self.dt, b["qacc"], b["qvel"]))
+                    b["qHDiagInv"], b["rhs"], b["qacc_euler"]), 1)
+        self._roda("euler_qvel", self.nv, (self.dt, b["qacc_euler"], b["qvel"]))
         self._roda("euler_qpos", self.njnt,
                    (self.dt, np.int32(self.njnt), b["jnt_type"],
                     b["jnt_qposadr"], b["jnt_dofadr"], b["qvel"], b["qpos"]))

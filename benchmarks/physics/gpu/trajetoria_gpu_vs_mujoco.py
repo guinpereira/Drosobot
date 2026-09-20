@@ -38,9 +38,13 @@ RAIZ = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "sim"))
 
-PASSOS = 200
+PASSOS = 1000
 ASSENTA = 200
 CADA = 1
+# Passos em que a ESTACIONARIEDADE do solver e conferida. Conferir em todos
+# custaria uma leitura da Jacobiana por passo, e o que interessa e se ela se
+# degrada ao longo da corrida -- nao o valor em cada um.
+MARCOS = (1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000)
 
 
 def _cena(arena="looming"):
@@ -65,6 +69,27 @@ def _contatos_gpu(con):
     return [{"geom": (int(con["geom"][i][0]), int(con["geom"][i][1])),
              "dist": float(con["dist"][i]), "pos": con["pos"][i]}
             for i in range(con["ncon"])]
+
+
+def _grad_gpu(g, m) -> float:
+    """
+    |grad| do objetivo no ponto que o solver devolveu.
+
+    `qacc` tem que ser o do SOLVER, nao o do Euler. O `mj_Euler` resolve uma
+    aceleracao propria com `M + h*D` e a usa so para integrar; escreve-la por
+    cima faria esta medida ler 1e+02 onde ha 1e-14.
+    """
+    nv, nefc = int(m.nv), int(g.le_int("nefc")[0])
+    if nefc == 0:
+        return 0.0
+    J = g.le("efc_J")[:nefc*nv].reshape(nefc, nv)
+    D = g.le("efc_D")[:nefc]
+    aref = g.le("efc_aref")[:nefc]
+    Md = g.le("Md").reshape(nv, nv)
+    qs = g.le("qacc_smooth")
+    a = g.le("qacc")
+    neg = np.minimum(J @ a - aref, 0.0)
+    return float(np.linalg.norm(Md @ (a - qs) + J.T @ (D * neg)))
 
 
 def _qualidade(g, d, m):
@@ -145,8 +170,11 @@ def main() -> int:
                    qfrc_constraint=d.qfrc_constraint)
         eq = float(np.abs(gq - np.asarray(d.qpos)).max())
         ev = float(np.abs(gv - np.asarray(d.qvel)).max())
-        por_passo.append({"passo": k, "dqpos": eq, "dqvel": ev,
-                          "ncon_gpu": con["ncon"], "ncon_mj": int(d.ncon)})
+        reg = {"passo": k, "dqpos": eq, "dqvel": ev,
+               "ncon_gpu": con["ncon"], "ncon_mj": int(d.ncon)}
+        if k in MARCOS:
+            reg["grad_gpu"] = _grad_gpu(g, m)
+        por_passo.append(reg)
     t_mj.fecha()
     t_gpu.fecha()
 
@@ -177,7 +205,7 @@ def main() -> int:
         "mujoco": mj.__version__,
         "passos": PASSOS,
         "hash_modelo": mod.hash_modelo,
-        "por_passo": por_passo[:5] + por_passo[9::10],
+        "por_passo": [x for x in por_passo if x["passo"] in MARCOS],
         "primeira_divergencia": div,
         "qualidade_no_estado_inicial": qualidade,
         "latencia_um_mundo": {
@@ -191,10 +219,12 @@ def main() -> int:
     dest = RAIZ / "benchmarks" / "physics" / "gpu" / "trajetoria_gpu_vs_mujoco.json"
     dest.write_text(json.dumps(r, indent=1), encoding="utf-8")
 
-    print(f"  passo   dqpos      dqvel      ncon")
-    for x in por_passo[:3] + por_passo[4::20]:
+    print(f"  passo   dqpos      dqvel      ncon   |grad| GPU")
+    for x in por_passo:
+        if x["passo"] not in MARCOS:
+            continue
         print(f"  {x['passo']:>5}   {x['dqpos']:.3e}  {x['dqvel']:.3e}  "
-              f"{x['ncon_gpu']}/{x['ncon_mj']}")
+              f"{x['ncon_gpu']:>2}/{x['ncon_mj']:<2}   {x.get('grad_gpu', 0):.2e}")
     print(f"\n  primeira divergencia: {div}")
     if qualidade:
         q = qualidade

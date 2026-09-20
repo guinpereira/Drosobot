@@ -482,6 +482,18 @@ MuJoCo      1,394733e+09    5,0e+01
 mínimo nesse passo — com `solref[0] = 2e-4` e `dt = 1e-4` a restrição é muito
 rígida, e a busca de linha dele estagna.
 
+Ao longo de **1000 passos**, o ponto da GPU permanece estacionário em todos os
+marcos conferidos — `|grad|` entre 7e-14 e 1,3e-13, sem degradação, inclusive
+com warm start. A divergência de trajetória cresce devagar e `ncon` acompanha:
+
+```
+passo    dqpos      dqvel     ncon g/mj   |grad| GPU
+    2   5,4e-05   3,5e-01    12/12       9,4e-14
+   10   6,8e-04   1,0e+00    12/12       1,1e-13
+  100   1,1e-02   1,1e+00    12/12       9,1e-14
+ 1000   5,6e-02   3,9e-01    14/12       7,6e-14
+```
+
 Consequência prática: as trajetórias coincidem a 1e-13 enquanto os dois solvers
 concordam e separam quando não concordam mais. Com adesão desligada isso são
 dois passos a 1e-16/1e-13; com adesão ligada, a separação começa no primeiro
