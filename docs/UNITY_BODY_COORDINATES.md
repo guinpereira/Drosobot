@@ -204,15 +204,21 @@ O modelo que a física roda **não traz cor**: os 69 geoms têm `rgba`
 (0,5 0,5 0,5 1) e `matid = -1` — o modelo inteiro tem `nmat = 1`, e esse
 material é o `grid` do chão da arena.
 
-Os valores usados em `FlyAppearance.cs` não são inventados: são a paleta do
-modelo `flybody` que vem no mesmo pacote de assets do FlyGym
-(`flygym/assets/model/flybody/fruitfly.xml`), autorada com material por região —
-`body`, `lower`, `brown`, `membrane`, `red`, `bristle-brown`.
+Há três esquemas, e o painel CORPO diz qual está ligado e de onde ele veio:
 
-A **atribuição** é nossa e é ASSUMPTION: o `fruitfly.xml` divide o corpo em
-outros geoms (28 com material) e não casa um a um com os nossos 68 segmentos,
-então o mapeamento é por anatomia. O painel CORPO diz qual esquema está ligado e
-com que procedência, e tem `[Clay]` pra voltar ao cinza do modelo.
+| esquema | origem | procedência |
+|---|---|---|
+| **Clay** | o cinza 0,5 que o modelo carrega | DATA |
+| **Flybody** | valores de `flygym/assets/model/flybody/fruitfly.xml` (`body`, `lower`, `brown`, `membrane`, `red`), atribuídos por anatomia | ASSUMPTION |
+| **Drosophila** | escolhido a olho pra leitura no fundo escuro | ASSUMPTION |
+
+O Flybody fica ao lado do Drosophila de propósito: é o único com origem
+rastreável, e apagá-lo pra deixar só o que "parece melhor" jogaria fora a única
+referência externa que existe.
+
+Os dois esquemas de cor compartilham a mesma **estrutura**: banda do abdômen e
+escurecimento distal das pernas são derivados das cores base, não listados um a
+um. Só a cor muda.
 
 Nenhuma dessas cores codifica grandeza: não há contato, ativação nem força sendo
 pintada no corpo.

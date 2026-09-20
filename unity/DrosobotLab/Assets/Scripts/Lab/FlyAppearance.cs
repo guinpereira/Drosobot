@@ -1,28 +1,29 @@
 // Cor e material da mosca na tela.
 //
-// ## De onde vem a cor, e o que e nosso
+// ## O modelo nao traz cor
 //
-// O modelo que a FISICA roda nao tem cor: os 69 geoms do NeuroMechFly saem do
-// compilador com `rgba` (0,5 0,5 0,5 1) e `matid = -1`. Verificado, nao
-// suposto -- `nmat = 1` no modelo inteiro, e esse material e o `grid` do chao
-// da arena.
+// O modelo que a FISICA roda sai do compilador sem material nenhum: `nmat = 1`
+// no modelo inteiro, e esse material e o `grid` do chao da arena. Os 69 geoms
+// tem `matid = -1` e `rgba` (0,5 0,5 0,5 1). Verificado, nao suposto.
 //
-// Os VALORES usados aqui nao sao inventados por nos: sao a paleta do modelo
-// `flybody` que vem no mesmo pacote de assets do FlyGym
-// (`flygym/assets/model/flybody/fruitfly.xml`, Vaxenburg et al.), que e um
-// modelo de Drosophila autorado com material por regiao.
+// Entao toda cor daqui e escolha de apresentacao, e o painel CORPO diz qual
+// esquema esta ligado e de onde ele veio. Sao tres:
 //
-// A ATRIBUICAO e nossa. O `fruitfly.xml` divide o corpo em outros geoms
-// (`thorax_black`, `head_red`, `wing_left_membrane`...), 28 com material, e nao
-// da pra casar um a um com os nossos 69 segmentos. Entao mapeamos por anatomia,
-// e isso e ASSUMPTION -- fica dito no painel CORPO.
+//   Clay        o cinza 0,5 que o modelo de fato carrega. DATA.
+//   Flybody     paleta do modelo `flybody` que vem no mesmo pacote de assets
+//               do FlyGym (assets/model/flybody/fruitfly.xml, Vaxenburg et
+//               al.), autorada com material por regiao. Os VALORES vem de la;
+//               a atribuicao aos nossos segmentos e nossa.
+//   Drosophila  paleta escolhida a olho pra leitura no fundo escuro do Lab.
+//               Nao tem procedencia de medicao nenhuma.
+//
+// Os dois esquemas de cor ficam lado a lado de proposito. O Flybody e o unico
+// com origem rastreavel, e apagar ele pra deixar so o que "parece melhor"
+// jogaria fora a unica referencia externa que existe.
 //
 // Nenhuma cor aqui codifica grandeza. Nao ha contato, ativacao nem forca sendo
 // pintada no corpo. Se um dia houver, tem que ser em outro canal visual e
 // rotulado como tal, senao vira grafico disfarcado de foto.
-//
-// A geometria continua sendo a do modelo compilado que a fisica roda. So o que
-// reflete luz e escolha nossa.
 //
 // ## O que NAO da pra fazer com este modelo
 //
@@ -42,30 +43,86 @@ namespace Drosobot.Lab
         /// depuracao: sem cor competindo, forma e pose ficam mais legiveis.
         /// </summary>
         Clay,
-        /// <summary>Paleta do flybody, atribuida por anatomia.</summary>
-        Realista,
+        /// <summary>Valores da paleta do flybody, atribuidos por anatomia.</summary>
+        Flybody,
+        /// <summary>Paleta escolhida a olho pra leitura no fundo escuro.</summary>
+        Drosophila,
     }
 
     public static class FlyAppearance
     {
-        // ------------------------------------------------- paleta do flybody
-        //
-        // Copiada de flygym/assets/model/flybody/fruitfly.xml. Os nomes sao os
-        // de la, de proposito, pra dar pra conferir linha a linha.
-        private static readonly Color Body = Rgb(0.674f, 0.350f, 0.143f);
-        private static readonly Color Lower = Rgb(0.799f, 0.610f, 0.386f);
-        private static readonly Color Brown = Rgb(0.202f, 0.0782f, 0.0262f);
-        private static readonly Color Bristle = Rgb(0.06f, 0.04f, 0.03f);
-        private static readonly Color Membrana = new Color(0.539f, 0.686f, 0.800f, 0.30f);
+        /// <summary>
+        /// As cores base de um esquema. So as BASE: banda do abdomen e
+        /// escurecimento distal das pernas sao derivados delas, nao listados um
+        /// a um -- assim os dois esquemas ganham a mesma estrutura anatomica e
+        /// so a cor muda.
+        /// </summary>
+        private struct Paleta
+        {
+            public Color cuticula;   // cabeca, rostro, o que nao tem regra propria
+            public Color torax;
+            public Color abdomen;    // BASE do abdomen; a banda sai daqui
+            public Color perna;      // femur/tibia/coxa; o tarso escurece
+            public Color olho;
+            public Color asa;        // com alfa
+            public Color haltere;
+        }
+
+        // Paleta do flybody: flygym/assets/model/flybody/fruitfly.xml. Os nomes
+        // de la ficam no comentario pra dar pra conferir linha a linha.
+        private static readonly Paleta DoFlybody = new Paleta
+        {
+            cuticula = Rgb(0.674f, 0.350f, 0.143f),                  // body
+            torax = Color.Lerp(Rgb(0.674f, 0.350f, 0.143f),
+                               Rgb(0.799f, 0.610f, 0.386f), 0.25f),  // body -> lower
+            abdomen = Rgb(0.799f, 0.610f, 0.386f),                   // lower
+            perna = Color.Lerp(Rgb(0.674f, 0.350f, 0.143f),
+                               Rgb(0.202f, 0.0782f, 0.0262f), 0.25f), // body -> brown
+            // o `red` de la e (0,8 0,028 0,0015): saturado demais, fica neon no
+            // fundo escuro. Escurecido 45% pro `brown` da mesma paleta.
+            olho = Color.Lerp(Rgb(0.800f, 0.0279f, 0.00154f),
+                              Rgb(0.202f, 0.0782f, 0.0262f), 0.45f),
+            asa = new Color(0.539f, 0.686f, 0.800f, 0.30f),          // membrane
+            haltere = Rgb(0.799f, 0.610f, 0.386f),                   // lower
+        };
+
+        // Paleta Drosophila: tons claros de cuticula, olho tijolo, asa quase
+        // incolor. Mais clara que a do flybody, que no fundo escuro do Lab
+        // tende a fechar. Escolhida a olho.
+        private static readonly Paleta DeDrosophila = new Paleta
+        {
+            cuticula = Rgb(0.78f, 0.56f, 0.31f),   // #C68E4F
+            torax = Rgb(0.78f, 0.56f, 0.31f),      // #C68E4F
+            abdomen = Rgb(0.87f, 0.70f, 0.44f),    // #DEB887
+            perna = Rgb(0.93f, 0.86f, 0.51f),      // #EEDC82
+            olho = Rgb(0.65f, 0.11f, 0.11f),       // #A61C1C
+            asa = new Color(0.92f, 0.94f, 0.95f, 0.30f),  // #EAF0F1
+            haltere = Rgb(0.93f, 0.86f, 0.51f),
+        };
+
+        // Para onde as partes escuras puxam: cerdas, tarsos, banda posterior do
+        // abdomen. Um so, pros dois esquemas, pra que a estrutura seja a mesma.
+        private static readonly Color Escuro = Rgb(0.10f, 0.05f, 0.03f);
         private static readonly Color Neutro = new Color(0.5f, 0.5f, 0.5f);
 
-        // O `red` do flybody e (0,8 0,028 0,0015): saturado demais, fica neon
-        // no fundo escuro do Lab. Escurecido pra vinho, 45% na direcao do
-        // `brown` da mesma paleta. Este ajuste e nosso.
-        private static readonly Color Olho =
-            Color.Lerp(Rgb(0.800f, 0.0279f, 0.00154f), Rgb(0.202f, 0.0782f, 0.0262f), 0.45f);
-
         private static Color Rgb(float r, float g, float b) => new Color(r, g, b, 1f);
+
+        private static Paleta Escolhe(Aparencia modo)
+            => modo == Aparencia.Flybody ? DoFlybody : DeDrosophila;
+
+        /// <summary>De onde veio a cor deste esquema, pro painel dizer.</summary>
+        public static string Procedencia(Aparencia modo)
+        {
+            switch (modo)
+            {
+                case Aparencia.Clay:
+                    return "cinza 0,5 -- a unica cor que o modelo carrega";
+                case Aparencia.Flybody:
+                    return "valores do flybody (assets do FlyGym); atribuicao nossa";
+                default:
+                    return "escolhida a olho; sem procedencia de medicao";
+            }
+        }
 
         /// <summary>
         /// Em que categoria visual cai um segmento. Publico pra que quem pinta
@@ -112,56 +169,56 @@ namespace Drosobot.Lab
                 return m;
             }
 
+            var p = Escolhe(modo);
             string cat = Categoria(segmento);
 
             if (cat == "olho")
             {
-                // olho composto: liso, um pouco mais brilhante que a cuticula.
-                // E o que mais denuncia uma mosca de verdade numa imagem.
-                Ajusta(m, Olho, 0.55f);
+                // olho composto: liso, mais brilhante que a cuticula. E o que
+                // mais denuncia uma mosca de verdade numa imagem.
+                Ajusta(m, p.olho, 0.78f);
             }
             else if (cat == "asa")
             {
-                // membrana: quase transparente e com brilho especular alto, que
-                // e o que da a leitura de "fina" sem nervura nenhuma
-                Ajusta(m, Membrana, 0.80f);
+                // membrana: quase transparente e com especular alto, que e o
+                // que da a leitura de "fina" sem nervura nenhuma
+                Ajusta(m, p.asa, 0.88f);
                 Transparente(m);
             }
             else if (cat == "haltere")
             {
-                Ajusta(m, Lower, 0.35f);
+                Ajusta(m, p.haltere, 0.35f);
             }
             else if (cat == "cerda")
             {
-                Ajusta(m, Bristle, 0.10f);   // fosca de proposito
+                Ajusta(m, Escuro, 0.10f);    // fosca de proposito
             }
             else if (cat == "tarso")
             {
                 // extremidade mais escura: e assim na mosca e ajuda a leitura
                 // de onde a perna termina contra o chao escuro
-                Ajusta(m, Color.Lerp(Body, Brown, 0.55f), 0.30f);
+                Ajusta(m, Color.Lerp(p.perna, Escuro, 0.35f), 0.30f);
             }
             else if (cat == "perna")
             {
-                Ajusta(m, Color.Lerp(Body, Brown, 0.25f), 0.28f);
+                Ajusta(m, p.perna, 0.22f);
             }
             else if (cat.StartsWith("abdomen"))
             {
                 // Banda do abdomen. Cada terguito escurece em direcao ao
-                // posterior, do `lower` ao `brown` da paleta. Os limites das
-                // faixas sao as juntas reais entre os corpos do modelo.
+                // posterior. Os limites das faixas sao as juntas reais entre os
+                // corpos do modelo, entao a faixa sai da geometria.
                 int i = cat.Length > 7 ? cat[7] - '0' : 2;
                 float t = Mathf.InverseLerp(2f, 6f, i);
-                Ajusta(m, Color.Lerp(Lower, Color.Lerp(Body, Brown, 0.5f), t), 0.30f);
+                Ajusta(m, Color.Lerp(p.abdomen, Escuro, 0.42f * t), 0.30f);
             }
             else if (cat == "torax")
             {
-                // torax um tom mais quente que o resto
-                Ajusta(m, Color.Lerp(Body, Lower, 0.25f), 0.38f);
+                Ajusta(m, p.torax, 0.38f);
             }
             else
             {
-                Ajusta(m, Body, 0.30f);      // cabeca, rostro, o resto
+                Ajusta(m, p.cuticula, 0.30f);   // cabeca, rostro, o resto
             }
             return m;
         }

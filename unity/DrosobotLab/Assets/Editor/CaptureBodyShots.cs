@@ -83,7 +83,12 @@ namespace Drosobot.EditorTools
             Tira(cam, mosca, b, -40f, 22f, "fly_clay_perspectiva");
             Tira(cam, mosca, b, 0f, 0f, "fly_clay_lateral");
 
-            mosca.aparencia = Aparencia.Realista;
+            mosca.aparencia = Aparencia.Flybody;
+            mosca.AplicaAparencia();
+            Tira(cam, mosca, b, -40f, 22f, "fly_flybody_perspectiva");
+            Tira(cam, mosca, b, 0f, 0f, "fly_flybody_lateral");
+
+            mosca.aparencia = Aparencia.Drosophila;
             mosca.AplicaAparencia();
             Tira(cam, mosca, b, -40f, 22f, "fly_bindpose_perspectiva");
             Tira(cam, mosca, b, 0f, 0f, "fly_bindpose_lateral");

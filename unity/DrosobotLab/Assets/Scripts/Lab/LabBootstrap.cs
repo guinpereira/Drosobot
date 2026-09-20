@@ -677,6 +677,8 @@ namespace Drosobot.Lab
             { "Normal", "Bind Pose", "Eixos", "Rotulos" };
         private static readonly string[] RotulosVista =
             { "Persp", "Lado", "Topo", "Frente" };
+        private static readonly string[] RotulosCor =
+            { "Clay", "Flybody", "Drosophila" };
 
         private void MontaCorpo()
         {
@@ -796,23 +798,22 @@ namespace Drosobot.Lab
             _pCorpo.Espacador();
             _pCorpo.Desenho(24f, r =>
             {
-                float w = (r.width - 2f) / 2f;
-                for (int i = 0; i < 2; i++)
+                float w = (r.width - 4f) / 3f;
+                for (int i = 0; i < RotulosCor.Length; i++)
                 {
                     var b = new Rect(r.x + i * (w + 2f), r.y, w, 22f);
                     var antes = GUI.color;
                     GUI.color = (int)_mosca.aparencia == i
                         ? new Color(0.45f, 0.80f, 1.00f)
                         : new Color(0.78f, 0.80f, 0.84f);
-                    if (GUI.Button(b, i == 0 ? "Clay" : "Realista"))
+                    if (GUI.Button(b, RotulosCor[i]))
                         _mosca.aparencia = (Aparencia)i;
                     GUI.color = antes;
                 }
             });
-            _pCorpo.Texto(_mosca.aparencia == Aparencia.Clay
-                    ? "  cinza 0,5 -- a unica cor que o modelo carrega"
-                    : "  paleta do flybody; atribuicao por anatomia e nossa",
-                _mono,
+            // Clay e a unica cor que o modelo carrega de verdade; os outros
+            // dois sao apresentacao, e o painel diz de onde cada um veio.
+            _pCorpo.Texto("  " + FlyAppearance.Procedencia(_mosca.aparencia), _mono,
                 ProvenanceUtil.Color(_mosca.aparencia == Aparencia.Clay
                                      ? Provenance.Data : Provenance.Assumption));
             _pCorpo.Texto($"{_mosca.segmentosMontados} segmentos   " +

@@ -61,7 +61,7 @@ namespace Drosobot.Lab
         public float tamanhoEixo = 0.35f;
         [Tooltip("Esquema de cor. O modelo NAO traz cor -- os 69 geoms sao " +
                  "cinza 0,5. Ver FlyAppearance.cs.")]
-        public Aparencia aparencia = Aparencia.Realista;
+        public Aparencia aparencia = Aparencia.Drosophila;
 
         private class Seg
         {
