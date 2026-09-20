@@ -1,0 +1,66 @@
+{
+ "gerado_em": "2026-09-20T20:30:03",
+ "etapas": {
+  "cinematica": {
+   "parede_us": 48.7,
+   "eventos_us": 25.2
+  },
+  "arvore (com_pos+massa+com_vel)": {
+   "parede_us": 305.3,
+   "eventos_us": 150.9
+  },
+  "com_pos": {
+   "parede_us": 31.8,
+   "eventos_us": 8.5
+  },
+  "massa (CRB + factor_M)": {
+   "parede_us": 102.4,
+   "eventos_us": 49.8
+  },
+  "com_vel": {
+   "parede_us": 24.7,
+   "eventos_us": 6.9
+  },
+  "colisao": {
+   "parede_us": 79.6,
+   "eventos_us": 12.1
+  },
+  "restricoes": {
+   "parede_us": 44.6,
+   "eventos_us": 16.8
+  },
+  "bias (RNE)": {
+   "parede_us": 50.3,
+   "eventos_us": 20.9
+  },
+  "forcas (passivo+atuacao+adesao)": {
+   "parede_us": 45.2,
+   "eventos_us": 16.6
+  },
+  "smooth (solve_M)": {
+   "parede_us": 83.4,
+   "eventos_us": 44.9
+  },
+  "solver (Newton)": {
+   "parede_us": 48.0,
+   "eventos_us": 19.5
+  },
+  "euler (factor+solve+integra)": {
+   "parede_us": 155.0,
+   "eventos_us": 82.5
+  }
+ },
+ "passo": {
+  "passo fundido (15 despachos)": {
+   "parede_us": 862.6,
+   "eventos_us": 362.4,
+   "lacuna_us": 500.2
+  },
+  "passo em grupos (6 despachos)": {
+   "parede_us": 1501.5,
+   "eventos_us": 802.3,
+   "lacuna_us": 699.2
+  }
+ },
+ "mujoco_cpu_us": 167.8
+}

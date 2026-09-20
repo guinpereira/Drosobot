@@ -120,6 +120,13 @@ class MotorFisicoGPU:
 
         self._agenda()
 
+        # CSR SIMETRICO da matriz de massa: padrao estatico, valores lidos por
+        # mapa a cada passo. E o que permite multiplicar por M sem densificar.
+        sym = estrutura.massa_simetrica(mod)
+        for nome in ("rownnz", "rowadr", "colind", "mapa"):
+            self.b["Ms_" + nome] = d.sobe(sym[nome])
+        self.ms_nnz = int(sym["nnz"])
+
         # --- estado de entrada -------------------------------------------
         self.tam = {}
         for nome, n in (("qpos", self.nq), ("qvel", self.nv), ("ctrl", self.nu),
@@ -180,6 +187,7 @@ class MotorFisicoGPU:
             "efc_aref": max(1, self.nefc_max),
             "efc_force": max(1, self.nefc_max),
             "efc_jar": max(1, self.nefc_max),
+            "efc_Jv": max(1, self.nefc_max),
             # M densa: o Hessiano `M + J'DJ` preenche tudo, entao nao ha
             # esparsidade a preservar dentro do solver
             "Md": self.nv * self.nv,
@@ -227,10 +235,12 @@ class MotorFisicoGPU:
                       "contato_quadro", "contato_jacobiana",
                       "restricao_impedancia", "restricao_aref",
                       "contato_enderecos", "adesao_momento", "adesao_projeta",
-                      "M_densa", "M_simetriza", "solver_newton",
+                      "M_densa", "M_simetriza", "M_densa_simetrica",
+                      "solver_newton", "solver_newton_rapido",
                       "com_pos_fundido", "massa_fundida", "com_vel_fundido",
                       "bias_fundido", "forcas_fundidas", "restricoes_fundidas",
-                      "smooth_fundido", "euler_fundido")}
+                      "smooth_fundido", "euler_fundido",
+                      "grupo_arvore", "grupo_restricoes")}
         self.usa_registradores = self.grupo >= max(self.nbody, self.ngeom)
         # Argumentos ja ligados, por kernel. Ver `_chave`.
         self._args_ligados: dict[str, tuple] = {}
@@ -469,10 +479,8 @@ class MotorFisicoGPU:
         dois convergem para ela. Ver o cabecalho de `kernels/solver.cl`.
         """
         b = self.b
-        self._roda("M_densa", self.nv,
-                   (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["M"],
-                    b["Md"]))
-        self._roda("M_simetriza", self.nv, (b["Md"],))
+        self._f("M_densa_simetrica",
+                (b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["M"], b["Md"]))
         self._roda("solver_newton", self.grupo,
                    (b["nefc"], b["efc_J"], b["efc_D"], b["efc_aref"], b["Md"],
                     b["qacc_smooth"], self.real(self.tolerancia),
@@ -481,6 +489,24 @@ class MotorFisicoGPU:
                     b["qacc"], b["efc_force"],
                     b["qfrc_constraint"], b["efc_jar"], b["solver_iters"]),
                    self.grupo)
+
+    def solver_rapido(self) -> None:
+        """
+        O mesmo Newton, sem densificar M e com busca de linha em O(nefc).
+
+        Ver `kernels/solver.cl`. O caminho de referencia (`solver`) continua
+        existindo: ele densifica, evalua o custo cheio a cada tentativa de
+        `alpha` e e o oraculo quando este divergir.
+        """
+        b = self.b
+        self._f("solver_newton_rapido",
+                (b["nefc"], b["efc_J"], b["efc_D"], b["efc_aref"],
+                 b["Ms_rownnz"], b["Ms_rowadr"], b["Ms_colind"], b["Ms_mapa"],
+                 b["M"], b["qacc_smooth"], self.real(self.tolerancia),
+                 self.real(self.meaninertia), b["qacc_warmstart"],
+                 np.int32(1 if self.warmstart else 0), b["qacc"],
+                 b["efc_force"], b["qfrc_constraint"], b["efc_jar"],
+                 b["efc_Jv"], b["solver_iters"]))
 
     def restricoes(self) -> None:
         """
@@ -746,6 +772,107 @@ class MotorFisicoGPU:
                  b["jnt_dofadr"], b["qH_in"], b["qH"], b["qHDiagInv"],
                  b["rhs"], b["qacc_euler"], b["qvel"], b["qpos"]))
 
+    def grupo_arvore_f(self) -> None:
+        b = self.b
+        self._f("grupo_arvore",
+                (np.int32(self.profundidade), np.int32(self.njnt),
+                 b["pais"], b["pais_adr"], b["pais_num"], b["filhos_adr"],
+                 b["filhos_num"], b["filhos"], b["nivel_de"],
+                 b["nivel_corpos"], b["nivel_adr"], b["nivel_num"],
+                 b["xipos"], b["body_mass"], b["body_subtreemass"],
+                 b["body_rootid"], b["body_inertia"], b["ximat"],
+                 b["jnt_type"], b["jnt_dofadr"], b["jnt_bodyid"], b["xmat"],
+                 b["xanchor"], b["xaxis"],
+                 b["M_rownnz"], b["M_rowadr"], b["M_colind"],
+                 b["dof_parentid"], b["dof_bodyid"], b["dof_armature"],
+                 b["body_parentid"], b["body_dofadr"], b["body_dofnum"],
+                 b["body_jntadr"], b["dof_jntid"], b["qvel"],
+                 b["subtree_com"], b["cinert"], b["cdof"], b["crb"], b["M"],
+                 b["qLD"], b["qLDiagInv"], b["cvel"], b["cdof_dot"]))
+
+    def grupo_restricoes_f(self) -> None:
+        b = self.b
+        self._f("grupo_restricoes",
+                (np.int32(self.npair), np.int32(self.njnt), np.int32(self.nu),
+                 self.real(self.mod.opcoes["impratio"]),
+                 np.int32(self.profundidade),
+                 b["pair_geom1"], b["pair_geom2"], b["geom_dataid"],
+                 b["geom_rbound"], b["geom_xpos"], b["geom_xmat"],
+                 b["pair_margin"], b["pair_gap"], b["mesh_vertadr"],
+                 b["mesh_vert"], b["mesh_graphadr"], b["mesh_graph"],
+                 b["vert_local"], b["sup_vert"], b["sup_dist"],
+                 b["pair_friction"], b["pair_solref"], b["pair_solimp"],
+                 b["geom_bodyid"], b["body_rootid"], b["body_weldid"],
+                 b["body_dofadr"], b["body_dofnum"], b["dof_parentid"],
+                 b["body_invweight0"], b["subtree_com"], b["cdof"], b["qvel"],
+                 b["nivel_corpos"], b["nivel_adr"], b["nivel_num"], b["pais"],
+                 b["pais_adr"], b["pais_num"], b["filhos_adr"],
+                 b["filhos_num"], b["filhos"], b["nivel_de"],
+                 b["body_parentid"], b["dof_bodyid"], b["cdof_dot"],
+                 b["cinert"], b["cvel"],
+                 b["dof_damping"], b["jnt_type"], b["jnt_qposadr"],
+                 b["jnt_dofadr"], b["jnt_stiffness"], b["qpos"],
+                 b["qpos_spring"],
+                 b["actuator_trntype"], b["actuator_trnid"],
+                 b["actuator_biastype"], b["actuator_gainprm"],
+                 b["actuator_biasprm"], b["actuator_gear"],
+                 b["actuator_ctrlrange"], b["actuator_ctrllimited"],
+                 b["actuator_forcerange"], b["actuator_forcelimited"],
+                 b["ctrl"], b["qfrc_applied"],
+                 b["M_rownnz"], b["M_rowadr"], b["M_colind"], b["qLD"],
+                 b["qLDiagInv"],
+                 b["n_por_par"], b["con_dist_bruto"], b["con_pos_bruto"],
+                 b["con_normal_bruto"], b["con_dist"], b["con_pos"],
+                 b["con_normal"], b["con_geom"], b["con_pair"], b["ncon"],
+                 b["con_frame"], b["con_includemargin"], b["con_exclude"],
+                 b["con_efcadr"], b["nefc"], b["efc_J"], b["efc_pos"],
+                 b["efc_margin"], b["efc_id"], b["efc_diagApprox"], b["efc_R"],
+                 b["efc_D"], b["efc_KBIP"], b["con_mu"], b["efc_vel"],
+                 b["efc_aref"], b["cacc"], b["cfrc_body"], b["qfrc_bias"],
+                 b["qfrc_passive"], b["actuator_length"],
+                 b["actuator_velocity"], b["actuator_force"],
+                 b["qfrc_actuator"], b["ades_momento"], b["ades_conta"],
+                 b["qfrc_smooth"], b["qacc_smooth"]))
+
+    def _suporte(self) -> None:
+        """
+        Ponto de suporte por par: um work-group POR PAR.
+
+        E a unica etapa que nao cabe no agrupamento. Sao 55 pares varrendo ~1000
+        vertices cada; trazer isso para um grupo so trocaria uma lacuna de
+        despacho por uma varredura serializada.
+        """
+        b = self.b
+        gr = min(256, self.grupo)
+        self.dev.roda(self.k["suporte_plano_malha"], self.npair * gr, gr,
+                      (np.int32(self.npair), b["pair_geom1"], b["pair_geom2"],
+                       b["geom_type"], b["geom_dataid"], b["geom_xpos"],
+                       b["geom_xmat"], b["geom_rbound"], b["pair_margin"],
+                       b["mesh_vertadr"], b["mesh_vertnum"], b["mesh_vert"],
+                       b["sup_vert"], b["sup_dist"]))
+
+    def passo_grupos(self, esperar: bool = True) -> None:
+        """
+        O passo em SEIS despachos, contra 15 do `passo_fundido`.
+
+        Medido antes desta rodada: 15 despachos, 1450 us pipelinado, dos quais
+        os eventos de GPU somam ~690 us. Os ~760 us restantes sao lacuna entre
+        kernels -- ~51 us cada, contra 4 us de um kernel trivial dependente.
+        Um kernel de um work-group com secoes seriais longas nao se sobrepoe ao
+        seguinte, e a placa drena o pipeline entre os dois.
+
+        Mesma fisica: os grupos chamam os mesmos `..._um`.
+        """
+        self._zera_raizes()
+        self.cinematica()
+        self.grupo_arvore_f()
+        self._suporte()
+        self.grupo_restricoes_f()
+        self.solver_rapido()
+        self.euler_f()
+        if esperar:
+            self.dev.espera()
+
     def passo_fundido(self, esperar: bool = True) -> None:
         """
         O passo completo em 13 despachos, contra 80 do caminho por estagio.
@@ -768,7 +895,7 @@ class MotorFisicoGPU:
         self.bias_f()
         self.forcas_f()
         self.smooth_f()
-        self.solver()
+        self.solver_rapido()
         self.euler_f()
         if esperar:
             self.dev.espera()

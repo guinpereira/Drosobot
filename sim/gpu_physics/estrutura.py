@@ -107,6 +107,55 @@ def _cadeias(dof_parentid: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarr
     return adr, num, (np.concatenate(cadeias) if nv else np.zeros(0, np.int32))
 
 
+def massa_simetrica(mod) -> dict:
+    """
+    Padrao de esparsidade da matriz de massa INTEIRA, nao so do triangulo.
+
+    O MuJoCo guarda `M` em CSR triangular inferior: a linha `i` tem a cadeia de
+    `i` ate a raiz. Isso basta para fatorar, e nao basta para MULTIPLICAR: o
+    produto `M x` precisa tambem das entradas acima da diagonal, que sao as
+    linhas dos descendentes de `i`.
+
+    A saida e um CSR simetrico com um mapa de cada posicao para a posicao
+    correspondente no CSR triangular. O PADRAO e estatico -- depende so da
+    arvore -- entao ele e montado uma vez, no setup, e por passo so os VALORES
+    sao copiados pelo mapa.
+
+    Sem isso, multiplicar por M obriga a densificar: `nv x nv` em memoria
+    global. Medido, essa densificacao custava 170 us por passo, contra ~1554
+    entradas do caminho esparso.
+    """
+    rownnz = np.asarray(mod.arrays["M_rownnz"], dtype=np.int64)
+    rowadr = np.asarray(mod.arrays["M_rowadr"], dtype=np.int64)
+    colind = np.asarray(mod.arrays["M_colind"], dtype=np.int64)
+    nv = int(mod.dims["nv"])
+
+    linhas = [[] for _ in range(nv)]          # (coluna, slot no CSR triangular)
+    for i in range(nv):
+        a0, n = int(rowadr[i]), int(rownnz[i])
+        for k in range(n):
+            j = int(colind[a0 + k])
+            linhas[i].append((j, a0 + k))
+            if j != i:
+                linhas[j].append((i, a0 + k))   # espelho, mesmo valor
+
+    adr, num, cols, mapa = [], [], [], []
+    for i in range(nv):
+        linhas[i].sort()
+        adr.append(len(cols))
+        num.append(len(linhas[i]))
+        for j, slot in linhas[i]:
+            cols.append(j)
+            mapa.append(slot)
+    return {
+        "rownnz": np.asarray(num, dtype=np.int32),
+        "rowadr": np.asarray(adr, dtype=np.int32),
+        "colind": np.asarray(cols, dtype=np.int32),
+        "mapa": np.asarray(mapa, dtype=np.int32),
+        "nnz": len(cols),
+    }
+
+
 def constroi(mod) -> Arvore:
     """Agenda de percurso a partir de um `ModeloGPU`."""
     parentid = np.asarray(mod.arrays["body_parentid"], dtype=np.int32)

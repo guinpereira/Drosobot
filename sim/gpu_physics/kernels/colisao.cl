@@ -157,20 +157,27 @@ __kernel void suporte_plano_malha(
 
 // Uma thread por par. O trabalho e a varredura dos vizinhos do vertice de
 // suporte -- algumas dezenas de leituras, sem paralelismo util dentro.
-__kernel void contatos_plano_malha(
+static void contatos_plano_malha_um(int p,
     const int npair,
-    __global const int* pair_geom1, __global const int* pair_geom2,
-    __global const int* geom_dataid, __global const real* geom_rbound,
-    __global const real* geom_xpos, __global const real* geom_xmat,
+    __global const int* pair_geom1,
+    __global const int* pair_geom2,
+    __global const int* geom_dataid,
+    __global const real* geom_rbound,
+    __global const real* geom_xpos,
+    __global const real* geom_xmat,
     __global const real* pair_margin,
-    __global const int* mesh_vertadr, __global const float* mesh_vert,
-    __global const int* mesh_graphadr, __global const int* mesh_graph,
+    __global const int* mesh_vertadr,
+    __global const float* mesh_vert,
+    __global const int* mesh_graphadr,
+    __global const int* mesh_graph,
     __global const int* vert_local,
-    __global const int* sup_vert, __global const real* sup_dist,
-    __global int* n_por_par, __global real* con_dist, __global real* con_pos,
+    __global const int* sup_vert,
+    __global const real* sup_dist,
+    __global int* n_por_par,
+    __global real* con_dist,
+    __global real* con_pos,
     __global real* con_normal)
 {
-    int p = get_global_id(0);
     if (p >= npair) return;
     n_por_par[p] = 0;
 
@@ -251,18 +258,49 @@ __kernel void contatos_plano_malha(
     n_por_par[p] = count;
 }
 
+__kernel void contatos_plano_malha(
+    const int npair,
+    __global const int* pair_geom1,
+    __global const int* pair_geom2,
+    __global const int* geom_dataid,
+    __global const real* geom_rbound,
+    __global const real* geom_xpos,
+    __global const real* geom_xmat,
+    __global const real* pair_margin,
+    __global const int* mesh_vertadr,
+    __global const float* mesh_vert,
+    __global const int* mesh_graphadr,
+    __global const int* mesh_graph,
+    __global const int* vert_local,
+    __global const int* sup_vert,
+    __global const real* sup_dist,
+    __global int* n_por_par,
+    __global real* con_dist,
+    __global real* con_pos,
+    __global real* con_normal)
+{
+    contatos_plano_malha_um(get_global_id(0), npair, pair_geom1, pair_geom2, geom_dataid, geom_rbound, geom_xpos, geom_xmat, pair_margin, mesh_vertadr, mesh_vert, mesh_graphadr, mesh_graph, vert_local, sup_vert, sup_dist, n_por_par, con_dist, con_pos, con_normal);
+}
+
 // Compactacao em ordem de PAR. Serial de proposito: sao 55 pares, e a ordem
 // dos contatos e a ordem das linhas de restricao -- um scan com atomico daria
 // uma ordem que muda de corrida para corrida.
-__kernel void compacta_contatos(
+static void compacta_contatos_um(int so_zero,
     const int npair,
-    __global const int* n_por_par, __global const real* con_dist,
-    __global const real* con_pos, __global const real* con_normal,
-    __global const int* pair_geom1, __global const int* pair_geom2,
-    __global real* out_dist, __global real* out_pos, __global real* out_normal,
-    __global int* out_geom, __global int* out_pair, __global int* ncon)
+    __global const int* n_por_par,
+    __global const real* con_dist,
+    __global const real* con_pos,
+    __global const real* con_normal,
+    __global const int* pair_geom1,
+    __global const int* pair_geom2,
+    __global real* out_dist,
+    __global real* out_pos,
+    __global real* out_normal,
+    __global int* out_geom,
+    __global int* out_pair,
+    __global int* ncon)
 {
-    if (get_global_id(0) != 0) return;
+    if (so_zero != 0) return;
     int n = 0;
     for (int p = 0; p < npair; ++p) {
         int k = n_por_par[p];
@@ -280,6 +318,24 @@ __kernel void compacta_contatos(
         }
     }
     ncon[0] = n;
+}
+
+__kernel void compacta_contatos(
+    const int npair,
+    __global const int* n_por_par,
+    __global const real* con_dist,
+    __global const real* con_pos,
+    __global const real* con_normal,
+    __global const int* pair_geom1,
+    __global const int* pair_geom2,
+    __global real* out_dist,
+    __global real* out_pos,
+    __global real* out_normal,
+    __global int* out_geom,
+    __global int* out_pair,
+    __global int* ncon)
+{
+    compacta_contatos_um((int)get_global_id(0), npair, n_por_par, con_dist, con_pos, con_normal, pair_geom1, pair_geom2, out_dist, out_pos, out_normal, out_geom, out_pair, ncon);
 }
 
 #endif  // NPAIR_MAX && MAX_CON_POR_PAR

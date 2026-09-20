@@ -55,7 +55,7 @@ class DeviceIndisponivel(RuntimeError):
 class Device:
     """Um contexto, uma fila, um cache de programas compilados."""
 
-    def __init__(self, preferir_gpu: bool = True):
+    def __init__(self, preferir_gpu: bool = True, perfil: bool = False):
         try:
             import pyopencl as cl
         except ImportError as exc:                              # noqa: BLE001
@@ -71,7 +71,14 @@ class Device:
                 "ser driver sem o runtime OpenCL instalado.")
         self.dev = dispositivos[0]
         self.ctx = cl.Context([self.dev])
-        self.fila = cl.CommandQueue(self.ctx)
+        # `perfil=True` liga os eventos de profiling do OpenCL: cada despacho
+        # passa a carregar `profile.start/end` em nanossegundos de GPU. Custa
+        # um pouco por despacho, entao fica desligado no laco normal -- medir
+        # o tempo de GPU com o relogio do host mediria a fila, nao a placa.
+        self.perfil = bool(perfil)
+        props = cl.command_queue_properties.PROFILING_ENABLE if perfil else 0
+        self.fila = cl.CommandQueue(self.ctx, properties=props)
+        self.eventos: list = []
         self._programas: dict[tuple[str, bool], object] = {}
         self._kernels: dict[tuple[str, bool, str], object] = {}
 
@@ -196,7 +203,27 @@ class Device:
             kernel.set_args(*args)
         gs = (int(global_size),)
         ls = (int(local_size),) if local_size else None
-        self.cl.enqueue_nd_range_kernel(self.fila, kernel, gs, ls)
+        ev = self.cl.enqueue_nd_range_kernel(self.fila, kernel, gs, ls)
+        if self.perfil:
+            self.eventos.append((getattr(kernel, "function_name", "?"), ev))
 
     def espera(self) -> None:
         self.fila.finish()
+
+    def tempos(self) -> dict:
+        """
+        Nanossegundos de GPU por kernel, acumulados desde a ultima chamada.
+
+        Vem de `event.profiling.end - start`, que e o relogio da PLACA. O
+        relogio do host mediria a fila: com 15 despachos enfileirados e um
+        `finish` no fim, o host nao sabe quando cada um rodou.
+        """
+        self.fila.finish()
+        acc: dict[str, list] = {}
+        for nome, ev in self.eventos:
+            dt = ev.profile.end - ev.profile.start
+            a = acc.setdefault(nome, [0, 0])
+            a[0] += dt
+            a[1] += 1
+        self.eventos.clear()
+        return {k: {"ns": v[0], "n": v[1]} for k, v in acc.items()}

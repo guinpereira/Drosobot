@@ -513,6 +513,93 @@ __kernel void factor_M(
 
 // `mj_solveLD` para um vetor: x = M^-1 y. Serial nas duas direcoes pelo mesmo
 // motivo da fatoracao.
+// `mj_solveLD` com os dados em __local.
+//
+// As duas substituicoes triangulares sao SERIAIS por natureza: a linha `i`
+// depende das anteriores, e nenhuma reordenacao preserva a ordem de soma do
+// original. O que da para tirar e a LATENCIA: a versao em memoria global
+// fazia ~2500 acessos dependentes de ~400 ciclos cada, numa thread so, e
+// media 340 us. Com `qLD`, `x` e os indices em LDS, os mesmos 2500 acessos
+// custam poucos ciclos.
+//
+// A ordem das operacoes e identica a da versao global -- este kernel nao muda
+// arredondamento, so de onde le.
+// `mj_factorI` com a matriz em __local.
+//
+// A estrutura e IDENTICA a da versao global: mesmo laco para tras sobre as
+// linhas, mesma ordem de atualizacao, mesmas somas. So muda de onde le. O laco
+// externo e serial por natureza -- a linha `k` atualiza as linhas dos
+// ancestrais dela, e ancestrais de folhas diferentes se cruzam na raiz -- e
+// dentro de cada linha ha no maximo `rownnz <= 17` elementos, ou seja 16
+// threads ativas de 256.
+//
+// Com tao pouco paralelismo, o que domina e a LATENCIA de cada acesso. Em
+// memoria global sao ~20 mil acessos quase todos dependentes.
+static void factor_M_lds_um(int t, int W,
+    __global const int* M_rownnz, __global const int* M_rowadr,
+    __global const int* M_colind, __global const real* M,
+    __global real* qLD, __global real* qLDiagInv,
+    __local real* l, __local int* lcol, __local int* lnnz, __local int* ladr)
+{
+    for (int i = t; i < NC; i += W) { l[i] = M[i]; lcol[i] = M_colind[i]; }
+    for (int i = t; i < NV; i += W) { lnnz[i] = M_rownnz[i]; ladr[i] = M_rowadr[i]; }
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int k = NV - 1; k >= 0; --k) {
+        int start = ladr[k];
+        int diag = lnnz[k] - 1;
+        int end = start + diag;
+        real piv = l[end];
+        if (piv < MINVAL) piv = MINVAL;
+        real invD = REAL_ONE/piv;
+        if (t == 0) { l[end] = piv; qLDiagInv[k] = invD; }
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for (int adr = end - 1 - t; adr >= start; adr -= W) {
+            int i = lcol[adr];
+            real sc = -l[adr] * invD;
+            int ri = ladr[i], ni = lnnz[i];
+            for (int q = 0; q < ni; ++q) l[ri + q] += sc * l[start + q];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+        for (int q = t; q < diag; q += W) l[start + q] *= invD;
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    for (int i = t; i < NC; i += W) qLD[i] = l[i];
+    barrier(CLK_LOCAL_MEM_FENCE);
+}
+
+static void solve_M_lds_um(int t, int W,
+    __global const int* M_rownnz, __global const int* M_rowadr,
+    __global const int* M_colind, __global const real* qLD,
+    __global const real* qLDiagInv, __global const real* y, __global real* x,
+    __local real* lqld, __local real* lx, __local real* linv,
+    __local int* lnnz, __local int* ladr, __local int* lcol)
+{
+    for (int i = t; i < NC; i += W) { lqld[i] = qLD[i]; lcol[i] = M_colind[i]; }
+    for (int i = t; i < NV; i += W) {
+        lx[i] = y[i]; linv[i] = qLDiagInv[i];
+        lnnz[i] = M_rownnz[i]; ladr[i] = M_rowadr[i];
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if (t == 0) {
+        for (int i = NV - 1; i >= 0; --i) {
+            int start = ladr[i], n = lnnz[i] - 1;
+            real xi = lx[i];
+            for (int q = 0; q < n; ++q) lx[lcol[start + q]] -= lqld[start + q] * xi;
+        }
+        for (int i = 0; i < NV; ++i) lx[i] *= linv[i];
+        for (int i = 0; i < NV; ++i) {
+            int start = ladr[i], n = lnnz[i] - 1;
+            real acc = REAL_ZERO;
+            for (int q = 0; q < n; ++q) acc += lqld[start + q] * lx[lcol[start + q]];
+            lx[i] -= acc;
+        }
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int i = t; i < NV; i += W) x[i] = lx[i];
+}
+
 static void solve_M_um(int t, int W,
     __global const int* M_rownnz,
     __global const int* M_rowadr,
