@@ -163,8 +163,13 @@ def main():
                     help="conectoma inteiro ou so o circuito do Giant Fiber")
     ap.add_argument("--backend", default="auto",
                     help="auto | opencl | cpu | d3d12")
-    ap.add_argument("--colisao", choices=["legs", "tarsi", "none"], default="tarsi",
-                    help="conjunto de auto-colisao (ver COLLISION_PAIR_AUDIT.md)")
+    # PADRAO = "legs". A poda `tarsi` deixa o mj_step 10,66x mais rapido em
+    # caminhada reta e com trajetoria identica, mas a regressao nos quatro
+    # comportamentos REPROVOU: curva/optomotor diverge em 1,36 rad de qpos e 23
+    # graus de orientacao. Ver docs/research/COLLISION_PAIR_AUDIT.md.
+    ap.add_argument("--colisao", choices=["legs", "tarsi", "none"], default="legs",
+                    help="conjunto de auto-colisao. legs = validado; "
+                         "tarsi = mais rapido, mas REPROVOU em curva/optomotor")
     ap.add_argument("--duracao", type=float, default=1.0, help="segundos de mosca")
     ap.add_argument("--telemetry", action="store_true")
     ap.add_argument("--porta", type=int, default=8765)
@@ -234,7 +239,7 @@ def main():
         arena.ball_pos = alvo
         sim.physics.bind(arena.object_body).mocap_pos = alvo
 
-        with prof("physics"):
+        with prof("physics", "passo de fisica"):
             obs, _, _, _, info = sim.step(drive)
         passo += 1
         prof.avanca_sim(DT_FISICA * 1000)
@@ -242,7 +247,7 @@ def main():
         if not info.get("vision_updated", False):
             continue
 
-        with prof("vision"):
+        with prof("vision", "quadro de retina"):
             retina = np.asarray(obs["vision"]).mean(axis=2)
             escuro = (retina < DARK_THRESHOLD).mean(axis=1)
             expansao = np.clip(escuro - escuro_lento, 0, None)
@@ -254,7 +259,7 @@ def main():
             if len(sens):
                 taxas[sens] = float(hz.max())
 
-        with prof("neural"):
+        with prof("neural", "janela de 10 ms"):
             eng.roda_poisson(JANELA_MS, taxas, rng, indices=sens)
 
         # --- saida motora: le SO os TTMn, nao o cerebro ---
@@ -266,7 +271,7 @@ def main():
         drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE]) if t_s < escape_ate
                  else np.array([BASE_DRIVE, BASE_DRIVE]))
 
-        with prof("telemetry"):
+        with prof("telemetry", "quadro"):
             if tel.ativo:
                 _publica_quadro(tel, protocol, eng, prof, obs, drive, t_s,
                                 passo, hz, papeis, nomes_grupos, disparou)
@@ -277,9 +282,9 @@ def main():
             v = prof.valores()
             print(f"  t={t_s:5.2f}s  RTF {v['_total']['rtf']:.4f}  "
                   f"looming {hz.max():5.1f} Hz  TTMn {disparou}  "
-                  f"fugas {escapes}  "
-                  f"fis {v['physics']['us']:.0f}us "
-                  f"neural {v['neural']['us']:.0f}us")
+                  f"fugas {escapes}   por s simulado: "
+                  f"fis {v['physics']['ms_por_seg_simulado']:.0f}ms "
+                  f"neural {v['neural']['ms_por_seg_simulado']:.0f}ms")
 
     print("\n== profiler ==")
     print(prof.relatorio())
@@ -344,7 +349,7 @@ def _publica_quadro(tel, protocol, eng, prof, obs, drive, t_s, passo, hz,
     tel.enviar(protocol.frame(step=passo, sim_time=t_s, wall_time=time.time(),
                               real_time_factor=v["_total"]["rtf"],
                               position=obs["fly"][0], drive=drive,
-                              profile={k: v[k]["us"] for k in
+                              profile={k: v[k]["ms_por_seg_simulado"] for k in
                                        ("physics", "vision", "neural", "telemetry")}))
     # SO os papeis, nunca o cerebro inteiro
     camadas = []

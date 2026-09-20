@@ -152,11 +152,45 @@ Nenhum dos dois precisa de GPU.
 
 ---
 
-## 7. Recomendacao
+## 7. A regressao nos quatro comportamentos -- e o veredito
 
-Rodar a auditoria nos tres experimentos e em pelo menos tres sementes. Se
-`"tarsi"` continuar produzindo trajetoria identica em todos, adotar como padrao
-e **mostrar na interface qual conjunto de colisao esta ativo** -- passa a ser
-parte da definicao do modelo, nao detalhe de implementacao.
+Rodada em `benchmarks/physics/collision_pruning/regression.py`: 1,5 s, semente 0,
+mesma pose, controlador, timestep e estimulo dos dois lados.
 
-Enquanto isso nao acontece, `"legs"` continua sendo o padrao.
+Tolerancias declaradas: posicao 0,5 mm, qpos 0,02 rad, orientacao 2,0 graus,
+contatos 15%.
+
+| comportamento | pares | passo | pos max | qpos max | orient max | veredito |
+|---|---|---|---|---|---|---|
+| caminhada reta | 2220 -> 870 | 2563 -> 2128 us (1,20x) | 0,5474 mm | 0,000000 rad | 2,090 deg | **DIVERGE** |
+| curva / optomotor | 42348 -> 40998 | 6291 -> 6830 us (0,92x) | 0,9448 mm | **1,364359 rad** | **23,027 deg** | **DIVERGE** |
+| looming / escape | 2220 -> 870 | 4070 -> 3249 us (1,25x) | 0,0000 mm | 0,000000 rad | 0,000 deg | PASSA |
+| campo de obstaculos | 2508 -> 1158 | 3978 -> 3266 us (1,22x) | 0,0000 mm | 0,000000 rad | 0,000 deg | PASSA |
+
+### `tarsi` NAO generaliza. O padrao continua `legs`.
+
+Dois achados dentro do resultado:
+
+**1. A curva e o caso que quebra, e quebra feio.** 1,364 rad de qpos sao ~78
+graus numa junta, e 23 graus de orientacao do torax. Nao e arredondamento: e
+outro comportamento. Faz sentido -- e a curva que poe pernas de lados opostos
+perto uma da outra, e e exatamente o que a auditoria em caminhada reta nunca
+visitou.
+
+**2. Na curva, `tarsi` e mais LENTO (0,92x).** O terreno de blocos acrescenta
+~40.000 pares de colisao perna-chao, e podar 1.350 pares perna-perna nao muda
+nada perto disso. O ganho de 10x medido antes existia porque a arena era plana.
+
+**3. Ate a caminhada reta divergiu aqui**, com 0,5474 mm, enquanto a medicao
+anterior (2,0 s, arena plana) deu 0,0000 mm. Duas corridas que diferem so em
+duracao e no caminho de montagem dao resultados diferentes -- o sistema e
+deterministico mas sensivel, e uma corrida que da desvio zero nao prova que
+outra dara.
+
+### Consequencia
+
+`legs` volta a ser o padrao em `sim/drosobot_lab.py`. `tarsi` fica disponivel
+(`--colisao tarsi`) e documentado como: valido em looming e campo de obstaculos,
+**invalido em curva**, e sem ganho em terreno de blocos.
+
+Nao foi ajustada nenhuma fisica pra fazer passar.

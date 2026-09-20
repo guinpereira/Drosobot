@@ -1,0 +1,122 @@
+{
+  "gerado_em": "2026-09-20T01:27:31",
+  "estimulo_hz": 20.0,
+  "janela_ms": 400.0,
+  "semente": 7,
+  "spikes_sensoriais": 2433,
+  "nota": "mesma realizacao Poisson nos dois escopos; nenhum parametro foi alterado",
+  "circuito": {
+    "excitacao_mV": 42934.93,
+    "inibicao_mV": -38866.85,
+    "liquido_mV": 4068.07,
+    "v_max_mV": -45.026,
+    "v_media_mV": -50.409,
+    "spikes_gf": 106,
+    "neuronios": 1261,
+    "arestas": 105130,
+    "entradas_gf": 1455,
+    "exc_edges": 819,
+    "inh_edges": 612,
+    "peso_exc_total_mV": 6454.8,
+    "peso_inh_total_mV": -3608.27,
+    "top_inibicao": [
+      {
+        "bodyId": 10074,
+        "tipo": "PVLP010",
+        "mV": -16166.7001953125
+      },
+      {
+        "bodyId": 11361,
+        "tipo": "CL367",
+        "mV": -6283.2001953125
+      },
+      {
+        "bodyId": 16475,
+        "tipo": "PVLP024",
+        "mV": -2987.60009765625
+      },
+      {
+        "bodyId": 531985,
+        "tipo": "PVLP010",
+        "mV": -2940.300048828125
+      },
+      {
+        "bodyId": 14899,
+        "tipo": "AN05B006",
+        "mV": -2482.699951171875
+      },
+      {
+        "bodyId": 16459,
+        "tipo": "PVLP024",
+        "mV": -1826.550048828125
+      },
+      {
+        "bodyId": 10147,
+        "tipo": "LHAD1g1",
+        "mV": -1809.5
+      },
+      {
+        "bodyId": 19454,
+        "tipo": "PVLP024",
+        "mV": -1750.0999755859375
+      }
+    ]
+  },
+  "whole": {
+    "excitacao_mV": 37623.3,
+    "inibicao_mV": -79796.2,
+    "liquido_mV": -42172.9,
+    "v_max_mV": -45.086,
+    "v_media_mV": -298.874,
+    "spikes_gf": 35,
+    "neuronios": 164451,
+    "arestas": 25550583,
+    "entradas_gf": 1455,
+    "exc_edges": 819,
+    "inh_edges": 612,
+    "peso_exc_total_mV": 6454.8,
+    "peso_inh_total_mV": -3608.27,
+    "top_inibicao": [
+      {
+        "bodyId": 529031,
+        "tipo": "GNG300",
+        "mV": -14374.7998046875
+      },
+      {
+        "bodyId": 11361,
+        "tipo": "CL367",
+        "mV": -14361.599609375
+      },
+      {
+        "bodyId": 10263,
+        "tipo": "GNG300",
+        "mV": -8443.0498046875
+      },
+      {
+        "bodyId": 13274,
+        "tipo": "SAD073",
+        "mV": -6237.0
+      },
+      {
+        "bodyId": 10315,
+        "tipo": "SAD073",
+        "mV": -5880.60009765625
+      },
+      {
+        "bodyId": 10297,
+        "tipo": "LHAD1g1",
+        "mV": -5800.02978515625
+      },
+      {
+        "bodyId": 10147,
+        "tipo": "LHAD1g1",
+        "mV": -5583.60009765625
+      },
+      {
+        "bodyId": 801828,
+        "tipo": "IN12B015",
+        "mV": -5451.60009765625
+      }
+    ]
+  }
+}

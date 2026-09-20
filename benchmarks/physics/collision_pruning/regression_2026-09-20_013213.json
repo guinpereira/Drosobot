@@ -1,0 +1,83 @@
+{
+  "gerado_em": "2026-09-20T01:32:13",
+  "duracao_s": 1.5,
+  "timestep": 0.0001,
+  "semente": 0,
+  "tolerancias": {
+    "pos_mm": 0.5,
+    "qpos_rad": 0.02,
+    "orient_deg": 2.0,
+    "ncon_rel": 0.15
+  },
+  "todos_passaram": false,
+  "experimentos": {
+    "caminhada_reta": {
+      "desvio_pos_max_mm": 0.5473955971175755,
+      "desvio_pos_final_mm": 0.5470940211780879,
+      "desvio_qpos_max_rad": 0.0,
+      "desvio_orient_max_deg": 2.0904973519808565,
+      "ncon_ref": 11.153,
+      "ncon_alt": 11.14,
+      "ncon_desvio_rel": 0.0012,
+      "avanco_ref_mm": 18.687,
+      "avanco_alt_mm": 18.691,
+      "passa": false,
+      "npair_ref": 2220,
+      "npair_alt": 870,
+      "us_ref": 2563.0,
+      "us_alt": 2127.5,
+      "ganho": 1.205
+    },
+    "curva_optomotor": {
+      "desvio_pos_max_mm": 0.9448351572840761,
+      "desvio_pos_final_mm": 0.07381137663753784,
+      "desvio_qpos_max_rad": 1.3643589305203028,
+      "desvio_orient_max_deg": 23.027076000152892,
+      "ncon_ref": 7.913,
+      "ncon_alt": 7.873,
+      "ncon_desvio_rel": 0.0051,
+      "avanco_ref_mm": 2.207,
+      "avanco_alt_mm": 2.214,
+      "passa": false,
+      "npair_ref": 42348,
+      "npair_alt": 40998,
+      "us_ref": 6290.7,
+      "us_alt": 6830.5,
+      "ganho": 0.921
+    },
+    "looming_escape": {
+      "desvio_pos_max_mm": 0.0,
+      "desvio_pos_final_mm": 0.0,
+      "desvio_qpos_max_rad": 0.0,
+      "desvio_orient_max_deg": 7.2445096183544e-06,
+      "ncon_ref": 11.36,
+      "ncon_alt": 11.347,
+      "ncon_desvio_rel": 0.0012,
+      "avanco_ref_mm": 15.65,
+      "avanco_alt_mm": 15.65,
+      "passa": true,
+      "npair_ref": 2220,
+      "npair_alt": 870,
+      "us_ref": 4070.4,
+      "us_alt": 3248.9,
+      "ganho": 1.253
+    },
+    "campo_obstaculos": {
+      "desvio_pos_max_mm": 0.0,
+      "desvio_pos_final_mm": 0.0,
+      "desvio_qpos_max_rad": 0.0,
+      "desvio_orient_max_deg": 6.830189170012753e-06,
+      "ncon_ref": 11.153,
+      "ncon_alt": 11.14,
+      "ncon_desvio_rel": 0.0012,
+      "avanco_ref_mm": 18.691,
+      "avanco_alt_mm": 18.691,
+      "passa": true,
+      "npair_ref": 2508,
+      "npair_alt": 1158,
+      "us_ref": 3978.2,
+      "us_alt": 3265.6,
+      "ganho": 1.218
+    }
+  }
+}
