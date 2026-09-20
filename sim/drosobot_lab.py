@@ -200,7 +200,31 @@ def entradas_do_gf(c, idx_gf):
             np.concatenate(peso).astype(np.float32))
 
 
-def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None):
+def indices_por_tipo(eng, gf_pre, nomes):
+    """
+    Para cada aresta que entra no GF, a que TIPO o pre-sinaptico pertence.
+
+    Calculado uma vez. Permite somar a contribuicao por populacao com um
+    `bincount` por janela em vez de um dicionario montado na mao -- e e o que
+    responde "de onde vem a inibicao" com numero, nao com os cinco maiores do
+    instante.
+    """
+    if not len(gf_pre):
+        return np.zeros(0, np.int32), []
+    rotulos, idx = [], np.zeros(len(gf_pre), dtype=np.int32)
+    pos = {}
+    for k, i in enumerate(gf_pre):
+        bid = int(eng.c.body_ids[i])
+        nome = (nomes or {}).get(bid, str(bid))
+        if nome not in pos:
+            pos[nome] = len(rotulos)
+            rotulos.append(nome)
+        idx[k] = pos[nome]
+    return idx, rotulos
+
+
+def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None, tipo_idx=None,
+              n_tipos=0):
     """
     Balanco de entrada no Giant Fiber neste passo.
 
@@ -211,10 +235,12 @@ def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None):
     """
     if not len(idx_gf):
         return {"exc_mV": 0.0, "inib_mV": 0.0, "liquido_mV": 0.0,
-                "v_min_mV": 0.0, "spikes_gf": 0, "top_inib": []}
+                "v_min_mV": 0.0, "spikes_gf": 0, "top_inib": [],
+                "por_tipo": None}
     est_gf = eng.le(idx_gf)
     exc = inib = 0.0
     top = []
+    por_tipo = None
     if len(gf_pre):
         est_pre = eng.le(gf_pre)
         disp = est_pre.spike.astype(bool)
@@ -222,6 +248,11 @@ def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None):
             contrib = gf_peso[disp]
             exc = float(contrib[contrib > 0].sum())
             inib = float(contrib[contrib < 0].sum())
+            if tipo_idx is not None and n_tipos:
+                # contribuicao por populacao, com sinal: uma passada sobre as
+                # 1.455 arestas que entram no GF
+                por_tipo = np.bincount(tipo_idx[disp], weights=contrib,
+                                       minlength=n_tipos)
             neg = np.flatnonzero(disp & (gf_peso < 0))
             if len(neg):
                 for k in neg[np.argsort(gf_peso[neg])][:5]:
@@ -232,7 +263,8 @@ def mede_gate(eng, idx_gf, gf_pre, gf_peso, nomes=None):
     return {"exc_mV": round(exc, 2), "inib_mV": round(inib, 2),
             "liquido_mV": round(exc + inib, 2),
             "v_min_mV": round(float(est_gf.v_mV.min()), 2),
-            "spikes_gf": int(est_gf.spike.sum()), "top_inib": top}
+            "spikes_gf": int(est_gf.spike.sum()), "top_inib": top,
+            "por_tipo": por_tipo}
 
 
 def dispositivo() -> dict:
@@ -261,8 +293,14 @@ class Laboratorio:
     arena muda, porque arena diferente e modelo diferente.
     """
 
-    def __init__(self, args, tel, ctl, protocol):
+    def __init__(self, args, tel, ctl, protocol, registro=None,
+                 estimulo=None):
         self.args = args
+        # Gravacao estruturada da corrida. Independente da telemetria: uma
+        # bateria de experimentos roda sem interface nenhuma aberta, e e
+        # justamente ela que precisa deixar dado em disco.
+        self.registro = registro
+        self.params_estimulo = dict(estimulo or {})
         self.tel = tel
         self.ctl = ctl
         self.protocol = protocol
@@ -279,7 +317,9 @@ class Laboratorio:
         self.t_s = 0.0
         self.escapes = 0
         self.hz = 0.0
+        self.spikes_sensoriais = 0
         self._looming_ativo = False
+        self.gf_acumulado = self._zera_acumulado()
         self.prof = Profiler(["physics", "vision", "neural", "leitura",
                               "telemetry"])
 
@@ -303,6 +343,8 @@ class Laboratorio:
         self.escopo_montado = escopo
         self.idx_gf = self.papeis.get("DNp01", np.zeros(0, np.int32))
         self.gf_pre, self.gf_peso = entradas_do_gf(self.eng.c, self.idx_gf)
+        self.gf_tipo_idx, self.gf_tipos = indices_por_tipo(
+            self.eng, self.gf_pre, self.nomes_tipo)
         r = self.eng.resumo()
         print(f"  cerebro   {r['neurons_simulated']:,} neuronios, "
               f"{r['edges_simulated']:,} arestas, {r['backend']} em "
@@ -320,7 +362,8 @@ class Laboratorio:
             self.corpo.fecha()
         self.corpo = cria(self.args.physics, arena=arena,
                           self_collisions=self.args.colisao,
-                          timestep=DT, com_visao=True)
+                          timestep=DT, com_visao=True,
+                          estimulo=self.params_estimulo)
         self.arena_montada = arena
         self.frame = self.corpo.reset(seed=seed)
         rc = self.corpo.resumo()
@@ -356,7 +399,9 @@ class Laboratorio:
         self.escape_ate, self.escapes = -1.0, 0
         self.passo_atual, self.t_s = 0, 0.0
         self.hz, self.janelas = 0.0, 0
+        self.spikes_sensoriais = 0
         self._looming_ativo = False
+        self.gf_acumulado = self._zera_acumulado()
         self.proxima_pose = 0.0
         self.avisou_v = False
         self.prof = Profiler(["physics", "vision", "neural", "leitura",
@@ -365,6 +410,40 @@ class Laboratorio:
         self.estado = "running"
         self._publica_estado()
         return True
+
+    def _zera_acumulado(self) -> dict:
+        """
+        Agregados da corrida inteira.
+
+        Acumular aqui, e nao reprocessar a serie temporal depois, e o que
+        permite comparar dez corridas sem reabrir dez CSV -- e o que garante
+        que o resumo e do mesmo laco que produziu os eventos.
+        """
+        n = len(getattr(self, "gf_tipos", []) or [])
+        return {"spikes": 0, "exc": 0.0, "inib": 0.0, "v_min": 0.0,
+                "sensoriais": 0, "ttmn": 0, "hz_max": 0.0,
+                "soma_tipo": np.zeros(n, dtype=np.float64), "por_tipo": {}}
+
+    def _acumula(self, gate, ttmn) -> None:
+        a = self.gf_acumulado
+        a["spikes"] += gate["spikes_gf"]
+        a["exc"] += gate["exc_mV"]
+        a["inib"] += gate["inib_mV"]
+        a["v_min"] = min(a["v_min"], gate["v_min_mV"])
+        a["sensoriais"] += self.spikes_sensoriais
+        a["ttmn"] += ttmn
+        a["hz_max"] = max(a["hz_max"], self.hz)
+        if gate.get("por_tipo") is not None and len(a["soma_tipo"]):
+            a["soma_tipo"] += gate["por_tipo"]
+
+    def _fecha_acumulado(self) -> None:
+        """Converte a soma por tipo num dicionario ordenado por magnitude."""
+        a = self.gf_acumulado
+        if not len(a["soma_tipo"]):
+            return
+        ordem = np.argsort(a["soma_tipo"])
+        a["por_tipo"] = {self.gf_tipos[i]: round(float(a["soma_tipo"][i]), 2)
+                         for i in ordem if abs(a["soma_tipo"][i]) > 0.005}
 
     # -------------------------------------------------------------- comandos
 
@@ -470,9 +549,16 @@ class Laboratorio:
 
         with self.prof("leitura", "janela"):
             gate = mede_gate(self.eng, self.idx_gf, self.gf_pre, self.gf_peso,
-                             self.nomes_tipo)
+                             self.nomes_tipo, self.gf_tipo_idx,
+                             len(self.gf_tipos))
             est_m = self.eng.le(self.motor) if len(self.motor) else None
             ttmn = int(est_m.spike.sum()) if est_m is not None else 0
+            # Quantos sensores estao disparando AGORA. E a entrada do circuito,
+            # e sem ela nao da pra dizer se uma diferenca entre escopos veio da
+            # rede ou de terem recebido estimulos diferentes.
+            est_s = self.eng.le(self.sens) if len(self.sens) else None
+            self.spikes_sensoriais = (int(est_s.spike.sum())
+                                      if est_s is not None else 0)
 
         eventos = self._eventos(gate, ttmn)
         self.drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE])
@@ -480,10 +566,32 @@ class Laboratorio:
                       else np.array([BASE_DRIVE, BASE_DRIVE]))
 
         self.janelas += 1
+        self._acumula(gate, ttmn)
+        if self.registro is not None:
+            self._registra(gate, ttmn, eventos)
         with self.prof("telemetry", "quadro"):
             if self.tel.ativo:
                 self._publica_quadro(gate, ttmn, eventos, escuro)
         return True
+
+    def _registra(self, gate, ttmn, eventos) -> None:
+        """Uma linha por janela neural, mais os eventos raros."""
+        pos = np.asarray(self.frame.posicao, dtype=float)
+        self.registro.linha(
+            t_s=round(self.t_s, 6), passo=self.passo_atual,
+            entrada_hz=round(self.hz, 4),
+            spikes_sensoriais=self.spikes_sensoriais,
+            gf_exc_mV=gate["exc_mV"], gf_inib_mV=gate["inib_mV"],
+            gf_liquido_mV=gate["liquido_mV"], gf_v_min_mV=gate["v_min_mV"],
+            gf_spikes=gate["spikes_gf"], ttmn_spikes=ttmn,
+            fugas_ate_agora=self.escapes,
+            drive_esq=round(float(self.drive[0]), 4),
+            drive_dir=round(float(self.drive[1]), 4),
+            pos_x_mm=round(float(pos[0]), 4),
+            pos_y_mm=round(float(pos[1]), 4),
+            pos_z_mm=round(float(pos[2]), 4))
+        for tipo, detalhe in eventos:
+            self.registro.evento(self.t_s, tipo, detalhe)
 
     def _eventos(self, gate, ttmn):
         """Eventos CIENTIFICOS. Nao ha evento por passo de fisica aqui."""

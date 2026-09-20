@@ -1,0 +1,21 @@
+{
+  "nome": "looming_lateral",
+  "versao": "1",
+  "duracao_s": 1.0,
+  "physics": "flygym2",
+  "neural": "opencl",
+  "colisao": "legs",
+  "seeds": [0, 1, 2],
+  "escopos": ["circuit", "whole"],
+  "condicoes": [
+    {"condicao": "esquerda", "arena": "looming",
+     "estimulo": {"azimute_graus": 45.0},
+     "notas": "esfera se aproxima pela esquerda da mosca (+y do MuJoCo)"},
+    {"condicao": "centro", "arena": "looming",
+     "estimulo": {"azimute_graus": 0.0},
+     "notas": "condicao de referencia; identica ao que ja foi medido"},
+    {"condicao": "direita", "arena": "looming",
+     "estimulo": {"azimute_graus": -45.0},
+     "notas": "esfera se aproxima pela direita"}
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "nome": "looming_velocidade",
+  "versao": "1",
+  "duracao_s": 1.0,
+  "physics": "flygym2",
+  "neural": "opencl",
+  "colisao": "legs",
+  "seeds": [0, 1, 2],
+  "escopos": ["circuit", "whole"],
+  "condicoes": [
+    {"condicao": "lento", "arena": "looming",
+     "estimulo": {"ciclo_s": 1.6},
+     "notas": "mesma trajetoria, metade da velocidade de aproximacao"},
+    {"condicao": "padrao", "arena": "looming",
+     "estimulo": {"ciclo_s": 0.8},
+     "notas": "referencia"},
+    {"condicao": "rapido", "arena": "looming",
+     "estimulo": {"ciclo_s": 0.4},
+     "notas": "dobro da velocidade"}
+  ]
+}

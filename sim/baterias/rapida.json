@@ -1,0 +1,14 @@
+{
+  "nome": "rapida",
+  "versao": "1",
+  "duracao_s": 0.3,
+  "physics": "flygym2",
+  "neural": "opencl",
+  "colisao": "legs",
+  "seeds": [0],
+  "escopos": ["circuit", "whole"],
+  "condicoes": [
+    {"condicao": "centro", "arena": "looming", "estimulo": {"azimute_graus": 0.0},
+     "notas": "bateria minima, pra verificar o encanamento sem esperar"}
+  ]
+}

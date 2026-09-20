@@ -113,7 +113,8 @@ namespace Drosobot.Lab
             if (!Conectado)
             {
                 p.Texto("canal de controle desligado", mono);
-                p.Texto("suba: python sim/lab_runner.py", mono);
+                p.Texto("suba: python sim/drosobot_lab.py --telemetry", mono);
+            p.Texto("ou um replay: python -m sim.replay", mono);
                 return;
             }
             if (!TemCatalogo)

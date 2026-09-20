@@ -797,7 +797,7 @@ namespace Drosobot.Lab
             {
                 estado = "DESCONECTADO";
                 detalhe = _ultimaMensagem < 0f
-                    ? "suba: python sim/lab_runner.py"
+                    ? "suba: python sim/drosobot_lab.py --telemetry"
                     : $"a simulacao caiu ou terminou ha {idade:F0} s";
             }
             else if (_ultimaMensagem < 0f)

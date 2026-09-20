@@ -78,17 +78,35 @@ class Estimulo:
     """
 
     def __init__(self, ciclo_s: float = 0.8, dist_longe: float = 30.0,
-                 dist_perto: float = 4.0, altura_mm: float = 2.5):
+                 dist_perto: float = 4.0, altura_mm: float = 2.5,
+                 azimute_graus: float = 0.0):
         self.ciclo_s = ciclo_s
         self.dist_longe = dist_longe
         self.dist_perto = dist_perto
         self.altura = altura_mm
+        # De que lado a esfera se aproxima. 0 = de frente; positivo = pela
+        # ESQUERDA da mosca (+y do MuJoCo). E o parametro que separa
+        # "looming lateral" de "looming central" -- o mesmo estimulo, chegando
+        # por outro ponto do campo visual, que e o que decide qual olho o ve.
+        self.azimute = float(azimute_graus)
 
     def distancia(self, t_s: float) -> float:
         fase = (t_s % self.ciclo_s) / self.ciclo_s
         return self.dist_longe + (self.dist_perto - self.dist_longe) * fase
 
     def posicao(self, t_s: float, pos_mosca) -> np.ndarray:
+        """
+        Onde a esfera esta, em MUNDO.
+
+        O azimute gira a direcao de aproximacao em torno da mosca, mantendo a
+        distancia: a esfera anda no arco, nao se afasta. Com azimute 0 isto
+        reduz exatamente ao caso antigo (`p[0] + d`, `p[1]`), entao as corridas
+        centrais continuam comparaveis com o que ja foi medido.
+        """
         d = self.distancia(t_s)
         p = np.asarray(pos_mosca, dtype=float)
-        return np.array([p[0] + d, p[1], self.altura], dtype=np.float32)
+        if self.azimute == 0.0:
+            return np.array([p[0] + d, p[1], self.altura], dtype=np.float32)
+        a = np.radians(self.azimute)
+        return np.array([p[0] + d * np.cos(a), p[1] + d * np.sin(a),
+                         self.altura], dtype=np.float32)

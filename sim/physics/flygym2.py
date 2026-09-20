@@ -42,8 +42,13 @@ class FlyGym2Adapter:
     versao = "2.1.0 / mujoco 3.9"
 
     def __init__(self, arena: str = "looming", self_collisions: str = "legs",
-                 timestep: float = 1e-4, com_visao: bool = True):
+                 timestep: float = 1e-4, com_visao: bool = True,
+                 estimulo: dict | None = None):
         self.arena_tipo = arena
+        # Parametros da CONDICAO experimental (azimute, velocidade, posicao dos
+        # obstaculos). Ficam num dicionario aberto porque cada arena tem os
+        # seus; a receita do experimento e quem os preenche.
+        self.params_estimulo = dict(estimulo or {})
         self.self_collisions = self_collisions
         self._dt = timestep
         self.com_visao = com_visao
@@ -85,7 +90,7 @@ class FlyGym2Adapter:
         if self.arena_tipo == "looming":
             from .looming_world import Estimulo, constroi_mundo_looming
             world, self._nome_obj = constroi_mundo_looming()
-            self._estimulo = Estimulo()
+            self._estimulo = Estimulo(**self.params_estimulo)
         else:
             world = FlatGroundWorld()
             self._nome_obj = None
