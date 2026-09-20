@@ -216,6 +216,102 @@ def test_controle_dirige_a_maquina_de_estados():
             proc.kill()
 
 
+def test_telemetria_entrega_o_contrato_da_unity():
+    """
+    Sobe o runtime e confere que TODO campo que a interface le chega.
+
+    Este teste existe porque o modo de falha e silencioso: a Unity nao quebra
+    quando falta um campo, ela so desenha um painel vazio. Ja aconteceu com o
+    canal de controle e com a retina -- o runtime novo simplesmente nao
+    mandava, e a tela parecia "ainda carregando" pra sempre.
+    """
+    if os.environ.get("DROSOBOT_SKIP_LENTOS"):
+        return
+    porta_tel, porta_ctl = 8795, 8796
+    proc = subprocess.Popen(
+        [sys.executable, "-u", "-W", "ignore", str(RAIZ / "sim" / "drosobot_lab.py"),
+         "--cns", "circuit", "--duracao", "0.6", "--telemetry",
+         "--porta", str(porta_tel), "--porta-controle", str(porta_ctl)],
+        cwd=str(RAIZ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    tipos, achados = set(), {}
+    try:
+        for _ in range(120):
+            try:
+                sock = socket.create_connection(("127.0.0.1", porta_tel), timeout=2)
+                break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise AssertionError("a telemetria nunca abriu")
+
+        sock.settimeout(3)
+        buffer = b""
+        fim = time.time() + 180
+        with sock:
+            while time.time() < fim:
+                try:
+                    pedaco = sock.recv(1 << 16)
+                except socket.timeout:
+                    continue
+                if not pedaco:
+                    break
+                buffer += pedaco
+                *linhas, buffer = buffer.split(b"\n")
+                for linha in linhas:
+                    if not linha.strip():
+                        continue
+                    try:
+                        m = json.loads(linha)
+                    except json.JSONDecodeError:
+                        continue
+                    tipos.add(m.get("type"))
+                    if m.get("type") == "experiment_info":
+                        achados["runtime"] = m.get("runtime", {})
+                        achados["scope"] = m.get("scope", {})
+                        achados["limitacoes"] = m.get("model_limitations", [])
+                    elif m.get("type") == "frame" and "body_pose" in m:
+                        achados["pose"] = m["body_pose"]
+                        achados["profile"] = m.get("profile", {})
+                    elif m.get("type") == "retina":
+                        achados["retina"] = m
+                    elif m.get("type") == "statistics":
+                        achados["gate"] = m["values"].get("gf_gate", {})
+                    elif m.get("type") == "experiment_list":
+                        achados["catalogo"] = m["experiments"]
+    finally:
+        try:
+            proc.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    for t in ("hello", "experiment_info", "scene_info", "experiment_list",
+              "run_state", "frame", "neural_activity", "statistics", "retina"):
+        assert t in tipos, f"a Unity espera mensagens `{t}` e nenhuma chegou"
+
+    rt = achados.get("runtime", {})
+    for campo in ("os", "cpu", "physics_backend", "neural_backend",
+                  "neural_device", "neurons_simulated", "edges_simulated",
+                  "collision_pairs"):
+        assert rt.get(campo) is not None, f"runtime.{campo} nao foi mandado"
+
+    # o escopo nunca pode virar "cerebro funcional completo"
+    assert achados["scope"]["functional_brain"] == "no"
+    assert achados["limitacoes"], "a limitacao do modelo sumiu do fluxo"
+
+    assert len(achados["retina"]["left"]) == 721, "a retina mudou de tamanho"
+    assert len(achados["pose"]["segments"]) == 69, "a pose perdeu segmento"
+    assert set(achados["profile"]) == {"physics", "vision", "neural",
+                                       "leitura", "telemetry"}
+
+    gate = achados["gate"]
+    for campo in ("exc_mV", "inib_mV", "liquido_mV", "v_min_mV", "spikes_gf"):
+        assert campo in gate, f"gf_gate.{campo} sumiu"
+
+    ids = {e["id"] for e in achados["catalogo"]}
+    assert ids == {e["id"] for e in lab.CATALOGO}
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

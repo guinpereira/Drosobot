@@ -17,6 +17,7 @@ pesquisa ficam em `research/upstream/`, que **nao e versionado** (ver
 |---|---|---|
 | [MuJoCo](https://github.com/google-deepmind/mujoco) (Google DeepMind) | Apache-2.0 | motor de fisica |
 | [FlyGym / NeuroMechFly](https://github.com/NeLy-EPFL/flygym) (NeLy-EPFL) | Apache-2.0 | modelo biomecanico da mosca, arenas, retina |
+| `flybody` (`fruitfly.xml`, distribuido nos assets do FlyGym) | Apache-2.0 | **paleta de cores** da mosca na Unity: os valores de `body`, `lower`, `brown`, `membrane`, `red` e `bristle-brown` vem de la. A atribuicao aos nossos 68 segmentos e nossa, e esta marcada como ASSUMPTION na interface |
 | [Brian2](https://github.com/brian-team/brian2) | CeCILL-2.1 | simulador spiking de referencia |
 | [NumPy](https://numpy.org/) | BSD-3-Clause | numerica |
 | [pandas](https://pandas.pydata.org/) | BSD-3-Clause | leitura das tabelas do conectoma |
