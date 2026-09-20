@@ -7,10 +7,10 @@ Este documento é o estado real do trabalho: o que foi construído, o que foi
 medido, e — a parte mais importante — **o que a medição refuta e o que ela
 ainda permite**.
 
-Estado em uma linha: **o passo de física completo — `state(t) → state(t+dt)` —
-roda na GPU para o subconjunto plano × malha, sem o MuJoCo executar nenhuma
-etapa dinâmica. Falta colisão cilindro × malha, e a latência ainda é 50× a da
-CPU, dominada por enfileiramento no host.**
+Estado em uma linha: **o passo completo roda na GPU para o subconjunto
+plano × malha, `physics=drosobot-gpu` já rodou pelo laboratório, e o passo caiu
+de 6174 para 2138 us ao ir de 80 para 15 despachos. Falta colisão
+cilindro × malha.**
 
 ---
 
@@ -452,11 +452,32 @@ Sem eufemismo.
 * **todos os experimentos gravados**: `looming`, `obstáculos` e `optomotor`
   rodaram e continuam rodando 100% em `flygym2-mujoco`
 
-`physics.cria('drosobot-gpu')` continua recusando montar: falta o adaptador que
-liga o motor ao laço do laboratório (retina, arena, pose dos segmentos), e sem
-cilindro × malha a arena de obstáculos não roda.
+**`physics.cria('drosobot-gpu')` monta e roda.** A recusa deixou de ser do
+backend e passou a ser do **modelo**: quem confere é `compilador.valida`, no
+`reset`, e a mensagem nomeia o recurso que falta.
 
-### O solver, e por que ele não "bate com o MuJoCo"
+```
+arena looming, flat     monta
+arena obstaculos        RecursoNaoSuportado: pares de colisao fora do
+                        subconjunto: [(5, 7)]
+```
+
+`DrosobotGPUAdapter` herda a **montagem** do `FlyGym2Adapter` — arena, mosca,
+atuadores, pares de colisão, controlador, retina — porque montar de novo criaria
+um segundo corpo, e a comparação mediria dois modelos em vez de dois solvers. O
+que ele substitui é só o passo. O `mjData` recebe `qpos`/`qvel` copiados da GPU
+e é destino, nunca fonte; a sincronização acontece na cadência da **retina**
+(100 Hz), não na da física (10.000 Hz).
+
+Primeira corrida legítima pelo laboratório:
+
+```
+gpu-primeira_circuit_seed0   RTF 0,022   parede 17 s
+metadata: backend drosobot-gpu, device gfx1031, precisao fp64,
+          physics_model_hash 8f9f0d74558b7db6
+```
+
+### O solver, e o fenômeno da adesão
 
 O objetivo é o do 3.9.0, termo a termo:
 
@@ -465,61 +486,98 @@ custo(a) = 1/2 (a - a_s)' M (a - a_s) + sum_i 1/2 D_i min(jar_i, 0)^2
 jar      = J a - aref
 ```
 
-estritamente convexo e C¹, com mínimo único. O caminho até ele difere de
-propósito: o MuJoCo fatora o Hessiano uma vez e faz atualizações de posto 1 com
-busca de linha exata; aqui é refatoração densa com recuo de Armijo, num
-work-group, com `H` (72×72) em `__local`.
+estritamente convexo e C¹. O caminho até o mínimo difere de propósito: o MuJoCo
+fatora o Hessiano uma vez e faz atualizações de posto 1 com busca de linha
+exata; aqui é refatoração densa com recuo de Armijo, num work-group.
 
-Medido, no estado inicial, com as entradas dos dois batendo a 1e-13:
+**Com adesão desligada os dois concordam.** Custo idêntico (1,44149731e7),
+`|grad|` 1,4e-11 contra 1,6e-13, `qacc` a 8e-15. A trajetória coincide por dois
+passos em precisão de máquina.
+
+**Com adesão ligada, `qacc` difere em 27%** — e a causa está medida, não
+suposta (`benchmarks/physics/gpu/solver_adesao.py`):
+
+| | |
+|---|---|
+| as entradas do solver batem | `efc_J` 4,6e-16, `efc_R`/`efc_D` exatos, `efc_aref` 1,0e-13, `qacc_smooth` 9,3e-15 |
+| a solução do MuJoCo não responde à tolerância | custo 1,39473323e9 idêntico com `tolerance` de 1e-8, 1e-12 e 1e-15, e `iterations` de 100 a 5000 |
+| o ponto dele não é estacionário | `\|grad\|` 5,03e+01, contra 1,3e-13 da GPU, com custo maior (1,39473323e9 contra 1,39446328e9) |
+
+Sobram duas saídas no laço do `mj_solveNewton`
+(`src/engine/engine_solver.c` de 3.9.0):
 
 ```
-            custo           |grad|
-GPU         1,394463e+09    1,3e-13
-MuJoCo      1,394733e+09    5,0e+01
+2018:  if (alpha == 0) break;                    // busca de linha
+2058:  if (improvement < tol || gradient < tol)   // tolerancia
 ```
 
-**O ponto da GPU é estacionário e tem custo menor.** O MuJoCo pára antes do
-mínimo nesse passo — com `solref[0] = 2e-4` e `dt = 1e-4` a restrição é muito
-rígida, e a busca de linha dele estagna.
+A segunda está descartada pela medida do meio. Resta `alpha == 0`: a busca de
+linha exata não encontra passo que melhore, e o solver para onde está.
 
-Ao longo de **1000 passos**, o ponto da GPU permanece estacionário em todos os
-marcos conferidos — `|grad|` entre 7e-14 e 1,3e-13, sem degradação, inclusive
-com warm start. A divergência de trajetória cresce devagar e `ncon` acompanha:
+**Isso não quer dizer que o MuJoCo esteja com defeito.** A adesão torna o
+problema muito mal condicionado: uma diferença de 0,4% na força de restrição
+vira 27% em `qacc`, porque a força quase cancela uma aceleração livre enorme.
+Numa região assim, uma busca de linha exata sobre um custo quase plano pode
+legitimamente concluir que não há progresso.
 
-```
-passo    dqpos      dqvel     ncon g/mj   |grad| GPU
-    2   5,4e-05   3,5e-01    12/12       9,4e-14
-   10   6,8e-04   1,0e+00    12/12       1,1e-13
-  100   1,1e-02   1,1e+00    12/12       9,1e-14
- 1000   5,6e-02   3,9e-01    14/12       7,6e-14
-```
+**Também não quer dizer que a GPU esteja certa e o MuJoCo errado.** Quer dizer
+que dois objetivos que costumam coincidir aqui não coincidem:
 
-Consequência prática: as trajetórias coincidem a 1e-13 enquanto os dois solvers
-concordam e separam quando não concordam mais. Com adesão desligada isso são
-dois passos a 1e-16/1e-13; com adesão ligada, a separação começa no primeiro
-passo. **Isso não é erro do porte**, e o teste reflete isso: ele exige
-estacionariedade (`|grad| ≈ 0`), não igualdade com o MuJoCo — exigir igualdade
-faria da parada antecipada dele a especificação.
+* **(A)** resolver o mesmo problema até estacionariedade;
+* **(B)** reproduzir a trajetória numérica do MuJoCo 3.9.0.
+
+Hoje o backend faz **(A)**, e o teste do solver exige estacionariedade — não
+igualdade com o MuJoCo, porque isso faria da parada dele a especificação.
+
+Um modo `solver_mode = mujoco39_reference` que faça **(B)** é implementável,
+mas exigiria portar a busca de linha exata por partes do 3.9.0 — e o resultado
+seria, por construção, um ponto não estacionário. Fica registrado como decisão
+em aberto, não resolvida por tolerância ajustada até bater.
 
 ### Latência do passo completo
 
-Agora faz sentido medir, porque o passo existe:
-
 ```
-Drosobot GPU passo completo     6345 us
-  host para enfileirar          4390 us      80 despachos, ~53 us cada
-  alem do enfileiramento        1956 us
-MuJoCo CPU mj_step               104 us
+caminho       despachos      host        GPU      total
+estagios             80    1924 us    2035 us    3959 us
+fundido              15     231 us    1908 us    2138 us
+MuJoCo CPU            -          -          -     162 us
 ```
 
-**70% do custo é Python enfileirando kernels**, não a GPU calculando. Os 1956 us
-de GPU ainda são ~19× a CPU, e a maior parte está nos estágios com laço por
-nível — `com_pos`, `massa`, `com_vel`, `bias` somam ~56 dos 80 despachos, cada um
-com poucas dezenas de threads ativas.
+Contra o baseline da rodada anterior (6174 us, 80 despachos, host 3960 us), o
+passo fundido é **2,9× mais rápido**. O host deixou de ser o gargalo: era 64%
+do total, agora é 11%.
 
-Isso é exatamente o que a fase de fusão/kernel persistente ataca, e foi deixado
-para depois de propósito: primeiro uma física completa e correta, depois uma
-implementação de baixa latência.
+**Duas correções vieram de medir em vez de supor:**
+
+*O custo por despacho era `set_args`, não o despacho.* Com 21 argumentos,
+`set_args` custa 21 us e `enqueue_nd_range_kernel` custa 1,4 us — 94% do custo
+era religar argumentos que nunca mudam entre passos.
+
+*Quarenta e seis dos 80 despachos eram `for nivel: dispatch(...)`.* Existiam
+para depurar: com um por nível dá para parar em qualquer etapa e comparar com o
+`mjData`. Os campos já estavam validados, então o laço entrou no kernel.
+
+Cada kernel por estágio virou `helper + wrapper`, e os kernels fundidos chamam
+os **mesmos** helpers `..._um`. A conta existe uma vez só — os dois caminhos não
+podem divergir na física, só no número de despachos. Há teste para isso, com
+igualdade **exata** ao longo de 10 passos.
+
+O que sobra são 1908 us de GPU, ~12× o MuJoCo CPU. Esse é o próximo alvo, e
+agora é genuinamente GPU: kernels com poucas dezenas de threads ativas por
+etapa, num único work-group.
+
+### RTF, com unidades explícitas
+
+```
+2138 us/passo  x  10.000 passos por segundo simulado  =  21,4 s de relogio
+RTF = 0,0467              corrida de 2 s  =  43 s
+```
+
+Pelo laboratório, com o controlador em Python e a retina, a primeira corrida
+`physics=drosobot-gpu` mediu **RTF 0,022**. O passo do adaptador custa 4881 us
+contra 2138 us do passo nu: a diferença é o controlador e três leituras de
+volta por passo. `resumo()` reporta `leituras_por_passo` de propósito — é o
+número que a fase de laço residente tem que zerar.
 
 ### Trace físico
 
@@ -602,6 +660,9 @@ traduzir.
 ## Como executar
 
 ```bat
+REM por que MuJoCo e GPU discordam com adesao ligada
+.venv-flygym2\Scripts\python benchmarks\physics\gpu\solver_adesao.py
+
 REM trajetoria GPU x MuJoCo, trace fisico e latencia do passo completo
 .venv-flygym2\Scripts\python benchmarks\physics\gpu\trajetoria_gpu_vs_mujoco.py
 

@@ -1,0 +1,98 @@
+{
+ "gerado_em": "2026-09-20T20:06:07",
+ "mujoco": "3.9.0",
+ "casos": {
+  "adesao_off": {
+   "nefc": 48,
+   "entradas_rel": {
+    "efc_J": 4.62e-16,
+    "efc_R": 0.0,
+    "efc_D": 0.0,
+    "efc_aref": 1.011e-13,
+    "qacc_smooth": 3.205e-15
+   },
+   "varredura_tolerancia": [
+    {
+     "tolerance": 1e-08,
+     "iterations": 100,
+     "niter": 8,
+     "custo": 14414973.113595689,
+     "grad": 1.6788171033178426e-11,
+     "rel_vs_gpu": 2.219e-14
+    },
+    {
+     "tolerance": 1e-12,
+     "iterations": 1000,
+     "niter": 9,
+     "custo": 14414973.11359569,
+     "grad": 1.417695998448833e-11,
+     "rel_vs_gpu": 8.165e-15
+    },
+    {
+     "tolerance": 1e-15,
+     "iterations": 5000,
+     "niter": 9,
+     "custo": 14414973.11359569,
+     "grad": 1.417695998448833e-11,
+     "rel_vs_gpu": 8.165e-15
+    }
+   ],
+   "solucao_insensivel_a_tolerancia": true,
+   "gpu": {
+    "custo": 14414973.113595694,
+    "grad": 1.625856760104014e-13
+   },
+   "mujoco": {
+    "custo": 14414973.113595689,
+    "grad": 1.6788171033178426e-11
+   },
+   "conclusao": "os dois concordam dentro da tolerancia: nao ha fenomeno a explicar neste estado."
+  },
+  "adesao_on": {
+   "nefc": 48,
+   "entradas_rel": {
+    "efc_J": 4.62e-16,
+    "efc_R": 0.0,
+    "efc_D": 0.0,
+    "efc_aref": 1.011e-13,
+    "qacc_smooth": 9.266e-15
+   },
+   "varredura_tolerancia": [
+    {
+     "tolerance": 1e-08,
+     "iterations": 100,
+     "niter": 6,
+     "custo": 1394733229.4619546,
+     "grad": 50.323728429057766,
+     "rel_vs_gpu": 0.2618
+    },
+    {
+     "tolerance": 1e-12,
+     "iterations": 1000,
+     "niter": 7,
+     "custo": 1394733229.4619546,
+     "grad": 50.323728429045644,
+     "rel_vs_gpu": 0.2618
+    },
+    {
+     "tolerance": 1e-15,
+     "iterations": 5000,
+     "niter": 7,
+     "custo": 1394733229.4619546,
+     "grad": 50.323728429045644,
+     "rel_vs_gpu": 0.2618
+    }
+   ],
+   "solucao_insensivel_a_tolerancia": true,
+   "gpu": {
+    "custo": 1394463281.0831883,
+    "grad": 1.2803485478940973e-13
+   },
+   "mujoco": {
+    "custo": 1394733229.4619546,
+    "grad": 50.323728429057766
+   },
+   "conclusao": "MuJoCo para no mesmo ponto para toda tolerancia testada e o ponto nao e estacionario: a saida e `alpha == 0` na busca de linha (engine_solver.c:2018), nao o criterio de tolerancia (:2058)."
+  }
+ }
+}
