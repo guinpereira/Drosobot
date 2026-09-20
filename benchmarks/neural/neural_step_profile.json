@@ -1,0 +1,49 @@
+{
+ "gerado_em": "2026-09-20T14:35:03",
+ "neuronios": 164451,
+ "arestas": 25550583,
+ "device": "gfx1031 (20 CUs, 12.0 GiB)",
+ "passos_neurais": 400,
+ "sim_ms": 200.0,
+ "parede_ms": 522.0,
+ "host": {
+  "enq_forcado": {
+   "us_por_passo": 850.28,
+   "ms_por_seg_simulado": 1700.6,
+   "pct": 65.2
+  },
+  "enq_lif": {
+   "us_por_passo": 259.21,
+   "ms_por_seg_simulado": 518.4,
+   "pct": 19.9
+  },
+  "enq_scatter": {
+   "us_por_passo": 76.09,
+   "ms_por_seg_simulado": 152.2,
+   "pct": 5.8
+  },
+  "enq_acumula": {
+   "us_por_passo": 63.22,
+   "ms_por_seg_simulado": 126.4,
+   "pct": 4.8
+  },
+  "finish": {
+   "us_por_passo": 651.93,
+   "ms_por_seg_simulado": 65.2,
+   "pct": 2.5
+  },
+  "host_rng": {
+   "us_por_passo": 11.25,
+   "ms_por_seg_simulado": 22.5,
+   "pct": 0.9
+  },
+  "host_mascara": {
+   "us_por_passo": 4.3,
+   "ms_por_seg_simulado": 8.6,
+   "pct": 0.3
+  }
+ },
+ "gpu_us_por_passo": {
+  "copia_forcado": 74.09
+ }
+}

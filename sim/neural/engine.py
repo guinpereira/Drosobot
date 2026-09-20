@@ -140,14 +140,43 @@ class NeuralEngine:
         else:
             idx = np.asarray(indices, dtype=np.int64)
             p = np.asarray(taxas_hz, dtype=np.float64)[idx] * (self.dt / 1000.0)
-            mascara = np.zeros(self.c.n, dtype=np.uint8)
             k = len(idx)
-            for _ in range(n):
-                mascara[idx] = (rng.random(k) < p).astype(np.uint8)
-                self.backend.escreve_forcados(mascara)
-                self._um_passo()
+            # Caminho ESPARSO quando o backend souber: manda os k valores em
+            # vez da mascara inteira. Sao 311 bytes no lugar de 164.451, e sem
+            # bloquear o host. O conteudo da mascara no device e identico --
+            # so estes indices sao escritos, e o resto ja era zero.
+            if self._esparso_pronto(idx):
+                for _ in range(n):
+                    self.backend.escreve_forcados_esparso(rng.random(k) < p)
+                    self._um_passo()
+            else:
+                mascara = np.zeros(self.c.n, dtype=np.uint8)
+                for _ in range(n):
+                    mascara[idx] = (rng.random(k) < p).astype(np.uint8)
+                    self.backend.escreve_forcados(mascara)
+                    self._um_passo()
         self.backend.sincroniza()
         return n
+
+    def _esparso_pronto(self, idx) -> bool:
+        """
+        O backend aceita o caminho esparso, e ja sabe destes indices?
+
+        Os indices sao fixos durante a corrida, entao sobem uma vez. Se
+        mudarem (outro experimento, outro escopo), sobem de novo -- comparar e
+        mais barato que reenviar.
+        """
+        prep = getattr(self.backend, "prepara_forcados_esparsos", None)
+        if prep is None:
+            return False
+        anterior = getattr(self, "_idx_esparso", None)
+        if anterior is not None and len(anterior) == len(idx)                 and np.array_equal(anterior, idx):
+            return True
+        if not prep(idx):
+            self._idx_esparso = None
+            return False
+        self._idx_esparso = np.array(idx, copy=True)
+        return True
 
     def roda(self, duracao_ms: float,
              externo_mV: np.ndarray | None = None) -> int:

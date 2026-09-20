@@ -787,8 +787,12 @@ namespace Drosobot.Lab
             string estado, detalhe;
             // _wallTime e double (vem do relogio da simulacao); a idade so
             // precisa de precisao de milissegundo
-            float idade = _ultimaMensagem < 0f ? -1f
-                                               : (float)_wallTime - _ultimaMensagem;
+            // Mathf.Max porque a telemetria chega numa thread que drena no
+            // Update: a mensagem pode ser registrada DEPOIS de `_wallTime` ser
+            // lido no mesmo quadro, e a idade sairia negativa ("ha -3 ms").
+            float idade = _ultimaMensagem < 0f
+                ? -1f
+                : Mathf.Max(0f, (float)_wallTime - _ultimaMensagem);
             if (_tel == null || !_tel.connected)
             {
                 estado = "DESCONECTADO";

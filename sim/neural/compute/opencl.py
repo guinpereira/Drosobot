@@ -65,6 +65,9 @@ class OpenCLBackend:
         self.k_scatter = cl.Kernel(self.prog, "scatter")
         self.k_conta = cl.Kernel(self.prog, "acumula_contagem")
         self.k_grupo = cl.Kernel(self.prog, "soma_por_grupo")
+        self.k_forcado = cl.Kernel(self.prog, "escreve_forcados_esparso")
+        self.k_compacta = cl.Kernel(self.prog, "compacta_spikes")
+        self.k_frontier = cl.Kernel(self.prog, "scatter_frontier")
         self.k_coleta = cl.Kernel(self.prog, "coleta_indices")
         self.k_limpa = cl.Kernel(self.prog, "limpa_anel")
 
@@ -143,11 +146,62 @@ class OpenCLBackend:
         self._forcado_zerado = True
         self.b_spk, self.b_anel = buf(spk), buf(anel)
         self.b_cont, self.b_soma = buf(cont), buf(soma)
+
+        # Frontier: lista dos que dispararam no passo. No pior caso todos
+        # disparam, entao ela tem n posicoes -- 658 KB no Male CNS inteiro,
+        # contra os 195 MB do CSR. O contador e um int so.
+        self.b_frontier = buf(np.zeros(n, dtype=np.int32))
+        self.b_nfront = buf(np.zeros(1, dtype=np.int32))
         self.b_ext = buf(zero, mf.READ_ONLY)
         self._ext_zerado = True
         self.bytes_dinamicos = (v.nbytes + g.nbytes + ref.nbytes + spk.nbytes
                                 + anel.nbytes + cont.nbytes + zero.nbytes
                                 + zero_u8.nbytes)
+
+        # os kernels guardam ponteiro de buffer: trocar buffer sem refixar
+        # deixaria o kernel escrevendo no buffer velho, em silencio
+        self._fixa_args()
+
+    def _fixa_args(self) -> None:
+        """
+        Prende nos kernels todos os argumentos que NAO mudam entre passos.
+
+        pyopencl remarshala a lista inteira a cada chamada: o LIF tem 18
+        argumentos, e sete deles sao buffers e oito sao constantes de modelo
+        que nunca mudam durante a corrida. Medido: 247 us por chamada com
+        marshalling completo contra 39 us so trocando os dois escalares que
+        mudam -- 6,4x, e isso a 2.000 chamadas por segundo simulado.
+
+        Tem que ser chamado depois de TODA troca de buffer (`reset`, e o
+        caminho esparso), senao o kernel continua apontando pro buffer velho.
+        """
+        k = self.coef
+        self.k_lif.set_args(
+            self.b_v, self.b_g, self.b_ref, self.b_spk, self.b_anel,
+            self.b_ext, self.b_forcado,
+            np.int32(self.c.n), np.int32(0), np.int32(0),
+            np.int32(k.ref_passos),
+            np.float32(V_REST), np.float32(V_RESET), np.float32(V_TH),
+            np.float32(k.dec_v), np.float32(k.dec_g), np.float32(k.acopla),
+            np.float32(1.0 / ESCALA), self.b_nfront)
+        self.k_scatter.set_args(
+            self.b_spk, self.b_row, self.b_tgt, self.b_w, self.b_anel,
+            np.int32(self.c.n), np.int32(0), np.float32(ESCALA))
+        self.k_compacta.set_args(self.b_spk, self.b_frontier, self.b_nfront,
+                                 np.int32(self.c.n))
+        self.k_frontier.set_args(
+            self.b_frontier, self.b_nfront, self.b_row, self.b_tgt, self.b_w,
+            self.b_anel, np.int32(self.c.n), np.int32(0), np.float32(ESCALA))
+        # Tamanho de lancamento FIXO pro scatter balanceado: o kernel percorre
+        # a frontier com passo largo, entao nao precisa saber quantos
+        # dispararam -- e descobrir isso exigiria trazer o contador pra CPU, ou
+        # seja uma sincronizacao por passo.
+        self._gl_frontier = (65536,)
+        self.k_conta.set_args(self.b_spk, self.b_cont, np.int32(self.c.n))
+        if self.grupos is not None and self.n_grupos > 1:
+            self.k_grupo.set_args(self.b_spk, self.b_grupo, self.b_soma,
+                                  np.int32(self.c.n))
+        self._gl_n = self._gl(self.c.n)
 
     @staticmethod
     def _gl(n: int) -> tuple[int]:
@@ -167,6 +221,49 @@ class OpenCLBackend:
                         np.ascontiguousarray(externo_mV, dtype=np.float32))
         self._ext_zerado = False
 
+    def prepara_forcados_esparsos(self, indices) -> bool:
+        """
+        Declara QUAIS neuronios podem receber spike forcado.
+
+        Os indices sao fixos durante a corrida (sao os sensores), entao sobem
+        uma vez. Depois disso cada passo manda so os valores -- 311 bytes no
+        lugar de 164.451.
+
+        Devolve False se nao houver indices: ai o caminho denso continua.
+        """
+        cl = self.cl
+        mf = cl.mem_flags
+        idx = np.ascontiguousarray(indices, dtype=np.int32)
+        if idx.size == 0:
+            self._idx_forcado = None
+            return False
+        self._idx_forcado = idx
+        self.b_idx_forcado = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
+                                       hostbuf=idx)
+        # buffer de valores reaproveitado: alocar por passo devolveria o
+        # overhead que este caminho veio remover
+        self.b_val_forcado = cl.Buffer(self.ctx, mf.READ_ONLY, size=int(idx.size))
+        self._val_host = np.zeros(idx.size, dtype=np.uint8)
+        self.k_forcado.set_args(self.b_forcado, self.b_idx_forcado,
+                                self.b_val_forcado, np.int32(idx.size))
+        self._gl_forcado = self._gl(int(idx.size))
+        # a mascara comeca zerada e SO estes indices serao escritos daqui pra
+        # frente, entao o resto permanece zero pra sempre
+        cl.enqueue_copy(self.fila, self.b_forcado,
+                        np.zeros(self.c.n, dtype=np.uint8))
+        self._forcado_zerado = True
+        return True
+
+    def escreve_forcados_esparso(self, valores) -> None:
+        """Valores nos indices declarados. Nao bloqueia o host."""
+        cl = self.cl
+        np.copyto(self._val_host, np.asarray(valores, dtype=np.uint8))
+        cl.enqueue_copy(self.fila, self.b_val_forcado, self._val_host,
+                        is_blocking=False)
+        cl.enqueue_nd_range_kernel(self.fila, self.k_forcado, self._gl_forcado,
+                                   None)
+        self._forcado_zerado = False
+
     def escreve_forcados(self, forcados) -> None:
         """Mascara de spike forcado deste passo (a fonte Poisson)."""
         cl = self.cl
@@ -181,28 +278,35 @@ class OpenCLBackend:
         self._forcado_zerado = False
 
     def lif(self, passo: int, cursor: int) -> None:
-        k = self.coef
-        self.k_lif(self.fila, self._gl(self.c.n), None,
-                   self.b_v, self.b_g, self.b_ref, self.b_spk, self.b_anel,
-                   self.b_ext, self.b_forcado,
-                   np.int32(self.c.n), np.int32(passo), np.int32(cursor),
-                   np.int32(k.ref_passos),
-                   np.float32(V_REST), np.float32(V_RESET), np.float32(V_TH),
-                   np.float32(k.dec_v), np.float32(k.dec_g), np.float32(k.acopla),
-                   np.float32(1.0 / ESCALA))
+        # so `passo` e `cursor` mudam; o resto esta preso desde `_fixa_args`
+        self.k_lif.set_arg(8, np.int32(passo))
+        self.k_lif.set_arg(9, np.int32(cursor))
+        self.cl.enqueue_nd_range_kernel(self.fila, self.k_lif, self._gl_n, None)
 
     def scatter(self, cursor: int) -> None:
-        self.k_scatter(self.fila, self._gl(self.c.n), None,
-                       self.b_spk, self.b_row, self.b_tgt, self.b_w, self.b_anel,
-                       np.int32(self.c.n), np.int32(cursor), np.float32(ESCALA))
+        """
+        Propaga os spikes. Duas etapas, uma thread por ARESTA.
+
+        O caminho de uma thread por NEURONIO (`k_scatter`, ainda no .cl) fica
+        como referencia: com 1.500 disparos em 164.451 neuronios ele deixa
+        99,1% das threads saindo na primeira linha e concentra o trabalho nos
+        hubs -- um neuronio de 11.203 arestas percorrido por uma thread so.
+        Medido: 859 us de atomics contra 19 us de piso.
+
+        O resultado e o mesmo bit a bit: a soma e `atomic_add` em INT, e adicao
+        inteira nao depende da ordem das parcelas.
+        """
+        cl = self.cl
+        cl.enqueue_nd_range_kernel(self.fila, self.k_compacta, self._gl_n, None)
+        self.k_frontier.set_arg(7, np.int32(cursor))
+        cl.enqueue_nd_range_kernel(self.fila, self.k_frontier,
+                                   self._gl_frontier, None)
 
     def acumula(self) -> None:
-        n = self.c.n
-        self.k_conta(self.fila, self._gl(n), None,
-                     self.b_spk, self.b_cont, np.int32(n))
+        cl = self.cl
+        cl.enqueue_nd_range_kernel(self.fila, self.k_conta, self._gl_n, None)
         if self.grupos is not None and self.n_grupos > 1:
-            self.k_grupo(self.fila, self._gl(n), None,
-                         self.b_spk, self.b_grupo, self.b_soma, np.int32(n))
+            cl.enqueue_nd_range_kernel(self.fila, self.k_grupo, self._gl_n, None)
 
     def sincroniza(self) -> None:
         self.fila.finish()

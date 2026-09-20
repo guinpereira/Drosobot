@@ -49,9 +49,21 @@ __kernel void lif_step(
     const float  dec_v,
     const float  dec_g,
     const float  acopla,
-    const float  inv_escala)
+    const float  inv_escala,
+    // Ultimo argumento de proposito: acrescentar no fim nao mexe no indice de
+    // nenhum outro, e os indices estao fixados no host (ver `_fixa_args`).
+    __global int *n_frontier)
 {
     int i = get_global_id(0);
+
+    // Zera o contador da frontier aqui, de graca. Um `enqueue_fill_buffer` so
+    // pra isso custaria mais um lancamento por passo (~19 us medidos), e fazer
+    // no inicio do `compacta_spikes` seria corrida com os incrementos. Aqui e
+    // seguro: o LIF termina antes de o compacta comecar, porque a fila e em
+    // ordem. Fica ANTES do recorte por `n` -- com o tamanho global arredondado
+    // pra cima, o item 0 existe sempre.
+    if (i == 0) n_frontier[0] = 0;
+
     if (i >= n) return;
 
     // o que chega agora vem do anel de atraso, e o slot e liberado pra reuso
@@ -81,4 +93,28 @@ __kernel void lif_step(
     g[i] = gi;
     ref_ate[i] = refi;
     spike[i] = disparou ? (uchar)1 : (uchar)0;
+}
+
+
+// ---------------------------------------------------------------- forcados
+//
+// Escreve a mascara de spike forcado SO nos indices que podem disparar.
+//
+// A mascara tem um byte por neuronio -- 164.451 no Male CNS inteiro -- mas so
+// os 311 sensores de looming mudam de valor. Copiar a mascara inteira a cada
+// passo custava 164 KB de transferencia e, pior, o `enqueue_copy` do pyopencl
+// e BLOQUEANTE por padrao: o host parava 844 us por passo esperando uma
+// transferencia que a GPU fazia em 75 us. Era 64% do relogio neural.
+//
+// Com este kernel sobem 311 bytes e o device escreve nos lugares certos. O
+// conteudo final da mascara e IDENTICO -- os outros 164.140 bytes ja eram zero
+// e continuam zero, porque so estes indices sao escritos, sempre.
+__kernel void escreve_forcados_esparso(__global uchar *forcado,
+                                       __global const int *idx,
+                                       __global const uchar *val,
+                                       const int k)
+{
+    int i = get_global_id(0);
+    if (i >= k) return;
+    forcado[idx[i]] = val[i];
 }

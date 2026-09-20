@@ -1,39 +1,39 @@
 {
- "gerado_em": "2026-09-20T13:43:17",
+ "gerado_em": "2026-09-20T14:52:34",
  "passos": 3000,
  "dt_s": 0.0001,
  "sim_ms": 300.0,
- "parede_ms": 1696.4,
+ "parede_ms": 1215.7,
  "etapas": {
-  "controlador": {
-   "ms_por_seg_simulado": 2275.6,
-   "us_por_passo": 227.56,
-   "pct": 40.2
-  },
   "mj_step_parede": {
-   "ms_por_seg_simulado": 1532.3,
-   "us_por_passo": 153.23,
-   "pct": 27.1
+   "ms_por_seg_simulado": 1599.5,
+   "us_por_passo": 159.95,
+   "pct": 39.5
   },
   "retina": {
-   "ms_por_seg_simulado": 750.5,
-   "us_por_passo": 75.05,
-   "pct": 13.3
+   "ms_por_seg_simulado": 1055.1,
+   "us_por_passo": 105.51,
+   "pct": 26.0
   },
   "observacao": {
-   "ms_por_seg_simulado": 718.1,
-   "us_por_passo": 71.81,
-   "pct": 12.7
+   "ms_por_seg_simulado": 694.3,
+   "us_por_passo": 69.43,
+   "pct": 17.1
   },
-  "aplica_acao": {
-   "ms_por_seg_simulado": 156.1,
-   "us_por_passo": 15.61,
-   "pct": 2.8
+  "controlador": {
+   "ms_por_seg_simulado": 319.6,
+   "us_por_passo": 31.96,
+   "pct": 7.9
   },
   "estimulo": {
-   "ms_por_seg_simulado": 138.0,
-   "us_por_passo": 13.8,
-   "pct": 2.4
+   "ms_por_seg_simulado": 160.1,
+   "us_por_passo": 16.01,
+   "pct": 3.9
+  },
+  "aplica_acao": {
+   "ms_por_seg_simulado": 137.4,
+   "us_por_passo": 13.74,
+   "pct": 3.4
   }
  },
  "mujoco_timers_ms": {
@@ -49,6 +49,6 @@
   "inertia": 0.0,
   "constraint_solve": 0.0
  },
- "overhead_wrapper_ms": 459.7,
+ "overhead_wrapper_ms": 479.9,
  "dentro_do_mj_step_pct": 0.0
 }

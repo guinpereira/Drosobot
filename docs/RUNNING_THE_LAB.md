@@ -161,28 +161,34 @@ seleção · botão esquerdo orbita · roda aproxima · botão do meio empurra.
 RX 6700 XT (gfx1031, 20 CUs, 12 GiB), Windows 11, FlyGym 2.1.0 / MuJoCo 3.9,
 OpenCL, looming, `legs`, whole CNS, 1 s de mosca:
 
-| etapa | antes | depois |
-|---|---|---|
-| física | 14.405 ms/s · 78,9% | **5.167 ms/s · 58,3%** |
-| neural | 3.363 ms/s · 18,4% | 3.068 ms/s · 34,6% |
-| visão | 14 ms/s | 14 ms/s |
-| leitura | 220 ms/s | 174 ms/s |
-| telemetria | 191 ms/s | 191 ms/s |
-| **total** | 18.266 ms/s | **8.860 ms/s** |
-| **RTF** | 0,055× | **0,113×** |
+| etapa | baseline | fastpath | hoje |
+|---|---|---|---|
+| física | 14.405 · 78,9% | 5.167 · 58,3% | **3.328 · 67,8%** |
+| neural | 3.363 · 18,4% | 3.068 · 34,6% | **916 · 18,7%** |
+| visão | 14 | 14 | 15 |
+| leitura | 220 | 174 | 179 |
+| telemetria | 191 | 191 | 208 |
+| **total** | 18.266 | 8.860 | **4.907** |
+| **RTF** | 0,055× | 0,113× | **0,204×** |
 
 Unidade: **ms de relógio por segundo simulado** — a única base em que as etapas
 se somam. A seção "por chamada" do profiler é outra grandeza e não soma.
 
-O ganho veio inteiro de `sim/physics/fastpath.py`, que remove trabalho de
-bookkeeping refeito 10.000 vezes por segundo simulado. **Mesma física, mesmo
-modelo, mesmo controlador, mesmo timestep** — e igualdade bit a bit verificada
-em `tests/test_fastpath_equivalencia.py`. Ver
-[`docs/research/PHYSICS_OVERHEAD.md`](research/PHYSICS_OVERHEAD.md).
+**3,7× no total, sem tocar em ciência**: mesmo timestep, mesmo modelo, mesmo
+controlador, mesmo conectoma, mesmos parâmetros. O comportamento é idêntico —
+mesmas fugas, mesmos spikes do Giant Fiber, mesma posição final.
 
-**A física continua sendo o maior bloco**, 58%. Dentro dela, agora, o
-`mj_step` é 27% — antes era 11%. O que sobrou é cada vez mais física de
-verdade e cada vez menos Python em volta.
+O ganho veio de remover trabalho repetido, não de calcular menos:
+`sim/physics/fastpath.py` e `native_fastpath.py` no lado da física, e no neural
+o scatter por frontier, os argumentos de kernel fixados e a máscara esparsa.
+Igualdade bit a bit verificada em `tests/test_fastpath_equivalencia.py`.
+
+Ver [`END_TO_END_PERFORMANCE.md`](research/END_TO_END_PERFORMANCE.md) e
+[`PHYSICS_OVERHEAD.md`](research/PHYSICS_OVERHEAD.md).
+
+**O `mj_step` é agora o maior item isolado do laço de física** — 39,5%, contra
+11% no começo. Não porque ficou mais lento, mas porque tudo em volta encolheu.
+O que sobra é física de verdade.
 
 ---
 

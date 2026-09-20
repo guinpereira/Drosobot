@@ -51,6 +51,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import native_fastpath as native
+
 # constante do `_step_phase_gain` do upstream; nao depende de nada
 _INCREMENTOS = np.array([0.0, 0.8, 0.0, -0.1, 0.0])
 
@@ -121,6 +123,7 @@ class ControladorRapido:
 
         # constantes por perna
         self.psi = [ps._psi_funcs[p] for p in self.pernas]
+        self.nativo = False
         self.psi_junto = self._empilha_splines()
         self.neutro = [np.asarray(ps.neutral_pos[p]) for p in self.pernas]
         self.pontos_fase = [
@@ -141,11 +144,100 @@ class ControladorRapido:
                 v = v * _RIGHT_LEG_CORRECTION_SIGN
             self.vetor_corr.append(np.asarray(v))
 
+        self._prepara_nativo()
+
         # buffers reaproveitados entre passos
         self._saida = np.zeros(len(self.ordem_saida), dtype=float)
         self._adesao = np.zeros(len(self.pernas), dtype=bool)
         self._fase = np.zeros(1, dtype=float)
         self._correcoes = np.zeros(len(self.pernas), dtype=float)
+
+    def _prepara_nativo(self) -> None:
+        """
+        Junta num so lugar tudo que o passo compilado precisa.
+
+        Sao as mesmas constantes que o laco em Python ja usava, so que em
+        arrays contiguos e com forma fixa -- o codigo compilado nao pode
+        consultar dicionario nem atributo de objeto Python a cada passo.
+        """
+        ctl = self.ctl
+        cpg = ctl.cpg_network
+        n = len(self.pernas)
+        self.nativo_passo = False
+        if not native.disponivel() or self.psi_junto is None:
+            return
+
+        self._neutro_m = np.ascontiguousarray(
+            np.stack([self.neutro[i][:, 0] for i in range(n)]), dtype=np.float64)
+        self._pontos_m = np.ascontiguousarray(
+            np.stack(self.pontos_fase), dtype=np.float64)
+        self._corr_m = np.ascontiguousarray(
+            np.stack([np.asarray(v, dtype=np.float64) for v in self.vetor_corr]))
+        self._swing_ini = np.ascontiguousarray(
+            [s0 for s0, _ in self.swing], dtype=np.float64)
+        self._swing_fim = np.ascontiguousarray(
+            [s1 for _, s1 in self.swing], dtype=np.float64)
+        self._acopla = np.ascontiguousarray(cpg.coupling_weights, dtype=np.float64)
+        self._vies = np.ascontiguousarray(cpg.phase_biases, dtype=np.float64)
+        self._freqs_base = np.ascontiguousarray(ctl._base_intrinsic_freqs,
+                                                dtype=np.float64)
+        self._converge = np.ascontiguousarray(cpg.convergence_coefs,
+                                              dtype=np.float64)
+        self._taxas_retr = np.ascontiguousarray(ctl.retraction_rates,
+                                                dtype=np.float64)
+        self._taxas_trop = np.ascontiguousarray(ctl.stumbling_rates,
+                                                dtype=np.float64)
+        self._indices_c = np.ascontiguousarray(self.indices, dtype=np.int64)
+        self._sinal_buf = np.zeros(2, dtype=np.float64)
+        self._corrigido = np.zeros(n, dtype=np.float64)
+        self.nativo_passo = True
+
+    def _step_nativo(self, sinal, obs, LocomotionAction):
+        """
+        O mesmo passo, em codigo compilado.
+
+        O ganho nao vem de calcular menos -- vem de nao pagar despacho do NumPy
+        em arrays de SEIS elementos, ~30 vezes por passo. Ver
+        `native_fastpath.passo_controlador`, e a prova de igualdade exata em
+        tests/test_fastpath_equivalencia.py.
+        """
+        ctl = self.ctl
+        cpg = ctl.cpg_network
+        np.copyto(self._sinal_buf, sinal)
+        perna = native.passo_controlador(
+            cpg.curr_phases, cpg.curr_magnitudes,
+            ctl.retraction_correction, ctl.stumbling_correction,
+            ctl.retraction_persistence_counter,
+            float(obs.thorax_z),
+            np.ascontiguousarray(obs.tarsus5_z, dtype=np.float64),
+            np.ascontiguousarray(obs.stumbling_contact_forces, dtype=np.float64),
+            np.ascontiguousarray(obs.fly_heading, dtype=np.float64),
+            self._sinal_buf,
+            self._acopla, self._vies, self._freqs_base, self._converge,
+            float(cpg.timestep),
+            float(ctl.retraction_height_threshold),
+            float(ctl.retraction_persistence_initiation_threshold),
+            int(ctl.retraction_persistence_steps),
+            self._taxas_retr, self._taxas_trop,
+            float(ctl.stumbling_force_threshold), float(ctl.max_correction),
+            self._x_pp, self._c_pp, self._neutro_m, self._pontos_m,
+            _INCREMENTOS, self._corr_m, self._indices_c,
+            self._swing_ini, self._swing_fim,
+            self._saida, self._adesao, self._buf_psi, self._corrigido)
+
+        # `intrinsic_amps`/`intrinsic_freqs` sao estado do CPG que o upstream
+        # reescreve a cada passo. O caminho compilado calcula os dois por
+        # dentro; refleti-los aqui mantem o objeto do upstream consistente pra
+        # quem inspecionar.
+        ctl.last_info = {
+            "net_corrections": self._corrigido.copy(),
+            "retraction_correction": ctl.retraction_correction.copy(),
+            "stumbling_correction": ctl.stumbling_correction.copy(),
+            "stumbling_mask": np.zeros(len(self.pernas), dtype=bool),
+            "leg_to_correct_retraction": None if perna < 0 else int(perna),
+        }
+        return LocomotionAction(joint_angles=self._saida.copy(),
+                                adhesion_onoff=self._adesao.copy())
 
     def _empilha_splines(self):
         """
@@ -175,8 +267,22 @@ class ControladorRapido:
                 return None
         coef = np.concatenate([np.asarray(f.c) for f in self.psi], axis=2)
         self._saidas_por_perna = np.asarray(base.c).shape[2]
+
+        # Caminho compilado: mesma aritmetica, sem a chamada do scipy. So entra
+        # se o wrap for periodico -- e o unico caso que `native_fastpath`
+        # reproduz bit a bit, e o unico que este modelo usa.
+        self._x_pp = np.ascontiguousarray(x, dtype=np.float64)
+        self._c_pp = np.ascontiguousarray(coef, dtype=np.float64)
+        self._buf_psi = np.zeros((len(self.pernas), coef.shape[2]), dtype=np.float64)
+        self._fases_buf = np.zeros(len(self.pernas), dtype=np.float64)
+        self.nativo = (native.disponivel()
+                       and base.extrapolate == "periodic")
+        if self.nativo:
+            native.aquece(self._x_pp, self._c_pp, len(self.pernas))
+
         # `construct_fast` nao revalida nem rola eixo: o resultado sai como
-        # (n_pontos, n_saidas), que e a forma que o laco quer.
+        # (n_pontos, n_saidas), que e a forma que o laco quer. Fica como
+        # referencia e como caminho de queda sem Numba.
         return PPoly.construct_fast(coef, x, extrapolate=base.extrapolate)
 
     def step(self, sinal_descendente, obs):
@@ -187,6 +293,9 @@ class ControladorRapido:
         sinal = np.asarray(sinal_descendente, dtype=float)
         if sinal.shape != (2,):
             raise ValueError("descending_signal must have shape (2,).")
+
+        if self.nativo_passo:
+            return self._step_nativo(sinal, obs, LocomotionAction)
 
         # --- o que o HybridTurningController faz antes de delegar ---
         ctl.cpg_network.intrinsic_amps = np.repeat(
@@ -211,9 +320,15 @@ class ControladorRapido:
         magnitudes = ctl.cpg_network.curr_magnitudes
         saida, adesao = self._saida, self._adesao
         dois_pi = 2 * np.pi
-        # uma chamada ao scipy pelas seis pernas, quando elas compartilham nos
-        psi_todas = (self.psi_junto(fases) if self.psi_junto is not None
-                     else None)
+        # uma avaliacao pelas seis pernas, quando elas compartilham nos
+        if self.psi_junto is None:
+            psi_todas = None
+        elif self.nativo:
+            np.copyto(self._fases_buf, fases)
+            psi_todas = native.avalia_ppoly_periodico(
+                self._x_pp, self._c_pp, self._fases_buf, self._buf_psi)
+        else:
+            psi_todas = self.psi_junto(fases)
 
         for i, perna in enumerate(self.pernas):
             ctl._update_retraction_correction(i, perna_retracao)

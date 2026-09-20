@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &317470527
+--- !u!1 &1967548710
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,8 +127,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 317470529}
-  - component: {fileID: 317470528}
+  - component: {fileID: 1967548712}
+  - component: {fileID: 1967548711}
   m_Layer: 0
   m_Name: DrosobotLab
   m_TagString: Untagged
@@ -136,13 +136,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &317470528
+--- !u!114 &1967548711
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 317470527}
+  m_GameObject: {fileID: 1967548710}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f8f1b46b72645f943965796590f9c8d7, type: 3}
@@ -155,16 +155,16 @@ MonoBehaviour:
   metadataResource: CNS/neuron_metadata
   presentationMode: 0
   showShell: 0
-  larguraCaixaCns: 300
-  alturaCaixaCns: 300
+  larguraCaixaCns: 250
+  alturaCaixaCns: 250
   giroCns: 8
---- !u!4 &317470529
+--- !u!4 &1967548712
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 317470527}
+  m_GameObject: {fileID: 1967548710}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -177,4 +177,4 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 317470529}
+  - {fileID: 1967548712}
