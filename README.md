@@ -506,6 +506,20 @@ nele altera peso, limiar, entrada ou drive.
 Medido na RX 6700 XT, 1 s de mosca com o conectoma inteiro: **RTF 0,055×**,
 física 78,9% do relógio, neural 18,4%. O gargalo é a física, não o cérebro.
 
+### Experimentos reproduzíveis
+
+```bat
+.venv-flygym2\Scripts\python -m sim.run_experiments simaterias\looming_lateral.json
+.venv-flygym2\Scripts\python -m sim.replay          # reabre a última corrida na Unity
+```
+
+Cada corrida grava receita, ambiente, conectoma, hash dos parâmetros
+científicos, série temporal, eventos e resumo — e pode ser reaberta na Unity sem
+refazer a simulação. A análise circuito × conectoma inteiro sai pronta, com a
+contribuição no Giant Fiber quebrada por população pré-sináptica.
+
+**[docs/EXPERIMENT_PLATFORM.md](docs/EXPERIMENT_PLATFORM.md)**
+
 Arquitetura, protocolo e procedência DATA/MODEL/ASSUMPTION em
 **[docs/DROSOBOT_LAB.md](docs/DROSOBOT_LAB.md)**. Coordenadas e montagem da
 mosca 3D em **[docs/UNITY_BODY_COORDINATES.md](docs/UNITY_BODY_COORDINATES.md)**.

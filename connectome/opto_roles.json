@@ -1,0 +1,61 @@
+{
+ "nota": "bodyIds da via optomotora, com lado inferido da ROI do conectoma. Gerado de connectome/opto_*.csv.",
+ "fonte": "connectome/opto_sensor_hs.csv, opto_hs_dna02.csv, opto_dna02_motor.csv (male-cns:v1.0)",
+ "criterio_lado": "sensor: ROI LOP(L)/LOP(R); HS: lado majoritario dos sensores que entram nele, por peso; DNa02: ROI IPS(L)/IPS(R)",
+ "T4T5_L": [
+  59793,
+  84721,
+  85599,
+  93189,
+  97394,
+  99841,
+  102848,
+  161703,
+  534773,
+  535380
+ ],
+ "T4T5_R": [
+  78317,
+  81859,
+  85173,
+  87428,
+  89947,
+  92602,
+  92738,
+  99813,
+  104897,
+  108235
+ ],
+ "HS_L": [
+  10034,
+  10181,
+  10419,
+  11793
+ ],
+ "HS_R": [
+  10015,
+  10016,
+  10023,
+  12521
+ ],
+ "DNa02_L": [
+  523769
+ ],
+ "DNa02_R": [
+  10360
+ ],
+ "opto_motor": [
+  800316,
+  801469,
+  801548,
+  801813,
+  801918,
+  801946,
+  802215,
+  806923,
+  832490,
+  903689,
+  906235,
+  919509
+ ]
+}

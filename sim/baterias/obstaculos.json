@@ -1,0 +1,21 @@
+{
+  "nome": "obstaculos",
+  "versao": "1",
+  "duracao_s": 3.0,
+  "physics": "flygym2",
+  "neural": "opencl",
+  "colisao": "legs",
+  "seeds": [0, 1, 2],
+  "escopos": ["circuit", "whole"],
+  "condicoes": [
+    {"condicao": "esquerda", "arena": "obstaculos",
+     "estimulo": {"lado": "esquerda", "distancia_mm": 4.0},
+     "notas": "pilar deslocado para +y; o desvio util seria para a direita"},
+    {"condicao": "centro", "arena": "obstaculos",
+     "estimulo": {"lado": "centro", "distancia_mm": 4.0},
+     "notas": "pilar na linha de marcha"},
+    {"condicao": "direita", "arena": "obstaculos",
+     "estimulo": {"lado": "direita", "distancia_mm": 4.0},
+     "notas": "pilar deslocado para -y"}
+  ]
+}

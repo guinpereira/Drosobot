@@ -74,8 +74,10 @@ RAIZ = AQUI.parent
 sys.path.insert(0, str(AQUI))
 
 from profiler import Profiler  # noqa: E402
+from transducao import TransducaoLooming, TransducaoOptomotor  # noqa: E402
 
 PAPEIS_JSON = RAIZ / "connectome" / "gf_roles.json"
+PAPEIS_OPTO_JSON = RAIZ / "connectome" / "opto_roles.json"
 PROPRIEDADES_CSV = RAIZ / "connectome" / "neuron_properties.csv"
 
 # transducao retina -> taxa: escolha NOSSA (ASSUMPTION), nao esta no conectoma
@@ -86,6 +88,14 @@ VISION_HZ = 100
 JANELA_MS = 10.0
 DT = 1e-4
 BASE_DRIVE, ESCAPE_DRIVE, ESCAPE_MS = 1.0, -0.5, 120.0
+# Giro por desequilibrio entre os DNa02. ASSUMPTION: o conectoma nao diz quanto
+# um spike descendente vale em velocidade de perna. O sinal segue a convencao
+# de `TransducaoOptomotor.hz_por_lado`, que tambem e declarada.
+GANHO_GIRO = 0.25
+GIRO_MAX = 0.8
+# Ganho e teto da transducao optomotora, em Hz por unidade de fluxo. ASSUMPTION.
+OPTO_GANHO_HZ = 4.0
+OPTO_MAX_HZ = 20.0
 # pose vai na cadencia da VISUALIZACAO, nao na da fisica
 POSE_HZ = 30
 # a retina sao 1442 floats: a mensagem mais cara, entao vai a cada N janelas
@@ -115,6 +125,39 @@ CATALOGO = [
         "arena": "looming", "cns": "circuit",
     },
     {
+        "id": "optomotor_whole",
+        "name": "Optomotor -- Male CNS inteiro",
+        "description": ("Tambor de postes girando em torno da mosca. O fluxo "
+                        "optico horizontal excita os T4/T5 de um lado, HS "
+                        "propaga, e o desequilibrio entre os DNa02 vira giro. "
+                        "Via e transducao diferentes das de looming."),
+        "arena": "optomotor", "cns": "whole",
+    },
+    {
+        "id": "optomotor_circuit",
+        "name": "Optomotor -- circuito T4/T5 -> HS -> DNa02",
+        "description": ("Mesmo estimulo, so a via optomotora isolada. E a "
+                        "comparacao que diz o que o resto do conectoma faz "
+                        "com o sinal de giro."),
+        "arena": "optomotor", "cns": "circuit",
+    },
+    {
+        "id": "obstaculos_whole",
+        "name": "Campo de obstaculos -- Male CNS inteiro",
+        "description": ("Pilares fixos no caminho. Usa a MESMA via de looming: "
+                        "um obstaculo que se aproxima e, para a retina, um "
+                        "estimulo em expansao. A pergunta e se o reflexo de "
+                        "fuga guia desvio, nao so reacao."),
+        "arena": "obstaculos", "cns": "whole",
+    },
+    {
+        "id": "obstaculos_circuit",
+        "name": "Campo de obstaculos -- circuito do Giant Fiber",
+        "description": ("Mesmos pilares, so o circuito do GF. E a comparacao "
+                        "que diz se o gate inibitorio muda o desvio."),
+        "arena": "obstaculos", "cns": "circuit",
+    },
+    {
         "id": "flat_whole",
         "name": "Marcha livre -- Male CNS inteiro",
         "description": ("Chao plano, sem estimulo. Linha de base: o que a rede "
@@ -124,24 +167,52 @@ CATALOGO = [
 ]
 
 
-def monta_cerebro(escopo: str, backend: str):
-    """Devolve (engine, papeis, nomes_grupos). `papeis`: nome -> indices."""
+# Que populacoes cada via declara. O resto do conectoma participa pela
+# conectividade, sem semantica sensorial ou motora modelada.
+PAPEIS_POR_VIA = {
+    "looming": ("LC4/LPLC2", "DNp01", "TTMn"),
+    "optomotor": ("T4T5_L", "T4T5_R", "HS_L", "HS_R", "DNa02_L", "DNa02_R",
+                  "opto_motor"),
+}
+
+
+def _ids_da_via(via: str) -> dict:
+    caminho = PAPEIS_OPTO_JSON if via == "optomotor" else PAPEIS_JSON
+    return json.loads(caminho.read_text(encoding="utf-8"))
+
+
+def monta_cerebro(escopo: str, backend: str, via: str = "looming"):
+    """
+    Devolve (engine, papeis, nomes_grupos). `papeis`: nome -> indices.
+
+    `via` escolhe QUAIS populacoes tem semantica declarada -- a de looming
+    (LC4/LPLC2 -> DNp01 -> TTMn) ou a optomotora (T4/T5 -> HS -> DNa02). O
+    conectoma carregado e o mesmo; o que muda e quem recebe entrada sensorial e
+    de quem se le saida motora.
+    """
     from neural import NeuralEngine, carrega_male_cns, subgrafo
 
-    ids = json.loads(PAPEIS_JSON.read_text(encoding="utf-8"))
+    ids = _ids_da_via(via)
+    nomes_papeis = PAPEIS_POR_VIA[via]
     c = carrega_male_cns()
 
     if escopo == "circuit":
-        alvo = np.unique(np.concatenate([
-            np.asarray(ids["upstream_gf_total"], dtype=np.int64),
-            np.asarray(ids["DNp01"], dtype=np.int64),
-            np.asarray(ids["TTMn"], dtype=np.int64)]))
+        if via == "optomotor":
+            # o subgrafo da via optomotora e a uniao das suas populacoes: nao
+            # ha lista de upstream publicada como a do GF
+            alvo = np.unique(np.concatenate(
+                [np.asarray(ids[n], dtype=np.int64) for n in nomes_papeis]))
+        else:
+            alvo = np.unique(np.concatenate([
+                np.asarray(ids["upstream_gf_total"], dtype=np.int64),
+                np.asarray(ids["DNp01"], dtype=np.int64),
+                np.asarray(ids["TTMn"], dtype=np.int64)]))
         idx = c.indice_de(alvo)
         c = subgrafo(c, idx[idx >= 0])
 
     grupos = np.full(c.n, -1, dtype=np.int32)
     nomes, papeis = [], {}
-    for nome in ("LC4/LPLC2", "DNp01", "TTMn"):
+    for nome in nomes_papeis:
         idx = c.indice_de(ids[nome])
         idx = idx[idx >= 0]
         papeis[nome] = idx
@@ -311,6 +382,7 @@ class Laboratorio:
         self.corpo = None
         self.eng = None
         self.escopo_montado = None
+        self.via_montada = None
         self.arena_montada = None
         self.nomes_tipo = nomes_por_body_id()
         self.passo_atual = 0
@@ -318,6 +390,8 @@ class Laboratorio:
         self.escapes = 0
         self.hz = 0.0
         self.spikes_sensoriais = 0
+        self.fluxo_optico = 0.0
+        self.desequilibrio = 0
         self._looming_ativo = False
         self.gf_acumulado = self._zera_acumulado()
         self.prof = Profiler(["physics", "vision", "neural", "leitura",
@@ -332,15 +406,17 @@ class Laboratorio:
                 return e
         return None
 
-    def _cerebro_para(self, escopo: str):
-        """Monta o cerebro do escopo pedido, reaproveitando se ja for esse."""
-        if self.eng is not None and self.escopo_montado == escopo:
+    def _cerebro_para(self, escopo: str, via: str = "looming"):
+        """Monta o cerebro do escopo e da via pedidos, reaproveitando se der."""
+        if (self.eng is not None and self.escopo_montado == escopo
+                and self.via_montada == via):
             self.eng.reset()
             return
         t0 = time.perf_counter()
         self.eng, self.papeis, self.nomes_grupos = monta_cerebro(
-            escopo, self.args.neural)
+            escopo, self.args.neural, via=via)
         self.escopo_montado = escopo
+        self.via_montada = via
         self.idx_gf = self.papeis.get("DNp01", np.zeros(0, np.int32))
         self.gf_pre, self.gf_peso = entradas_do_gf(self.eng.c, self.idx_gf)
         self.gf_tipo_idx, self.gf_tipos = indices_por_tipo(
@@ -379,16 +455,31 @@ class Laboratorio:
         self.estado = "loading"
         self.exp_id, self.seed = exp_id, seed
         self._publica_estado(message="montando cerebro, arena e mosca")
+        via = "optomotor" if item["arena"] == "optomotor" else "looming"
         try:
-            self._cerebro_para(item["cns"])
+            self._cerebro_para(item["cns"], via)
             self._corpo_para(item["arena"], seed)
         except Exception as e:                                # noqa: BLE001
             self._falha(f"{type(e).__name__}: {e}")
             return False
 
         # estado do laco, zerado junto com o experimento
-        self.sens = self.papeis.get("LC4/LPLC2", np.zeros(0, np.int32))
-        self.motor = self.papeis.get("TTMn", np.zeros(0, np.int32))
+        self.via = via
+        if via == "optomotor":
+            self.sens_l = self.papeis.get("T4T5_L", np.zeros(0, np.int32))
+            self.sens_r = self.papeis.get("T4T5_R", np.zeros(0, np.int32))
+            self.sens = np.concatenate([self.sens_l, self.sens_r]).astype(np.int64)
+            self.motor_l = self.papeis.get("DNa02_L", np.zeros(0, np.int32))
+            self.motor_r = self.papeis.get("DNa02_R", np.zeros(0, np.int32))
+            self.motor = np.concatenate([self.motor_l, self.motor_r]).astype(np.int64)
+            self.transducao = TransducaoOptomotor(ganho_hz_por_unidade=OPTO_GANHO_HZ,
+                                                  teto_hz=OPTO_MAX_HZ)
+            self.transducao.prepara()
+        else:
+            self.sens = self.papeis.get("LC4/LPLC2", np.zeros(0, np.int32))
+            self.motor = self.papeis.get("TTMn", np.zeros(0, np.int32))
+            self.transducao = TransducaoLooming(DARK_THRESHOLD, LOOM_GAIN,
+                                                LOOM_MAX_HZ, VISION_HZ)
         self.taxas = np.zeros(self.eng.c.n, dtype=np.float64)
         # Semente do EXPERIMENTO, nao semente global: a realizacao de Poisson
         # tem que ser reproduzivel por corrida pra que duas corridas com a
@@ -400,6 +491,8 @@ class Laboratorio:
         self.passo_atual, self.t_s = 0, 0.0
         self.hz, self.janelas = 0.0, 0
         self.spikes_sensoriais = 0
+        self.fluxo_optico = 0.0
+        self.desequilibrio = 0
         self._looming_ativo = False
         self.gf_acumulado = self._zera_acumulado()
         self.proxima_pose = 0.0
@@ -533,15 +626,21 @@ class Laboratorio:
             return False
 
         with self.prof("vision", "quadro de retina"):
-            escuro = (frame.retina < DARK_THRESHOLD).mean(axis=1)
-            if self.escuro_lento is None:
-                self.escuro_lento = escuro.copy()
-            expansao = np.clip(escuro - self.escuro_lento, 0, None)
-            self.escuro_lento += (escuro - self.escuro_lento) / (0.3 * VISION_HZ)
-            self.hz = float(np.clip(expansao * LOOM_GAIN, 0, LOOM_MAX_HZ).max())
             self.taxas[:] = 0.0
-            if len(self.sens):
-                self.taxas[self.sens] = self.hz
+            if self.via == "optomotor":
+                fluxo, escuro = self.transducao.taxa(frame.retina)
+                hz_l, hz_r = self.transducao.hz_por_lado(fluxo)
+                if len(self.sens_l):
+                    self.taxas[self.sens_l] = hz_l
+                if len(self.sens_r):
+                    self.taxas[self.sens_r] = hz_r
+                self.hz = max(hz_l, hz_r)
+                self.fluxo_optico = float(np.mean(fluxo))
+            else:
+                self.hz, escuro = self.transducao.taxa(frame.retina)
+                if len(self.sens):
+                    self.taxas[self.sens] = self.hz
+                self.fluxo_optico = 0.0
 
         with self.prof("neural", "janela de 10 ms"):
             self.eng.roda_poisson(JANELA_MS, self.taxas, self.rng,
@@ -561,9 +660,21 @@ class Laboratorio:
                                       if est_s is not None else 0)
 
         eventos = self._eventos(gate, ttmn)
-        self.drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE])
-                      if self.t_s < self.escape_ate
-                      else np.array([BASE_DRIVE, BASE_DRIVE]))
+        if self.via == "optomotor":
+            # Giro pelo desequilibrio entre os DNa02. ASSUMPTION: o conectoma
+            # nao diz quanto um spike descendente vale em velocidade de perna.
+            est_l = self.eng.le(self.motor_l) if len(self.motor_l) else None
+            est_r = self.eng.le(self.motor_r) if len(self.motor_r) else None
+            nl = int(est_l.spike.sum()) if est_l is not None else 0
+            nr = int(est_r.spike.sum()) if est_r is not None else 0
+            self.desequilibrio = nr - nl
+            giro = float(np.clip(self.desequilibrio * GANHO_GIRO,
+                                 -GIRO_MAX, GIRO_MAX))
+            self.drive = np.array([BASE_DRIVE - giro, BASE_DRIVE + giro])
+        else:
+            self.drive = (np.array([ESCAPE_DRIVE, ESCAPE_DRIVE])
+                          if self.t_s < self.escape_ate
+                          else np.array([BASE_DRIVE, BASE_DRIVE]))
 
         self.janelas += 1
         self._acumula(gate, ttmn)

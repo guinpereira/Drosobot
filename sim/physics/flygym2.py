@@ -87,15 +87,44 @@ class FlyGym2Adapter:
         if self.com_visao:
             fly.add_vision()
 
+        self._tipo_estimulo = None
         if self.arena_tipo == "looming":
             from .looming_world import Estimulo, constroi_mundo_looming
             world, self._nome_obj = constroi_mundo_looming()
             self._estimulo = Estimulo(**self.params_estimulo)
+            self._tipo_estimulo = "looming"
+        elif self.arena_tipo == "optomotor":
+            from .arenas import EstimuloOptomotor, constroi_mundo_optomotor
+            geom = {k: v for k, v in self.params_estimulo.items()
+                    if k in ("n_postes", "raio_anel_mm", "altura_mm",
+                             "raio_poste_mm")}
+            mov = {k: v for k, v in self.params_estimulo.items()
+                   if k in ("vel_graus_s", "atraso_s")}
+            world, self._nome_obj = constroi_mundo_optomotor(**geom)
+            self._estimulo = EstimuloOptomotor(**mov)
+            self._tipo_estimulo = "optomotor"
+        elif self.arena_tipo == "obstaculos":
+            from .arenas import CampoObstaculos, constroi_mundo_obstaculos
+            campo = CampoObstaculos(
+                lado=self.params_estimulo.get("lado", "centro"),
+                distancia_mm=self.params_estimulo.get("distancia_mm"))
+            world, self._geoms_obst = constroi_mundo_obstaculos(campo.posicoes)
+            self._nome_obj = None
+            self._estimulo = campo
+            self._tipo_estimulo = "obstaculos"
         else:
             world = FlatGroundWorld()
             self._nome_obj = None
             self._estimulo = None
         world.add_fly(fly, (0, 0, 0.8), Rotation3D("quat", (1, 0, 0, 0)))
+        # Os pares de colisao com os pilares so podem ser declarados DEPOIS de
+        # a mosca existir no spec -- e eles sao a unica forma de o obstaculo
+        # obstruir, porque este modelo nao usa contype/conaffinity.
+        self._pares_obstaculo = 0
+        if self.arena_tipo == "obstaculos":
+            from .arenas import declara_pares_obstaculo
+            self._pares_obstaculo = declara_pares_obstaculo(
+                world.mjcf_root, self._geoms_obst)
 
         self.fly = fly
         self.sim = Simulation(world, timestep=self._dt)
@@ -165,16 +194,33 @@ class FlyGym2Adapter:
         )
 
     def antes_do_passo(self, t_s: float, dist_mm: float | None = None) -> None:
-        """Move a esfera de looming. Mocap: posicao imposta, sem dinamica."""
+        """
+        Atualiza o estimulo antes do passo de fisica.
+
+        Mocap nos dois casos moveis: posicao (ou rotacao) imposta por fora, sem
+        dinamica propria e sem entrar no solver. Os obstaculos nao aparecem aqui
+        porque sao fixos -- e eles COLIDEM, que e o ponto daquele experimento.
+        """
         if self._estimulo is None or self._mocapid is None:
             return
-        pos = getattr(self, "_pos_cache", None)
-        if pos is None:
-            pos = self.sim.get_body_positions(self.fly.name)
-        alvo = self._estimulo.posicao(t_s, pos[self._i_torax])
-        self.sim.mj_data.mocap_pos[self._mocapid] = alvo
-        self._dist_estimulo = float(self._estimulo.distancia(t_s))
-        self._pos_estimulo = np.asarray(alvo, dtype=float)
+        if self._tipo_estimulo == "looming":
+            pos = getattr(self, "_pos_cache", None)
+            if pos is None:
+                pos = self.sim.get_body_positions(self.fly.name)
+            alvo = self._estimulo.posicao(t_s, pos[self._i_torax])
+            self.sim.mj_data.mocap_pos[self._mocapid] = alvo
+            self._dist_estimulo = float(self._estimulo.distancia(t_s))
+            self._pos_estimulo = np.asarray(alvo, dtype=float)
+        elif self._tipo_estimulo == "optomotor":
+            # o tambor gira em torno da mosca; a posicao acompanha o torax pra
+            # que ela fique sempre no centro do anel
+            pos = getattr(self, "_pos_cache", None)
+            if pos is None:
+                pos = self.sim.get_body_positions(self.fly.name)
+            centro = np.asarray(pos[self._i_torax], dtype=float)
+            self.sim.mj_data.mocap_pos[self._mocapid] = [centro[0], centro[1], 0.0]
+            self.sim.mj_data.mocap_quat[self._mocapid] = \
+                self._estimulo.quaternion(t_s)
 
     def passo(self, motor: MotorFrame) -> SensorFrame:
         from flygym.compose import ActuatorType
@@ -234,8 +280,11 @@ class FlyGym2Adapter:
         return nomes, pos, quat
 
     def estado_estimulo(self):
+        """So o looming tem uma esfera pra desenhar; as outras arenas nao."""
+        if self._tipo_estimulo != "looming":
+            return None
         p = getattr(self, "_pos_estimulo", None)
-        if p is None or self._estimulo is None:
+        if p is None:
             return None
         return (float(p[0]), float(p[1]), float(p[2]), float(RAIO_ESTIMULO))
 
@@ -250,11 +299,19 @@ class FlyGym2Adapter:
             "nv": int(m.nv) if m is not None else 0,
             "vision_hz": VISION_HZ if self.com_visao else 0,
             "arena": self.arena_tipo,
-            "diferenca_declarada": (
-                "arena de looming reproduzida com esfera mocap; o chao e o "
-                "FlatGroundWorld do 2.x, com os parametros de contato dele, "
-                "nao os da MovingObjArena do 1.x"
-                if self.arena_tipo == "looming" else "chao plano"),
+            "estimulo": self.params_estimulo,
+            "diferenca_declarada": {
+                "looming": ("arena de looming reproduzida com esfera mocap; o "
+                            "chao e o FlatGroundWorld do 2.x, com os parametros "
+                            "de contato dele, nao os da MovingObjArena do 1.x"),
+                "optomotor": ("tambor de postes mocap em vez de textura "
+                              "listrada; a retina le intensidade por omatideo, "
+                              "e postes escuros dao esse sinal com geometria "
+                              "que sabemos que ela enxerga"),
+                "obstaculos": ("pilares FIXOS que colidem de verdade -- e o "
+                               "ponto do experimento. O numero de pares de "
+                               "colisao sobe, e o custo da fisica com ele"),
+            }.get(self.arena_tipo, "chao plano"),
         }
 
     def fecha(self) -> None:

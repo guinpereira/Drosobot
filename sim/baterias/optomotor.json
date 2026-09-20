@@ -1,0 +1,21 @@
+{
+  "nome": "optomotor",
+  "versao": "1",
+  "duracao_s": 1.0,
+  "physics": "flygym2",
+  "neural": "opencl",
+  "colisao": "legs",
+  "seeds": [0, 1, 2],
+  "escopos": ["circuit", "whole"],
+  "condicoes": [
+    {"condicao": "dir_para_esq", "arena": "optomotor",
+     "estimulo": {"vel_graus_s": 180.0, "atraso_s": 0.2},
+     "notas": "tambor gira num sentido; o fluxo comum e negativo"},
+    {"condicao": "esq_para_dir", "arena": "optomotor",
+     "estimulo": {"vel_graus_s": -180.0, "atraso_s": 0.2},
+     "notas": "sentido oposto; o fluxo comum inverte de sinal"},
+    {"condicao": "parado", "arena": "optomotor",
+     "estimulo": {"vel_graus_s": 0.0, "atraso_s": 0.0},
+     "notas": "controle: mesmo mundo, tambor imovel"}
+  ]
+}

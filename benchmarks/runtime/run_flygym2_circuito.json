@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-09-20T14:53:38",
+  "gerado_em": "2026-09-20T15:32:16",
   "physics": "flygym2",
   "escopo": "circuito",
   "rotulo": "flygym2+circuito",
@@ -13,6 +13,7 @@
     "nv": 72,
     "vision_hz": 100,
     "arena": "looming",
+    "estimulo": {},
     "diferenca_declarada": "arena de looming reproduzida com esfera mocap; o chao e o FlatGroundWorld do 2.x, com os parametros de contato dele, nao os da MovingObjArena do 1.x"
   },
   "cerebro": {
@@ -22,15 +23,15 @@
     "edges_simulated": 105130,
     "vram_mib": 0.9
   },
-  "rtf": 0.2311,
+  "rtf": 0.2261,
   "ms_por_seg_simulado": {
-    "physics": 3291.1,
-    "vision": 9.5,
-    "neural": 633.9,
-    "leitura": 175.2
+    "physics": 3356.8,
+    "vision": 9.3,
+    "neural": 651.4,
+    "leitura": 174.6
   },
-  "outro_ms_por_seg_simulado": 217.0,
-  "total_ms_por_seg_simulado": 4326.7,
+  "outro_ms_por_seg_simulado": 229.9,
+  "total_ms_por_seg_simulado": 4422.1,
   "desfecho": {
     "fugas": 2,
     "posicao_final": [
