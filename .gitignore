@@ -30,6 +30,7 @@ unity/**/Logs/
 unity/**/UserSettings/
 unity/**/PackageCache/
 unity/build.log
+unity/capture.log
 unity/DrosobotLab/Assets/Temp/
 unity/DrosobotLab/Assets/Temp.meta
 unity/**/MemoryCaptures/

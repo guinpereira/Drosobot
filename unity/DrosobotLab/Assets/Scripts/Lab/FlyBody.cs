@@ -11,16 +11,16 @@
 // porque a pose chega a 30 Hz e a interface desenha a 60+ -- mas nada do que
 // ela calcula volta pra simulacao.
 //
-// ## Conversao de eixos e de quaternio
+// ## Conversao de eixos
 //
-// O exportador entrega os numeros como o MuJoCo os tem, e a conversao acontece
-// aqui, num lugar so:
+// Nao acontece aqui. Toda troca de eixo passa por `MujocoFrame`, um lugar so.
+// Ver docs/UNITY_BODY_COORDINATES.md.
 //
-//     MuJoCo   Z-up, destro,   quaternio (w, x, y, z),  milimetros
-//     Unity    Y-up, canhoto,  quaternio (x, y, z, w)
+// ## Pose em MUNDO
 //
-// Converter nos dois lados seria o jeito mais facil de aplicar a rotacao duas
-// vezes e passar semanas procurando o erro.
+// Cada segmento chega com transform de MUNDO, entao a raiz visual fica na
+// identidade. Mover a raiz E aplicar pose de mundo soma o deslocamento duas
+// vezes -- ja aconteceu. `MujocoFrame.RaizNeutra` verifica isso todo quadro.
 
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
@@ -30,10 +30,24 @@ namespace Drosobot.Lab
 {
     public class FlyBody : MonoBehaviour
     {
+        /// <summary>O que o Lab esta mostrando do corpo.</summary>
+        public enum Modo
+        {
+            /// <summary>Pose viva, vinda da telemetria.</summary>
+            Normal,
+            /// <summary>Pose de repouso do MODELO, parada. Nao usa telemetria.</summary>
+            BindPose,
+            /// <summary>Pose viva + eixos locais nos segmentos principais.</summary>
+            Eixos,
+            /// <summary>Pose viva + nome de cada segmento.</summary>
+            Rotulos,
+        }
+
         [Header("Estado")]
         public int segmentosMontados;
         public int segmentosRecebidos;
         public bool poseRecebida;
+        public Modo modo = Modo.Normal;
 
         [Header("Exibicao")]
         [Tooltip("Escala de mundo. O modelo esta em mm; 1 unidade Unity = 1 mm.")]
@@ -43,6 +57,8 @@ namespace Drosobot.Lab
                  "entao suavizacao baixa faz os segmentos ficarem pra tras e a " +
                  "mosca aparecer desmontada.")]
         public float suavizacao = 60f;
+        [Tooltip("Comprimento dos eixos locais no modo Eixos, em mm.")]
+        public float tamanhoEixo = 0.35f;
 
         private class Seg
         {
@@ -50,11 +66,17 @@ namespace Drosobot.Lab
             public Vector3 alvoPos;
             public Quaternion alvoRot;
             public bool temAlvo;
+            public Vector3 bindPos;      // pose de repouso do modelo, em MUNDO
+            public Quaternion bindRot;
+            public string nome;
         }
 
         private readonly Dictionary<string, Seg> _porNome = new Dictionary<string, Seg>();
+        private readonly List<Seg> _ordem = new List<Seg>();
         private Transform _raiz;
         private Material _mat;
+        private GameObject _eixos;
+        private bool _avisouRaiz;
 
         /// <summary>Monta a mosca a partir de Resources/Fly/fly_body.json.</summary>
         public bool Montar()
@@ -93,8 +115,9 @@ namespace Drosobot.Lab
                 {
                     var go = new GameObject(body);
                     go.transform.SetParent(_raiz, false);
-                    seg = new Seg { t = go.transform };
+                    seg = new Seg { t = go.transform, nome = body };
                     _porNome[body] = seg;
+                    _ordem.Add(seg);
                 }
 
                 var filho = new GameObject(mesh);
@@ -105,18 +128,74 @@ namespace Drosobot.Lab
                 mr.sharedMaterial = _mat;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-                var p = g["pos"];
-                var q = g["quat_wxyz"];
-                filho.transform.localPosition = DeMujoco(
-                    (float)p[0], (float)p[1], (float)p[2]);
-                filho.transform.localRotation = DeMujocoQuat(
-                    (float)q[0], (float)q[1], (float)q[2], (float)q[3]);
+                filho.transform.localPosition = MujocoFrame.Pos(Tres(g["pos"]));
+                filho.transform.localRotation = MujocoFrame.Quat(Quatro(g["quat_wxyz"]));
             }
+
+            CalculaBindPose(doc["bodies"] as JArray);
+            AplicaBindPose();   // nasce em repouso; a telemetria assume depois
 
             segmentosMontados = _porNome.Count;
             Debug.Log($"[fly] {segmentosMontados} segmentos montados a partir das " +
                       "malhas reais do NeuroMechFly");
             return segmentosMontados > 0;
+        }
+
+        // ------------------------------------------------------- bind pose
+        //
+        // O exportador guarda, pra cada body, o transform LOCAL em relacao ao
+        // pai -- a pose de repouso do modelo compilado. Acumulando a cadeia da
+        // raiz pra baixo sai a pose de repouso em MUNDO, que e o que o modo
+        // Bind Pose mostra: a mosca inteira, parada, sem telemetria nenhuma.
+        //
+        // A composicao pode ser feita ja no espaco da Unity porque a troca de
+        // eixo e uma conjugacao: M(R1*R2)M-1 = (M R1 M-1)(M R2 M-1).
+        private void CalculaBindPose(JArray bodies)
+        {
+            if (bodies == null) return;
+            int n = bodies.Count;
+            var pos = new Vector3[n];
+            var rot = new Quaternion[n];
+            for (int i = 0; i < n; i++)
+            {
+                var b = bodies[i];
+                int pai = (int)b["parent"];
+                var lp = MujocoFrame.Pos(Tres(b["pos"]));
+                var lr = MujocoFrame.Quat(Quatro(b["quat_wxyz"]));
+                if (i == 0 || pai == i || pai >= i)   // world, ou raiz da arvore
+                {
+                    pos[i] = lp; rot[i] = lr;
+                }
+                else
+                {
+                    rot[i] = rot[pai] * lr;
+                    pos[i] = pos[pai] + rot[pai] * lp;
+                }
+                if (_porNome.TryGetValue(Normaliza((string)b["name"]), out var seg))
+                {
+                    seg.bindPos = pos[i] * escala;
+                    seg.bindRot = rot[i];
+                }
+            }
+        }
+
+        private void AplicaBindPose()
+        {
+            foreach (var seg in _ordem)
+            {
+                seg.t.localPosition = seg.bindPos;
+                seg.t.localRotation = seg.bindRot;
+            }
+        }
+
+        /// <summary>Centro e extensao da mosca na pose atual, pra enquadrar camera.</summary>
+        public Bounds Extensao()
+        {
+            if (_ordem.Count == 0) return new Bounds(Vector3.zero, Vector3.one);
+            var b = new Bounds(_ordem[0].t.position, Vector3.zero);
+            foreach (var seg in _ordem) b.Encapsulate(seg.t.position);
+            b.Expand(0.4f);   // as malhas passam um pouco da origem do segmento
+            return b;
         }
 
         /// <summary>Aplica a pose que veio no `body_pose` do frame.</summary>
@@ -135,16 +214,13 @@ namespace Drosobot.Lab
                 if (!_porNome.TryGetValue(Normaliza((string)segs[i]), out var seg))
                     continue;
                 casou++;
-                var p = pos[i];
-                var q = quat[i];
-                seg.alvoPos = DeMujoco((float)p[0], (float)p[1], (float)p[2]) * escala;
-                seg.alvoRot = DeMujocoQuat((float)q[0], (float)q[1],
-                                           (float)q[2], (float)q[3]);
+                seg.alvoPos = MujocoFrame.Pos(Tres(pos[i])) * escala;
+                seg.alvoRot = MujocoFrame.Quat(Quatro(quat[i]));
                 if (!seg.temAlvo)
                 {
                     // Primeira pose: assenta direto. Interpolar a partir da
-                    // origem faria os segmentos atravessarem a cena inteira
-                    // ate alcancar o corpo.
+                    // bind pose faria os segmentos atravessarem a cena ate
+                    // alcancar o corpo.
                     seg.t.localPosition = seg.alvoPos;
                     seg.t.localRotation = seg.alvoRot;
                 }
@@ -155,17 +231,121 @@ namespace Drosobot.Lab
 
         void Update()
         {
-            if (!poseRecebida) return;
-            // Interpolacao PURAMENTE visual: a pose chega a 30 Hz e a interface
-            // desenha a 60+. Nada disto volta pra fisica.
-            float k = 1f - Mathf.Exp(-suavizacao * Time.deltaTime);
-            foreach (var seg in _porNome.Values)
+            // A pose que chega e de MUNDO. Se alguem mover a raiz, cada
+            // segmento sai deslocado pelo valor dela -- o bug do offset
+            // duplicado. Avisa uma vez, alto, em vez de deixar a mosca
+            // "estranha" sem explicacao.
+            if (!_avisouRaiz && _raiz != null &&
+                !MujocoFrame.RaizNeutra(_raiz, EspacoPose.Mundo, out string erro))
             {
-                if (!seg.temAlvo) continue;
-                seg.t.localPosition = Vector3.Lerp(seg.t.localPosition, seg.alvoPos, k);
-                seg.t.localRotation = Quaternion.Slerp(seg.t.localRotation,
-                                                       seg.alvoRot, k);
+                _avisouRaiz = true;
+                Debug.LogError("[fly] " + erro);
             }
+
+            if (modo == Modo.BindPose)
+            {
+                AplicaBindPose();       // congelado: telemetria ignorada
+                DesenhaEixos(false);
+                return;
+            }
+
+            if (poseRecebida)
+            {
+                // Interpolacao PURAMENTE visual: a pose chega a 30 Hz e a
+                // interface desenha a 60+. Nada disto volta pra fisica.
+                float k = 1f - Mathf.Exp(-suavizacao * Time.deltaTime);
+                foreach (var seg in _ordem)
+                {
+                    if (!seg.temAlvo) continue;
+                    seg.t.localPosition = Vector3.Lerp(seg.t.localPosition,
+                                                       seg.alvoPos, k);
+                    seg.t.localRotation = Quaternion.Slerp(seg.t.localRotation,
+                                                           seg.alvoRot, k);
+                }
+            }
+
+            DesenhaEixos(modo == Modo.Eixos);
+        }
+
+        // --------------------------------------------------------- eixos
+        //
+        // Segmentos escolhidos: torax e a cadeia de cada perna. Desenhar os 69
+        // vira um novelo e nao se le nada.
+        // Os nomes sao os do modelo COMPILADO, minusculos e com underscore
+        // (`lf_coxa`), nao os nomes de artigo (`LFCoxa`). O femur e o
+        // `trochanterfemur`: no NeuroMechFly trocanter e femur sao um corpo so.
+        private static readonly string[] AlvosEixo = {
+            "c_thorax",
+            "lf_coxa", "lf_trochanterfemur", "lf_tibia", "lf_tarsus1",
+            "rf_coxa", "rf_trochanterfemur", "rf_tibia", "rf_tarsus1",
+            "lm_coxa", "lm_trochanterfemur", "lm_tibia", "lm_tarsus1",
+            "rm_coxa", "rm_trochanterfemur", "rm_tibia", "rm_tarsus1",
+            "lh_coxa", "lh_trochanterfemur", "lh_tibia", "lh_tarsus1",
+            "rh_coxa", "rh_trochanterfemur", "rh_tibia", "rh_tarsus1",
+        };
+
+        private readonly List<LineRenderer> _linhas = new List<LineRenderer>();
+
+        private void DesenhaEixos(bool ligado)
+        {
+            if (!ligado)
+            {
+                if (_eixos != null) _eixos.SetActive(false);
+                return;
+            }
+            if (_eixos == null) CriaEixos();
+            _eixos.SetActive(true);
+
+            int i = 0;
+            foreach (var nome in AlvosEixo)
+            {
+                if (!_porNome.TryGetValue(nome, out var seg)) { i += 3; continue; }
+                var p = seg.t.position;
+                var r = seg.t.rotation;
+                Ponta(i++, p, p + r * Vector3.right * tamanhoEixo);
+                Ponta(i++, p, p + r * Vector3.up * tamanhoEixo);
+                Ponta(i++, p, p + r * Vector3.forward * tamanhoEixo);
+            }
+        }
+
+        private void Ponta(int i, Vector3 a, Vector3 b)
+        {
+            if (i >= _linhas.Count) return;
+            _linhas[i].SetPosition(0, a);
+            _linhas[i].SetPosition(1, b);
+        }
+
+        private void CriaEixos()
+        {
+            _eixos = new GameObject("SegmentAxes");
+            _eixos.transform.SetParent(transform, false);
+            var sh = Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Color");
+            // X vermelho, Y verde, Z ciano -- eixos da UNITY, ja convertidos.
+            // Nao sao os eixos do MuJoCo; ver docs/UNITY_BODY_COORDINATES.md.
+            Color[] cores = { Color.red, Color.green, Color.cyan };
+            for (int s = 0; s < AlvosEixo.Length; s++)
+            {
+                for (int e = 0; e < 3; e++)
+                {
+                    var go = new GameObject($"{AlvosEixo[s]}_{e}");
+                    go.transform.SetParent(_eixos.transform, false);
+                    var lr = go.AddComponent<LineRenderer>();
+                    lr.material = new Material(sh) { color = cores[e] };
+                    lr.startColor = lr.endColor = cores[e];
+                    lr.widthMultiplier = 0.02f;
+                    lr.positionCount = 2;
+                    lr.useWorldSpace = true;
+                    lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    _linhas.Add(lr);
+                }
+            }
+        }
+
+        /// <summary>Nome e posicao de mundo de cada segmento, pros rotulos.</summary>
+        public IEnumerable<KeyValuePair<string, Vector3>> Segmentos()
+        {
+            foreach (var seg in _ordem)
+                yield return new KeyValuePair<string, Vector3>(seg.nome, seg.t.position);
         }
 
         /// <summary>Tira o prefixo do modelo: `fly/c_thorax` -> `c_thorax`.</summary>
@@ -176,14 +356,11 @@ namespace Drosobot.Lab
             return i >= 0 ? nome.Substring(i + 1) : nome;
         }
 
-        // MuJoCo Z-up destro -> Unity Y-up canhoto: troca Y e Z.
-        private static Vector3 DeMujoco(float x, float y, float z)
-            => new Vector3(x, z, y);
+        private static float[] Tres(JToken t)
+            => new[] { (float)t[0], (float)t[1], (float)t[2] };
 
-        // MuJoCo (w,x,y,z) -> Unity (x,y,z,w), com a mesma troca de eixos e a
-        // inversao de sinal que a mudanca de quiralidade exige.
-        private static Quaternion DeMujocoQuat(float w, float x, float y, float z)
-            => new Quaternion(-x, -z, -y, w);
+        private static float[] Quatro(JToken t)
+            => new[] { (float)t[0], (float)t[1], (float)t[2], (float)t[3] };
 
         // Unity importa OBJ como GameObject; a Mesh e SUB-asset, e
         // Resources.Load<Mesh> nao a encontra pelo caminho do arquivo. LoadAll
