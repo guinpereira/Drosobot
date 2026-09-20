@@ -325,6 +325,10 @@ namespace Drosobot.Lab
             try { msg = JObject.Parse(linha); }
             catch { return; }
 
+            // Idade da ultima mensagem: `connected` continua true com o socket
+            // aberto mesmo se a simulacao travar ou terminar. Sem a idade nao
+            // da pra distinguir "rodando" de "parou e o socket ficou".
+            _ultimaMensagem = Time.realtimeSinceStartup;
             if (_seletor != null) _seletor.AoReceber(msg);
 
             switch ((string)msg["type"])
@@ -365,10 +369,11 @@ namespace Drosobot.Lab
                     var pos = msg["position"] as JArray;
                     if (pos != null && pos.Count >= 3)
                     {
-                        // MuJoCo e Z-up, Unity e Y-up: trocamos os eixos aqui.
+                        // Conversao de eixo: `MujocoFrame`, como todo o resto.
                         // Isto e APRESENTACAO. A pose autoritativa continua sendo
                         // a do MuJoCo; nada volta pra la.
-                        _flyPos = new Vector3((float)pos[0], (float)pos[2], (float)pos[1]);
+                        _flyPos = MujocoFrame.Pos((float)pos[0], (float)pos[1],
+                                                  (float)pos[2]);
                         // So o MARCADOR e movido por aqui. Quando a mosca real
                         // esta montada, cada segmento ja chega com pose de
                         // MUNDO em `body_pose`; mover a raiz tambem somaria o
@@ -500,6 +505,8 @@ namespace Drosobot.Lab
         private readonly Painel _pRuntime = new Painel("runtime");
         private readonly Painel _pGate = new Painel("gate");
         private readonly Painel _pCns3D = new Painel("cns3d");
+        private readonly Painel _pCorpo = new Painel("corpo");
+        private float _ultimaMensagem = -1f;
 
         void OnGUI()
         {
@@ -560,7 +567,11 @@ namespace Drosobot.Lab
                 // selecionado e trocar de corrida sem atravessar a tela.
                 MontaGate();
                 MontaCns3D();
+                MontaCorpo();
                 _colDireita.Adiciona(_pCns3D);
+                // CORPO logo abaixo do cerebro: sao os dois inspetores do que
+                // esta sendo simulado, um de cada lado da fronteira.
+                _colDireita.Adiciona(_pCorpo);
                 _colDireita.Adiciona(_pProcedencia);
                 _colDireita.Adiciona(_pRuntime);
                 _colDireita.Adiciona(_pGate);
@@ -569,6 +580,10 @@ namespace Drosobot.Lab
                 _colDireita.Adiciona(_pExperimento);
                 _colRodape.Adiciona(_pSinais);
             }
+
+            // rotulos vao ANTES dos paineis: sao da cena, e os paineis
+            // tem que ficar por cima deles
+            DesenhaRotulosCorpo();
 
             float usadoEsquerda = _colEsquerda.Desenhar();
             _colDireita.Desenhar();
@@ -653,6 +668,148 @@ namespace Drosobot.Lab
             foreach (Provenance p in new[] { Provenance.Data, Provenance.Model, Provenance.Assumption })
                 _pProcedencia.Texto($"  {ProvenanceUtil.Label(p)}  {Explica(p)}", _mono,
                                     ProvenanceUtil.Color(p));
+        }
+
+        // ------------------------------------------------------------- corpo
+        //
+        // Painel de INSPECAO do corpo: nao mexe na simulacao, so em como a
+        // mosca e desenhada e de onde a camera olha.
+
+        private static readonly string[] RotulosModo =
+            { "Normal", "Bind Pose", "Eixos", "Rotulos" };
+        private static readonly string[] RotulosVista =
+            { "Persp", "Lado", "Topo", "Frente" };
+
+        private void MontaCorpo()
+        {
+            _pCorpo.Limpar();
+            _pCorpo.Texto("CORPO", _rotulo);
+
+            if (_mosca == null || _mosca.segmentosMontados == 0)
+            {
+                _pCorpo.Texto("malhas nao geradas -- marcador no lugar", _mono,
+                              ProvenanceUtil.Color(Provenance.Assumption));
+                _pCorpo.Texto(".venv-flygym2\\Scripts\\python tools\\export_fly_mesh.py",
+                              _mono);
+                return;
+            }
+
+            // --- estado da conexao ---
+            // Quatro estados de verdade, nao "ligada/desligada": o socket pode
+            // estar aberto com a simulacao parada, e isso parecia "conectado".
+            string estado, detalhe;
+            // _wallTime e double (vem do relogio da simulacao); a idade so
+            // precisa de precisao de milissegundo
+            float idade = _ultimaMensagem < 0f ? -1f
+                                               : (float)_wallTime - _ultimaMensagem;
+            if (_tel == null || !_tel.connected)
+            {
+                estado = "DESCONECTADO";
+                detalhe = _ultimaMensagem < 0f
+                    ? "suba: python sim/lab_runner.py"
+                    : $"a simulacao caiu ou terminou ha {idade:F0} s";
+            }
+            else if (_ultimaMensagem < 0f)
+            {
+                estado = "CONECTANDO"; detalhe = "socket aberto, nada chegou ainda";
+            }
+            else if (idade > 2f)
+            {
+                estado = "PARADO";
+                detalhe = $"ultima telemetria ha {idade:F1} s";
+            }
+            else
+            {
+                estado = "RODANDO";
+                detalhe = $"ultima telemetria ha {idade * 1000f:F0} ms";
+            }
+            var corEstado = estado == "RODANDO"
+                ? new Color(0.45f, 0.85f, 0.55f)
+                : estado == "CONECTANDO" ? new Color(0.90f, 0.80f, 0.40f)
+                                         : new Color(0.90f, 0.45f, 0.45f);
+            _pCorpo.Texto($"  {estado}", _mono, corEstado);
+            _pCorpo.Texto($"  {detalhe}", _mono);
+            _pCorpo.Espacador();
+
+            // --- modo de depuracao ---
+            _pCorpo.Desenho(24f, r =>
+            {
+                float w = (r.width - 6f) / 4f;
+                for (int i = 0; i < 4; i++)
+                {
+                    var b = new Rect(r.x + i * (w + 2f), r.y, w, 22f);
+                    var antes = GUI.color;
+                    GUI.color = (int)_mosca.modo == i
+                        ? new Color(0.45f, 0.80f, 1.00f)
+                        : new Color(0.78f, 0.80f, 0.84f);
+                    if (GUI.Button(b, RotulosModo[i]))
+                    {
+                        _mosca.modo = (FlyBody.Modo)i;
+                        // Bind Pose e pra olhar o corpo inteiro parado: a
+                        // camera para de perseguir e enquadra tudo, senao o
+                        // modo "congelado" continua com a camera andando.
+                        var o = _camBrain.GetComponent<OrbitCamera>();
+                        if (o != null)
+                        {
+                            o.seguir = _mosca.modo == FlyBody.Modo.BindPose
+                                ? null : _mosca.Raiz.Find("c_thorax");
+                            o.Focar(_mosca.Extensao());
+                        }
+                    }
+                    GUI.color = antes;
+                }
+            });
+
+            if (_mosca.modo == FlyBody.Modo.BindPose)
+                _pCorpo.Texto("pose de repouso do MODELO (juntas em zero). " +
+                              "Nao e a postura de andar nem telemetria.", _mono,
+                              ProvenanceUtil.Color(Provenance.Model));
+
+            // --- vistas ---
+            _pCorpo.Espacador();
+            var orb = _camBrain != null ? _camBrain.GetComponent<OrbitCamera>() : null;
+            _pCorpo.Desenho(24f, r =>
+            {
+                float w = (r.width - 6f) / 4f;
+                for (int i = 0; i < 4; i++)
+                {
+                    var b = new Rect(r.x + i * (w + 2f), r.y, w, 22f);
+                    var antes = GUI.color;
+                    GUI.color = orb != null && (int)orb.preset == i
+                        ? new Color(0.45f, 0.80f, 1.00f)
+                        : new Color(0.78f, 0.80f, 0.84f);
+                    if (GUI.Button(b, RotulosVista[i]) && orb != null)
+                        orb.Aponta((OrbitCamera.Preset)i);
+                    GUI.color = antes;
+                }
+            });
+            _pCorpo.Desenho(24f, r =>
+            {
+                if (GUI.Button(new Rect(r.x, r.y, r.width, 22f), "Focar mosca")
+                    && orb != null)
+                    orb.Focar(_mosca.Extensao());
+            });
+            _pCorpo.Texto("arrastar gira   scroll aproxima   meio empurra", _mono);
+            _pCorpo.Texto($"{_mosca.segmentosMontados} segmentos   " +
+                          $"{_mosca.segmentosRecebidos} na pose", _mono);
+        }
+
+        // Rotulos dos segmentos: desenhados por cima da cena, projetados pela
+        // camera. Mais simples que TextMesh em mundo e legivel em qualquer zoom.
+        private void DesenhaRotulosCorpo()
+        {
+            if (_mosca == null || _mosca.modo != FlyBody.Modo.Rotulos) return;
+            if (_camBrain == null) return;
+            var antes = GUI.color;
+            GUI.color = new Color(0.85f, 0.92f, 1f, 0.9f);
+            foreach (var kv in _mosca.Segmentos())
+            {
+                var s = _camBrain.WorldToScreenPoint(kv.Value);
+                if (s.z <= 0f) continue;                  // atras da camera
+                GUI.Label(new Rect(s.x + 3f, Screen.height - s.y - 8f, 160f, 16f),
+                          kv.Key, _mono);
+            }
+            GUI.color = antes;
         }
 
         private void MontaCns3D()
@@ -917,10 +1074,15 @@ namespace Drosobot.Lab
         }
     }
 
-    /// <summary>Camera de orbita: arrastar gira, scroll aproxima.</summary>
+    /// <summary>Camera de orbita: arrastar gira, scroll aproxima, meio empurra.</summary>
     public class OrbitCamera : MonoBehaviour
     {
+        /// <summary>Pontos de vista fixos pra inspecionar o corpo.</summary>
+        public enum Preset { Perspectiva, Lateral, Topo, Frente }
+
         public Vector3 target = Vector3.zero;
+        [Tooltip("Deslocamento manual do alvo (botao do meio). Zerado ao focar.")]
+        public Vector3 pan = Vector3.zero;
         // 15.5 em vez de 18: com o centro da tela livre de painel, o CNS cabe
         // ~16% maior. E aproximacao de camera, nao escala do objeto -- a
         // geometria e as posicoes que o grafo de conectividade calcula ficam
@@ -933,21 +1095,72 @@ namespace Drosobot.Lab
         public Transform seguir;
         public float suavizacaoSeguir = 6f;
 
+        /// <summary>
+        /// Aponta a camera de um dos lados. So muda angulo -- a distancia
+        /// continua sendo a que `Focar` calculou, senao trocar de vista
+        /// desenquadra a mosca toda vez.
+        /// </summary>
+        public void Aponta(Preset p)
+        {
+            switch (p)
+            {
+                // A mosca anda no +X do MuJoCo, que vira +X na Unity; o Y da
+                // Unity e a altura. Ver docs/UNITY_BODY_COORDINATES.md.
+                case Preset.Lateral: yaw = 90f; pitch = 0f; break;
+                case Preset.Topo: yaw = 90f; pitch = 89f; break;
+                case Preset.Frente: yaw = 180f; pitch = 0f; break;
+                default: yaw = 35f; pitch = 20f; break;   // perspectiva
+            }
+            preset = p;
+        }
+
+        public Preset preset = Preset.Perspectiva;
+
+        /// <summary>
+        /// Enquadra o que cabe dentro de `b`, com folga. Usado pelo botao
+        /// "Focar mosca": a mosca tem ~3 mm de corpo mas ~5 mm com as pernas
+        /// abertas, e chutar a distancia corta perna em metade das vistas.
+        /// </summary>
+        public void Focar(Bounds b)
+        {
+            pan = Vector3.zero;
+            target = b.center;
+            float raio = b.extents.magnitude;
+            var cam = GetComponent<Camera>();
+            float fov = cam != null ? cam.fieldOfView : 60f;
+            // raio / sin(fov/2) enquadra a esfera que contem o corpo; o 1.25
+            // e a folga pra nao encostar nas bordas
+            distance = Mathf.Clamp(
+                1.25f * raio / Mathf.Sin(fov * 0.5f * Mathf.Deg2Rad), 1.5f, 120f);
+        }
+
         void LateUpdate()
         {
             if (seguir != null)
             {
+                // Segue o torax, mas NAO colado: `pan` fica por fora do lerp,
+                // entao o que o usuario empurrou continua valendo enquanto a
+                // mosca anda.
                 target = Vector3.Lerp(target, seguir.position,
                                       1f - Mathf.Exp(-suavizacaoSeguir * Time.deltaTime));
             }
+            var rot = Quaternion.Euler(pitch, yaw, 0f);
             if (Input.GetMouseButton(0))
             {
                 yaw += Input.GetAxis("Mouse X") * 3f;
-                pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 2f, -85f, 85f);
+                pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 2f, -89f, 89f);
             }
-            distance = Mathf.Clamp(distance - Input.mouseScrollDelta.y * 1.5f, 2f, 120f);
-            var rot = Quaternion.Euler(pitch, yaw, 0f);
-            transform.position = target + rot * new Vector3(0, 0, -distance);
+            if (Input.GetMouseButton(2))
+            {
+                // empurrar no plano da tela, proporcional a distancia: perto
+                // move pouco, longe move muito -- senao pan fica inutil em zoom
+                float k = distance * 0.0015f;
+                pan -= rot * new Vector3(Input.GetAxis("Mouse X") * k,
+                                         Input.GetAxis("Mouse Y") * k, 0f);
+            }
+            distance = Mathf.Clamp(distance - Input.mouseScrollDelta.y * 1.5f, 1.5f, 120f);
+            rot = Quaternion.Euler(pitch, yaw, 0f);
+            transform.position = target + pan + rot * new Vector3(0, 0, -distance);
             transform.rotation = rot;
         }
     }
