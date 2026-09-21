@@ -546,6 +546,10 @@ MuJoCo CPU                -        225u
 
 Histórico do passo fundido, com `finish` por passo: **6174 → 2138 → 1752 us**.
 
+A coluna `eventos GPU` desta tabela está aqui por ser o que foi medido na
+época; ela **subestima**, e o porquê está em *A lacuna entre parede e eventos*,
+mais abaixo. A tabela que vale hoje é a da seção **C** do estado atual.
+
 O primeiro salto foi remover Python do caminho (80 → 15 despachos, `set_args`
 cacheado). O segundo foi este: **a matriz de massa em `__local`**.
 
@@ -609,25 +613,126 @@ grupos e passou a rodar em 256 threads.
 O caminho ficou no código (`passo_grupos`), medido e documentado, porque a
 medida é o resultado.
 
-### O maior gargalo restante
+### A lacuna entre parede e eventos, explicada
 
-**A lacuna entre parede e eventos**: 863 us contra 362 us no passo isolado, e
-ela não escala com o número de despachos. Não está explicada. É o próximo alvo,
-e é maior que qualquer estágio individual.
+Durante três rodadas este foi o maior número sem explicação: o passo media
+~1200 us de relógio e a soma dos `profile.end - start` dava ~600. A lacuna não
+escalava com o número de despachos (6 ou 15 davam a mesma), o que descartava
+"custo por despacho" — e deixava o resto em aberto.
+
+**Primeiro, o que ela não é.** Cada hipótese barata foi medida e descartada:
+
+| hipótese | medida | veredito |
+|---|---|---|
+| o profiling se paga a si mesmo | 1781 us com, 1658 us sem | não |
+| `set_args` no laço quente | **0,00** religações por passo | não |
+| `flush` ou `finish` redundante | `flush` custa **0,0 us** | não |
+| `__local` grande atrasa o lançamento | 0,9 / 2,7 us de lacuna com 0,5 / 41,5 KB | não |
+| a lacuna em si é falta de work-groups | mesma lacuna com 1 e com 20 grupos, **num kernel de código pequeno** | não |
+
+**Depois, o que ela é.** Duas medidas fecham a questão.
+
+*A lacuna é proporcional ao tempo de execução, não ao número de despachos.*
+Com um kernel sintético de duração ajustável, em duas corridas do mesmo
+benchmark:
+
+```
+exec       1,0u    4,0u   50,5u   215,2u        0,6u   2,1u   30,2u   146,8u
+lacuna     1,9u    6,9u   42,4u   134,8u        1,8u   7,8u   59,1u   194,1u
+```
+
+`lacuna ≈ c × exec + ~1,5 us`, com `c` entre 0,6 e 1,4 conforme o estado da
+máquina. O que **não** varia: ela cresce com o tempo, o coeficiente angular é
+da ordem de 1, e **20 work-groups dão o mesmo que 1**. O mesmo trabalho em 4
+despachos ou em 1 dá o mesmo total. **Não há o que ganhar cortando despachos**
+— o que a tentativa dos 6 grupos já havia mostrado, antes de esta lei ser
+conhecida.
+
+*O custo real é execução a frio, e o relógio da placa não a contabiliza.* O
+teste decisivo roda o passo inteiro e então repete `smooth_fundido` oito vezes
+seguidas, **no mesmo passo e sobre os mesmos dados** — trabalho aritmético
+idêntico em todas as nove:
+
+```
+no passo      145,2u
+repeticao 1    35,7u
+repeticao 2    19,6u
+...
+repeticao 8     9,0u
+```
+
+Quatro a dezesseis vezes mais caro na primeira. Como a conta é a mesma, a
+diferença não é aritmética: é **busca de código e de dados a frio**. O programa
+compilado tem **360 KB de ISA** em 58 kernels; a L1 de instruções do gfx1031
+tem **32 KB**, compartilhada por duas CUs. Com catorze kernels grandes se
+revezando, todo despacho começa frio, sempre.
+
+E o motivo de isso custar tanto é o desenho: **um work-group de 256 threads são
+quatro wavefronts numa SIMD de uma CU**. Quando elas param esperando a próxima
+linha de instrução, não há outra wavefront na placa para ocupar o lugar. Numa
+ocupação normal a latência de busca fica escondida; aqui ela aparece inteira no
+relógio.
+
+**Cuidado com a leitura desta última frase.** Ela não contradiz a linha da
+tabela acima: lá, subir de 1 para 20 grupos não mudou nada porque o kernel
+sintético tem **código pequeno**, que cabe na L1 e nunca é buscado de novo —
+não havia latência de busca para esconder. Que mais ocupação ajude os **nossos**
+kernels, de 360 KB, é a explicação seguindo da causa, e **está por testar**. É
+por isso que ela entra como a primeira aposta da próxima sessão, e não como
+conclusão medida.
+
+**Isso também invalida, para cima, o perfil por etapa isolada** da tabela
+acima. Repetir a mesma etapa 300 vezes a mantém quente: os 362 us de eventos
+que ela reporta são o custo *quente*, e o passo real paga o custo *frio*. O
+método isolado conserta a atribuição errada de espera por dependência e
+introduz um viés novo, na direção oposta. Nenhuma das duas formas de medir um
+kernel dentro de uma sequência é confiável sozinha — **só o relógio de parede
+do passo inteiro é.**
+
+### De quem é cada microssegundo
+
+```
+                                      us/passo    de quem
+host enfileira 14 despachos            250-275    nosso
+flush                                      0,0    -
+execucao de kernel + lacuna           900-1330    nosso, menos ~20 us
+                                    ------------
+passo nu, pipelinado                 1200-1350
+MuJoCo CPU mj_step                        ~158
+```
+
+A execução e a lacuna aparecem juntas de propósito: **a fronteira entre elas
+não é estável.** Em duas corridas do mesmo benchmark, com a mesma parede de
+~1200 us, o par `(exec, lacuna)` mediu `(640, 690)` e `(347, 823)`. O trabalho
+é o mesmo; o que muda é de que lado do `profile.start` a espera pela busca de
+instrução cai. Tratar `exec` e `lacuna` como grandezas separadas é ler ruído.
+
+Repartindo pela lei medida, a única parcela do **runtime** é o termo fixo:
+~1,5 us por despacho, **~20 us por passo**. Todo o resto escala com a nossa
+execução e some junto com ela. **Não existe um bloco de centenas de
+microssegundos pertencente ao driver.** O alvo é o custo a frio dos nossos
+kernels, atacável por ocupação ou por tamanho de código — não por API, não por
+menos despachos, não por menos sincronização.
+
+Reproduzir: `benchmarks/physics/gpu/lacuna.py`. Os absolutos variam ±30% entre
+corridas nesta máquina; as proporções, não.
 
 ### RTF, com unidades explícitas
 
 ```
-2138 us/passo  x  10.000 passos por segundo simulado  =  21,4 s de relogio
-RTF = 0,0467              corrida de 2 s  =  43 s
+1350 us/passo  x  10.000 passos por segundo simulado  =  13,5 s de relogio
+RTF = 0,074               corrida de 2 s  =  27 s
 ```
 
 Pelo laboratório, com o controlador em Python e a retina:
 
 ```
-corrida looming curta, physics=drosobot-gpu     RTF 0,029
-passo do adaptador, drosobot-gpu              2916 us
-passo do adaptador, flygym2-mujoco             296 us
+passo do adaptador, drosobot-gpu              ~3050 us
+  passo nu                                    ~2340 us
+  escreve ctrl                                 ~290 us
+  leitura empacotada + empacotamento           ~300 us
+  controlador Python                           ~130 us
+passo do adaptador, flygym2-mujoco             ~296 us
 ```
 
 O adaptador caiu de 4881 para 2916 us ao empacotar as três leituras de volta
@@ -635,10 +740,14 @@ numa só (`empacota_observacao`): cada `enqueue_copy` do pyopencl é bloqueante,
 então eram três esperas pela placa por passo. `resumo()` reporta
 `leituras_por_passo` — foi de 3 para 1.
 
-**A leitura que sobra é o gargalo do adaptador.** Ela força uma sincronização
-por passo, e com isso a física paga o custo "com `finish`" (1752 us) em vez do
-pipelinado (1168 us). Zerá-la exige o controlador no device — é o que separa
-os 2916 us de algo próximo dos 1168 us.
+**O que a leitura que sobra custa não é ela mesma: é a sincronização.** Os dois
+kernels de empacotamento mais a cópia valem ~300 us; o efeito caro é que ela
+obriga um `finish` por passo, e com isso a física paga o custo não pipelinado
+em vez do pipelinado. Zerá-la exige o controlador no device.
+
+Ainda assim, **não é o gargalo do adaptador** — o passo nu é, e dentro dele a
+execução a frio. A ordem de ataque está na seção **G** do estado atual, e ela
+começa pelo passo, não pelo adaptador.
 
 ### Trace físico
 
@@ -665,6 +774,145 @@ estado residente entre passos:
 É por isso que o teste de passo roda **dois** passos, não um.
 
 ---
+
+## ESTADO ATUAL — FIM DE 2026-09-20
+
+Fechamento da fase. Quem pegar isto amanhã deveria conseguir continuar lendo só
+esta seção.
+
+### A — O que existe e funciona
+
+*   **O passo de física completo roda na GPU.** `state(t) → state(t+dt)`:
+    cinemática, COM, massa composta, fatoração, velocidades, colisão
+    plano × malha, restrições, RNE, passivo, atuação, adesão, solver de Newton
+    e integração de Euler. Catorze despachos, nenhuma etapa dinâmica do MuJoCo.
+*   **Validado campo a campo contra o `mjData` do MuJoCo 3.9.0**, a ~1e-14, em
+    passo único e em trajetória de múltiplos passos.
+*   **Dois caminhos com a mesma física.** O de referência, um despacho por
+    estágio, é o oráculo de depuração; o fundido é o de produção. Ambos chamam
+    os mesmos helpers `..._um`, e há teste de igualdade **exata** ao longo de
+    10 passos. O caminho de referência não deve ser removido.
+*   **Integrado ao laboratório.** `physics=drosobot-gpu` monta, roda uma
+    corrida completa com controlador e retina, e grava metadata com device,
+    precisão e `physics_model_hash`.
+*   **Validação de capacidade explícita.** `compilador.valida` recusa no
+    `reset` e **nomeia** o recurso que falta. Nunca retorna zero contatos em
+    silêncio.
+*   **`hash_ciencia()` não muda com o backend** — há teste.
+*   13 testes, todos passando: `python tests/test_gpu_physics.py`.
+
+### B — O que ainda depende do MuJoCo
+
+A separação é limpa e vale enunciá-la: **o MuJoCo faz SETUP e COMPILAÇÃO; não
+faz nenhuma DINÂMICA.**
+
+**Setup e compilação (MuJoCo, sempre):**
+
+*   parsing do MJCF e compilação do `mjModel` — arena, mosca, atuadores, pares
+    de colisão, grafos de hull das malhas;
+*   `mj_forward` uma vez, para o estado inicial;
+*   o `mjData` como **caixa de correio** do controlador e do renderizador: o
+    `ctrl` sai dele para a GPU, e `qpos`/`qvel` voltam da GPU para ele na
+    cadência da retina (100 Hz), não na da física (10.000 Hz). Ele é destino,
+    nunca fonte.
+
+**Dinâmica (GPU, sempre): ZERO fallback dinâmico.** Não existe caminho em que
+uma etapa do passo caia para o MuJoCo. Se o modelo sai do subconjunto
+suportado, `RecursoNaoSuportado` é levantado no `reset` e a corrida não começa
+— não há degradação silenciosa. A única forma de rodar física no MuJoCo é pedir
+o backend `flygym2-mujoco` pelo nome.
+
+**Fora do subconjunto, hoje:** colisão cilindro × malha (a arena de obstáculos
+recusa montar), `condim` diferente de 3, tendões, restrições de igualdade e
+juntas limitadas.
+
+### C — Desempenho, numa tabela só
+
+```
+                                        us/passo
+MuJoCo CPU, mj_step                          158
+                                     ----------------
+GPU, passo nu pipelinado                    1350
+  host enfileira 14 despachos                255
+  execucao de kernel + lacuna entre eles    1100   (fronteira instavel)
+  flush                                      0,0
+                                     ----------------
+GPU, passo do adaptador                     3050
+  passo nu                                  2340   (mesma corrida, ver nota)
+  escreve ctrl                               290
+  leitura empacotada + empacotamento         300
+  controlador Python                         130
+```
+
+Histórico do passo fundido com `finish` por passo: **6174 → 2138 → 1752 us**.
+Contra o MuJoCo CPU: **~8,5×** mais lento no passo nu.
+
+**Nota sobre a variância.** Esta máquina varia ±30% entre corridas — o mesmo
+controlador Python puro mediu 62 e 115 us em corridas diferentes. Os absolutos
+acima são de uma corrida; as **proporções** se mantiveram em todas. Não vale
+perseguir diferenças menores que ~30% sem A/B no mesmo processo.
+
+RTF ≈ 0,022 pelo laboratório, corrida de 2 s ≈ 90 s de relógio.
+
+### D — Gargalos restantes, na ordem dos números
+
+1.  **Execução a frio dos kernels — ~1100 us/passo**, execução e lacuna
+    somadas (a fronteira entre as duas não é estável; ver a seção da lacuna).
+    Medido: o mesmo kernel sobre os
+    mesmos dados custa 145 us frio e 9-35 us quente. Causa: 360 KB de ISA
+    contra 32 KB de L1 de instruções, e **um** work-group de 256 threads — 4
+    wavefronts numa SIMD, sem nada para esconder a latência de busca. Este é o
+    gargalo, com folga, e é nosso.
+2.  **Host enfileirando — ~255 us/passo.** Catorze despachos de Python. Some
+    com o laço residente, não antes.
+3.  **`escreve ctrl` — ~290 us/passo** para 384 bytes. Latência pura de
+    `enqueue_copy`; medido, **não** melhora tornando a cópia não bloqueante
+    (testado e revertido nesta rodada — o custo é o enfileiramento, não a
+    espera). Um buffer mapeado persistente é o candidato, ainda não tentado.
+4.  **Leitura empacotada — ~300 us/passo.** Já é uma leitura só, de três que
+    eram. Some com o controlador no device.
+
+### E — O que não é suportado
+
+Cilindro × malha · `condim` ≠ 3 · tendões · restrições de igualdade · limites
+de junta · FP32 no caminho validado (compila, não é o caminho aferido) ·
+multi-mundo (o desenho inteiro é latência de um mundo) · qualquer API que não
+OpenCL.
+
+### F — Decisões em aberto
+
+*   **Semântica do solver com adesão.** O MuJoCo 3.9.0 termina por
+    `alpha == 0` num ponto **não estacionário** (`|grad|` 50,3); a GPU chega a
+    1,3e-13 com custo menor. Provado por tolerância e iterações, não suposto.
+    As duas opções — **(A)** estacionariedade, **(B)** reproduzir a trajetória
+    numérica do 3.9.0 — são incompatíveis aqui. **Hoje o backend faz (A)**, e o
+    teste exige estacionariedade. Um modo `mujoco39_reference` para (B) exige
+    portar a busca de linha exata por partes. Não escolher isto por acidente.
+*   **FP32 ou misto.** Não avaliado no passo completo.
+*   **Onde fica o controlador.** Enquanto for Python, o laço residente não
+    fecha.
+
+### G — PRÓXIMA SESSÃO — três prioridades, nesta ordem
+
+1.  **Atacar o custo a frio, que é ~1100 us dos ~1350.** Duas frentes, nesta
+    ordem de aposta: (a) **aumentar a ocupação** — os kernels são de um
+    work-group por herança da fase de depuração, não por necessidade; vários
+    grupos dão wavefronts para esconder a busca de instrução; (b) **reduzir o
+    tamanho do código** — 360 KB de ISA vem de FP64 totalmente inlineado.
+    Medir sempre pelo relógio de parede do passo inteiro: a medida isolada
+    subestima (mantém quente) e a medida dentro do passo superestima (atribui
+    espera por dependência). **Nenhuma das duas serve sozinha.**
+2.  **Laço residente.** Só depois de (1): ele remove os ~255 us de host, que
+    hoje são 19% do passo, e não toca no gargalo real. Exige o controlador no
+    device.
+3.  **Decidir a semântica do solver com adesão** — (A) ou (B) da seção F,
+    explicitamente e por escrito, porque ela define o que "correto" significa
+    para todo teste futuro.
+
+**Não faça primeiro:** cortar despachos (medido, não ganha nada — a lacuna é
+proporcional ao tempo, não à contagem), trocar de API, mexer em
+`factor_M`/`solve_M`/`solver_newton` sem antes resolver a ocupação, ou
+perseguir diferenças menores que 30% nesta máquina.
 
 ## O que mudaria a resposta
 
@@ -721,6 +969,9 @@ traduzir.
 ## Como executar
 
 ```bat
+REM de onde vem a lacuna entre parede e eventos OpenCL
+.venv-flygym2\Scripts\python benchmarks\physics\gpu\lacuna.py
+
 REM por que MuJoCo e GPU discordam com adesao ligada
 .venv-flygym2\Scripts\python benchmarks\physics\gpu\solver_adesao.py
 

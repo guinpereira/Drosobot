@@ -347,12 +347,16 @@ A pergunta obvia e se da pra jogar isso na GPU. Medimos:
 | rede spiking (integrador proprio) | ~0,1 s |
 | *(rede spiking no Brian2, como era antes)* | *~7,7 s* |
 
-**A GPU ja esta sendo usada no que ela pode fazer.** Confirmado em tempo de
-execucao: `GL_RENDERER: AMD Radeon RX 6700 XT`, OpenGL 4.6 -- a renderizacao da
-retina roda na placa. O que domina o custo e a **fisica**, e o MuJoCo classico
-resolve dinamica em CPU por design; nao existe caminho de GPU pra isso aqui.
-(Existe o MJX, que roda em JAX/GPU, mas ele serve pra simular milhares de
-ambientes em paralelo, nao pra deixar um unico mais rapido, e depende de CUDA.)
+**A renderizacao ja esta na GPU.** Confirmado em tempo de execucao:
+`GL_RENDERER: AMD Radeon RX 6700 XT`, OpenGL 4.6. O que domina o custo e a
+**fisica**, e o MuJoCo classico resolve dinamica em CPU por design. (Existe o
+MJX, que roda em JAX/GPU, mas ele serve pra simular milhares de ambientes em
+paralelo, nao pra deixar um unico mais rapido, e depende de CUDA.)
+
+Desde entao existe um caminho de GPU para a dinamica: `physics=drosobot-gpu`,
+um passo completo em OpenCL sem CUDA. **Ele ainda perde para a CPU** -- 1350 us
+contra 158 us do `mj_step` -- e o porque esta medido em
+[docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md).
 
 Duas coisas valem pra quem for mexer:
 
@@ -763,14 +767,18 @@ CNS, os `_pylibs/` e `skeletons/` do Blender, os clones em `research/upstream/`.
 - [x] Abrir a caixa-preta do `mj_step`: 117 us/passo, e o gargalo e o SOLVER de
       restricao (39%), nao a colisao (9%). Os timers internos do MuJoCo sairam
       zerados ate instalarmos `mjcb_time`
-- [x] Drosobot GPU Physics: compilador de subconjunto MJCF, `physics_model_hash`,
-      backend na receita, e a cinematica direta portada e validada (6,7e-16 em
-      fp64 contra o `mjData`)
-- [x] Medir antes de prometer: com `nv=72` e um mundo a GPU ainda PERDE (9,3 us
-      de cinematica contra 5-7 us da CPU), mas o TETO nao proibe -- o piso desta
-      placa e 0,060 us por estagio sequencial, e os ~470 estagios de um passo
-      cabem em 28 us. A distancia ate a paridade e 3x de implementacao, nao de
-      hardware. Ver [docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)
+- [x] Drosobot GPU Physics: o passo COMPLETO na GPU -- `state(t) -> state(t+dt)`
+      com colisao, restricoes, solver e integracao, sem nenhuma etapa dinamica
+      do MuJoCo, validado campo a campo a ~1e-14 contra o `mjData` do 3.9.0.
+      Compilador de subconjunto MJCF, `physics_model_hash`, backend na receita,
+      e `physics=drosobot-gpu` rodando uma corrida inteira pelo laboratorio
+- [x] Medir antes de prometer: com `nv=72` e um mundo a GPU ainda PERDE, por
+      **8,5x** (1350 us contra 158 us do `mj_step`). A causa esta isolada e nao
+      e a API nem o numero de despachos: os kernels rodam sempre FRIOS -- 360 KB
+      de ISA contra 32 KB de L1 de instrucoes, com um unico work-group, sem
+      wavefront para esconder a busca. Medido: o mesmo kernel sobre os mesmos
+      dados custa 145 us frio e 9 us quente.
+      Ver [docs/GPU_PHYSICS.md](docs/GPU_PHYSICS.md)
 - [ ] Cortar os 82 us/passo de Python em volta da fisica -- hoje valem mais que
       qualquer ganho disponivel dentro do `mj_step`
 
