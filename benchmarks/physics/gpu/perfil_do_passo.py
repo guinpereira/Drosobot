@@ -28,9 +28,17 @@ lugar errado.
    Passar a matriz para `__local` nao muda a ordem das operacoes -- so de onde
    se le -- e corta o custo por tres.
 
-2. O passo continua com uma lacuna grande entre o tempo de parede e a soma dos
-   eventos. Ela nao escala com o NUMERO de despachos (6 ou 15 dao a mesma), e
-   fica registrada como o maior gargalo nao explicado.
+2. O passo tem uma lacuna grande entre o tempo de parede e a soma dos eventos.
+   Ela nao escala com o NUMERO de despachos (6 ou 15 dao a mesma). Foi
+   explicada depois, em `lacuna.py`: e execucao a FRIO -- 360 KB de ISA contra
+   32 KB de L1 de instrucoes, com um work-group so, sem wavefront para esconder
+   a busca.
+
+   Isso tem uma consequencia para ESTE arquivo: repetir uma etapa 300 vezes a
+   mantem quente, entao os numeros abaixo SUBESTIMAM o custo dela dentro do
+   passo. Medir dentro do passo superestima (atribui a espera pela
+   dependencia). Nenhuma das duas formas serve sozinha; so a parede do passo
+   inteiro e confiavel.
 """
 from __future__ import annotations
 
